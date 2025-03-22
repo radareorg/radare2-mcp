@@ -1,6 +1,6 @@
 # Radare2 MCP Server
 
-A microcontrol protocol (MCP) server for using radare2 with AI assistants like Claude.
+A MCP server for using radare2 with AI assistants like Claude.
 
 ## Implementation Details
 
