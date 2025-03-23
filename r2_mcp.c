@@ -157,7 +157,7 @@ static bool init_r2(void) {
     
     r_config_set_i(r_core->config, "scr.color", 0);
     
-    printf("Radare2 core initialized\n");
+    fprintf(stderr, "Radare2 core initialized\n");
     return true;
 }
 
@@ -302,23 +302,97 @@ static bool assert_request_handler_capability(const char *method, char **error) 
     return true;
 }
 
+// Helper function to create JSON-RPC error responses
+static char *create_error_response(int code, const char *message, const char *id, const char *uri) {
+    PJ *pj = pj_new();
+    pj_o(pj);
+    pj_ks(pj, "jsonrpc", "2.0");
+    if (id) pj_ks(pj, "id", id);
+    pj_k(pj, "error");
+    pj_o(pj);
+    pj_ki(pj, "code", code);
+    pj_ks(pj, "message", message);
+    if (uri) {
+        pj_k(pj, "data");
+        pj_o(pj);
+        pj_ks(pj, "uri", uri);
+        pj_end(pj);
+    }
+    pj_end(pj);
+    pj_end(pj);
+    return pj_drain(pj);
+}
+
+// Helper function to create a successful JSON-RPC response
+static char *create_success_response(const char *result, const char *id) {
+    PJ *pj = pj_new();
+    pj_o(pj);
+    pj_ks(pj, "jsonrpc", "2.0");
+    if (id) pj_ks(pj, "id", id);
+    pj_k(pj, "result");
+    if (result) {
+        pj_raw(pj, result);
+    } else {
+        pj_null(pj);
+    }
+    pj_end(pj);
+    return pj_drain(pj);
+}
+
+// Helper function to create tool error responses with specific format
+static char *create_tool_error_response(const char *error_message) {
+    PJ *pj = pj_new();
+    pj_o(pj);
+    pj_k(pj, "content");
+    pj_a(pj);
+    pj_o(pj);
+    pj_ks(pj, "type", "text");
+    pj_ks(pj, "text", error_message);
+    pj_end(pj);
+    pj_end(pj);
+    pj_kb(pj, "isError", true);
+    pj_end(pj);
+    return pj_drain(pj);
+}
+
+// Helper function to create a simple text tool result
+static char *create_tool_text_response(const char *text) {
+    PJ *pj = pj_new();
+    pj_o(pj);
+    pj_k(pj, "content");
+    pj_a(pj);
+    pj_o(pj);
+    pj_ks(pj, "type", "text");
+    pj_ks(pj, "text", text);
+    pj_end(pj);
+    pj_end(pj);
+    pj_end(pj);
+    return pj_drain(pj);
+}
+
+// Helper function to create a successful resource response
+static char *create_resource_response(bool available, const char *media_type, const char *data) {
+    PJ *pj = pj_new();
+    pj_o(pj);
+    pj_kb(pj, "available", available);
+    if (media_type) pj_ks(pj, "mediaType", media_type);
+    if (data) pj_ks(pj, "data", data);
+    pj_end(pj);
+    
+    char *resource_json = pj_drain(pj);
+    char *response = create_success_response(resource_json, NULL);
+    free(resource_json);
+    return response;
+}
+
 static char *handle_mcp_request(const char *method, RJson *params, const char *id) {
     char *error = NULL;
     char *result = NULL;
 
     if (!assert_capability_for_method(method, &error) || !assert_request_handler_capability(method, &error)) {
-        PJ *pj = pj_new();
-        pj_o(pj);
-        pj_ks(pj, "jsonrpc", "2.0");
-        if (id) pj_ks(pj, "id", id);
-        pj_k(pj, "error");
-        pj_o(pj);
-        pj_ki(pj, "code", -32601);
-        pj_ks(pj, "message", error);
-        pj_end(pj);
-        pj_end(pj);
+        char *response = create_error_response(-32601, error, id, NULL);
         free(error);
-        return pj_drain(pj);
+        return response;
     }
 
     if (!strcmp(method, "initialize")) {
@@ -329,47 +403,21 @@ static char *handle_mcp_request(const char *method, RJson *params, const char *i
         result = handle_list_resource_templates(params);
     } else if (!strcmp(method, "resources/list")) {
         result = handle_list_resources(params);
-    } else if (!strcmp(method, "resources/read")) {
+    } else if (!strcmp(method, "resources/read") || !strcmp(method, "resource/read")) {
         result = handle_get_resource(params);
-    } else if (!strcmp(method, "resources/subscribe")) {
-        PJ *pj = pj_new();
-        pj_o(pj);
-        pj_ki(pj, "code", -32601);
-        pj_ks(pj, "message", "Method not implemented: subscriptions are not supported");
-        pj_end(pj);
-        error = pj_drain(pj);
-    } else if (!strcmp(method, "tools/list")) {
+    } else if (!strcmp(method, "resources/subscribe") || !strcmp(method, "resource/subscribe")) {
+        return create_error_response(-32601, "Method not implemented: subscriptions are not supported", id, NULL);
+    } else if (!strcmp(method, "tools/list") || !strcmp(method, "tool/list")) {
         result = handle_list_tools(params);
-    } else if (!strcmp(method, "tools/call")) {
+    } else if (!strcmp(method, "tools/call") || !strcmp(method, "tool/call")) {
         result = handle_call_tool(params);
     } else {
-        error = strdup("Unknown method");
+        return create_error_response(-32601, "Unknown method", id, NULL);
     }
 
-    PJ *pj = pj_new();
-    pj_o(pj);
-    pj_ks(pj, "jsonrpc", "2.0");
-    if (id) pj_ks(pj, "id", id);
-
-    if (error) {
-        pj_k(pj, "error");
-        pj_o(pj);
-        pj_ki(pj, "code", -32601);
-        pj_ks(pj, "message", error);
-        pj_end(pj);
-        free(error);
-    } else {
-        pj_k(pj, "result");
-        if (result) {
-            pj_raw(pj, result);
-            free(result);
-        } else {
-            pj_null(pj);
-        }
-    }
-
-    pj_end(pj);
-    return pj_drain(pj);
+    char *response = create_success_response(result, id);
+    free(result);
+    return response;
 }
 
 static char *handle_initialize(RJson *params) {
@@ -428,10 +476,17 @@ static char *handle_list_resources(RJson *params) {
         if (start_index < 0) start_index = 0;
     }
     
-    PJ *pj = pj_new();
-    pj_o(pj);
-    pj_k(pj, "resources");
-    pj_a(pj);
+    // Use more straightforward JSON construction for resources list
+    char *result = NULL;
+    size_t result_size = 0;
+    FILE *stream = open_memstream(&result, &result_size);
+    
+    if (!stream) {
+        fprintf(stderr, "Failed to create memory stream\n");
+        return strdup("{\"resources\":[]}");
+    }
+    
+    fprintf(stream, "{\"resources\":[");
     
     // Define our resources
     const char *resources[][4] = {
@@ -449,25 +504,31 @@ static char *handle_list_resources(RJson *params) {
     
     // Add resources for this page
     for (int i = start_index; i < end_index; i++) {
-        pj_o(pj);
-        pj_ks(pj, "uri", resources[i][0]);
-        pj_ks(pj, "name", resources[i][1]);
-        pj_ks(pj, "description", resources[i][2]);
-        pj_ks(pj, "mimeType", resources[i][3]);
-        pj_end(pj);
+        if (i > start_index) {
+            fprintf(stream, ",");
+        }
+        
+        fprintf(stream, "{\"uri\":\"%s\",\"name\":\"%s\",\"description\":\"%s\",\"mimeType\":\"%s\"}",
+                resources[i][0], resources[i][1], resources[i][2], resources[i][3]);
     }
     
-    pj_end(pj); // End resources array
+    fprintf(stream, "]");
     
     // Add nextCursor if there are more resources
     if (end_index < total_resources) {
         char next_cursor[16];
         snprintf(next_cursor, sizeof(next_cursor), "%d", end_index);
-        pj_ks(pj, "nextCursor", next_cursor);
+        fprintf(stream, ",\"nextCursor\":\"%s\"", next_cursor);
     }
     
-    pj_end(pj);
-    return pj_drain(pj);
+    fprintf(stream, "}");
+    
+    fclose(stream);
+    
+    // Log the generated JSON for debugging
+    fprintf(stderr, "Generated JSON: %s\n", result);
+    
+    return result;
 }
 
 static char *handle_list_tools(RJson *params) {
@@ -482,10 +543,17 @@ static char *handle_list_tools(RJson *params) {
         if (start_index < 0) start_index = 0;
     }
     
-    PJ *pj = pj_new();
-    pj_o(pj);
-    pj_k(pj, "tools");
-    pj_a(pj);
+    // Use more straightforward JSON construction for tools list
+    char *result = NULL;
+    size_t result_size = 0;
+    FILE *stream = open_memstream(&result, &result_size);
+    
+    if (!stream) {
+        fprintf(stderr, "Failed to create memory stream\n");
+        return strdup("{\"tools\":[]}");
+    }
+    
+    fprintf(stream, "{\"tools\":[");
     
     // Define our tools with their descriptions and schemas
     // Format: {name, description, schema_definition}
@@ -523,260 +591,137 @@ static char *handle_list_tools(RJson *params) {
     
     // Add tools for this page
     for (int i = start_index; i < end_index; i++) {
-        pj_o(pj);
-        pj_ks(pj, "name", tools[i][0]);
-        pj_ks(pj, "description", tools[i][1]);
-        pj_k(pj, "inputSchema");
-        pj_raw(pj, tools[i][2]);
-        pj_end(pj);
+        if (i > start_index) {
+            fprintf(stream, ",");
+        }
+        
+        fprintf(stream, "{\"name\":\"%s\",\"description\":\"%s\",\"inputSchema\":%s}",
+                tools[i][0], tools[i][1], tools[i][2]);
     }
     
-    pj_end(pj); // End tools array
+    fprintf(stream, "]");
     
     // Add nextCursor if there are more tools
     if (end_index < total_tools) {
         char next_cursor[16];
         snprintf(next_cursor, sizeof(next_cursor), "%d", end_index);
-        pj_ks(pj, "nextCursor", next_cursor);
+        fprintf(stream, ",\"nextCursor\":\"%s\"", next_cursor);
     }
     
-    pj_end(pj);
-    return pj_drain(pj);
+    fprintf(stream, "}");
+    
+    fclose(stream);
+    
+    // Log the generated JSON for debugging
+    fprintf(stderr, "Generated JSON: %s\n", result);
+    
+    return result;
 }
 
 static char *handle_get_resource(RJson *params) {
     const char *uri = r_json_get_str(params, "uri");
-    
     if (!uri) {
-        PJ *pj = pj_new();
-        pj_o(pj);
-        pj_ki(pj, "code", -32602);
-        pj_ks(pj, "message", "Missing required parameter: uri");
-        pj_k(pj, "data");
-        pj_o(pj);
-        pj_k(pj, "uri");
-        pj_null(pj);
-        pj_end(pj);
-        pj_end(pj);
-        return pj_drain(pj);
+        return create_error_response(-32602, "Missing required parameter: uri", NULL, NULL);
     }
     
-    if (!file_opened && strcmp(uri, "r2://currentFile")) {
-        PJ *pj = pj_new();
-        pj_o(pj);
-        pj_ki(pj, "code", -32002);
-        pj_ks(pj, "message", "No file is currently open");
-        pj_k(pj, "data");
-        pj_o(pj);
-        pj_ks(pj, "uri", uri);
-        pj_end(pj);
-        pj_end(pj);
-        return pj_drain(pj);
+    if (!file_opened) {
+        return create_error_response(-32602, "No file is currently open. Please open a file first.", NULL, uri);
     }
     
-    PJ *pj = pj_new();
-    pj_o(pj);
-    pj_k(pj, "contents");
-    pj_a(pj);
-    pj_o(pj);
-    pj_ks(pj, "uri", uri);
-    pj_ks(pj, "mimeType", "application/json");
-    
-    if (!strncmp(uri, "r2://", 5)) {
-        const char *resource = uri + 5;
-        
-        if (!strcmp(resource, "currentFile")) {
-            PJ *file_pj = pj_new();
-            pj_o(file_pj);
-            if (!file_opened) {
-                pj_kb(file_pj, "opened", false);
-                pj_ks(file_pj, "message", "No file is currently open");
-            } else {
-                pj_kb(file_pj, "opened", true);
-                pj_ks(file_pj, "filePath", current_file);
-                char *info_str = r2_cmd("ij");
-                if (info_str) {
-                    pj_k(file_pj, "info");
-                    pj_raw(file_pj, info_str);
-                    free(info_str);
-                }
+    // Handle file structure resource
+    if (!strcmp(uri, "fileStructure")) {
+        char *result = r2_cmd("is");
+        if (!result || !*result) {
+            free(result);
+            result = r2_cmd("afl");
+            if (!result) {
+                return create_error_response(-32602, "Failed to get file structure.", NULL, uri);
             }
-            pj_end(file_pj);
-            char *file_json = pj_drain(file_pj);
-            pj_ks(pj, "text", file_json);
-            free(file_json);
-        } else if (!strcmp(resource, "functions")) {
-            char *func_str = r2_cmd("aflj");
-            pj_ks(pj, "text", func_str ? func_str : "[]");
-            free(func_str);
-        } else if (!strcmp(resource, "imports")) {
-            char *imports_str = r2_cmd("iij");
-            pj_ks(pj, "text", imports_str ? imports_str : "[]");
-            free(imports_str);
-        } else if (!strcmp(resource, "exports")) {
-            char *exports_str = r2_cmd("iEj");
-            pj_ks(pj, "text", exports_str ? exports_str : "[]");
-            free(exports_str);
-        } else if (!strcmp(resource, "strings")) {
-            char *strings_str = r2_cmd("izj");
-            pj_ks(pj, "text", strings_str ? strings_str : "[]");
-            free(strings_str);
-        } else {
-            pj_end(pj);
-            pj_end(pj);
-            pj_end(pj);
-            free(pj);
-            
-            PJ *err_pj = pj_new();
-            pj_o(err_pj);
-            pj_ki(err_pj, "code", -32002);
-            pj_ks(err_pj, "message", "Resource not found");
-            pj_k(err_pj, "data");
-            pj_o(err_pj);
-            pj_ks(err_pj, "uri", uri);
-            pj_end(err_pj);
-            pj_end(err_pj);
-            return pj_drain(err_pj);
-        }
-    } else if (!strncmp(uri, "file:///", 8)) {
-        const char *filepath = uri + 7;
-        FILE *file = fopen(filepath, "rb");
-        if (!file) {
-            pj_end(pj);
-            pj_end(pj);
-            pj_end(pj);
-            free(pj);
-            
-            PJ *err_pj = pj_new();
-            pj_o(err_pj);
-            pj_ki(err_pj, "code", -32002);
-            pj_ks(err_pj, "message", "Resource not found");
-            pj_k(err_pj, "data");
-            pj_o(err_pj);
-            pj_ks(err_pj, "uri", uri);
-            pj_end(err_pj);
-            pj_end(err_pj);
-            return pj_drain(err_pj);
-        }
-        
-        fseek(file, 0, SEEK_END);
-        long size = ftell(file);
-        fseek(file, 0, SEEK_SET);
-        
-        char *buffer = malloc(size + 1);
-        if (!buffer) {
-            fclose(file);
-            pj_end(pj);
-            pj_end(pj);
-            pj_end(pj);
-            free(pj);
-            
-            PJ *err_pj = pj_new();
-            pj_o(err_pj);
-            pj_ki(err_pj, "code", -32603);
-            pj_ks(err_pj, "message", "Internal server error");
-            pj_end(err_pj);
-            return pj_drain(err_pj);
-        }
-        
-        size_t read_size = fread(buffer, 1, size, file);
-        fclose(file);
-        buffer[read_size] = '\0';
-        
-        pj_ks(pj, "text", buffer);
-        const char *ext = strrchr(filepath, '.');
-        if (ext) {
-            if (!strcmp(ext, ".rs")) {
-                pj_ks(pj, "mimeType", "text/x-rust");
-            } else if (!strcmp(ext, ".c") || !strcmp(ext, ".h")) {
-                pj_ks(pj, "mimeType", "text/x-c");
-            } else if (!strcmp(ext, ".cpp") || !strcmp(ext, ".hpp")) {
-                pj_ks(pj, "mimeType", "text/x-c++");
-            } else {
-                pj_ks(pj, "mimeType", "text/plain");
+            if (!*result) {
+                free(result);
+                result = strdup("No symbols or functions found. Try running analysis first with the analyze tool.");
             }
-        } else {
-            pj_ks(pj, "mimeType", "text/plain");
         }
         
-        free(buffer);
-    } else {
-        pj_end(pj);
-        pj_end(pj);
-        pj_end(pj);
-        free(pj);
-        
-        PJ *err_pj = pj_new();
-        pj_o(err_pj);
-        pj_ki(err_pj, "code", -32002);
-        pj_ks(err_pj, "message", "Unknown URI scheme");
-        pj_k(err_pj, "data");
-        pj_o(err_pj);
-        pj_ks(err_pj, "uri", uri);
-        pj_end(err_pj);
-        pj_end(err_pj);
-        return pj_drain(err_pj);
+        char *response = create_resource_response(true, "text/plain", result);
+        free(result);
+        return response;
     }
     
-    pj_end(pj);
-    pj_end(pj);
-    pj_end(pj);
-    return pj_drain(pj);
+    // Handle memory resource
+    if (!strncmp(uri, "memory:", 7)) {
+        const char *address_str = uri + 7;
+        if (!*address_str) {
+            return create_error_response(-32602, "Invalid memory URI format, expected memory:ADDRESS.", NULL, uri);
+        }
+        
+        char cmd[128];
+        snprintf(cmd, sizeof(cmd), "x 16 @ %s", address_str);
+        char *hex_dump = r2_cmd(cmd);
+        
+        snprintf(cmd, sizeof(cmd), "ps @ %s", address_str);
+        char *string_dump = r2_cmd(cmd);
+        
+        char *result = format_string("Hex dump:\n%s\n\nString dump:\n%s", hex_dump, string_dump);
+        char *response = create_resource_response(true, "text/plain", result);
+        
+        free(hex_dump);
+        free(string_dump);
+        free(result);
+        return response;
+    }
+    
+    // Handle disassembly resource
+    if (!strncmp(uri, "disassembly:", 12)) {
+        const char *address_str = uri + 12;
+        if (!*address_str) {
+            return create_error_response(-32602, "Invalid disassembly URI format, expected disassembly:ADDRESS.", NULL, uri);
+        }
+        
+        char cmd[128];
+        snprintf(cmd, sizeof(cmd), "pdf @ %s", address_str);
+        char *disasm = r2_cmd(cmd);
+        
+        char *response = create_resource_response(true, "text/plain", disasm);
+        free(disasm);
+        return response;
+    }
+    
+    // Handle info resource
+    if (!strcmp(uri, "info")) {
+        char *result = r2_cmd("i");
+        char *response = create_resource_response(true, "text/plain", result);
+        free(result);
+        return response;
+    }
+    
+    return create_error_response(-32602, format_string("Unknown resource: %s", uri), NULL, uri);
 }
 
 static char *handle_call_tool(RJson *params) {
     const char *tool_name = r_json_get_str(params, "name");
     
     if (!tool_name) {
-        PJ *pj = pj_new();
-        pj_o(pj);
-        pj_ki(pj, "code", -32602);
-        pj_ks(pj, "message", "Missing required parameter: name");
-        pj_end(pj);
-        return pj_drain(pj);
+        return create_error_response(-32602, "Missing required parameter: name", NULL, NULL);
     }
     
     RJson *tool_args = (RJson *)r_json_get(params, "arguments");
     
-    PJ *pj = pj_new();
-    pj_o(pj);
-    pj_k(pj, "content");
-    pj_a(pj);
-    pj_o(pj);
-    pj_ks(pj, "type", "text");
-    
+    // Handle openFile tool
     if (!strcmp(tool_name, "openFile")) {
         const char *filepath = r_json_get_str(tool_args, "filePath");
         if (!filepath) {
-            pj_end(pj);
-            pj_end(pj);
-            pj_end(pj);
-            free(pj);
-            
-            PJ *err_pj = pj_new();
-            pj_o(err_pj);
-            pj_ki(err_pj, "code", -32602);
-            pj_ks(err_pj, "message", "Missing required parameter: filePath");
-            pj_end(err_pj);
-            return pj_drain(err_pj);
+            return create_error_response(-32602, "Missing required parameter: filePath", NULL, NULL);
         }
         
         bool success = r2_open_file(filepath);
-        pj_ks(pj, "text", success ? "File opened successfully." : "Failed to open file.");
-        pj_end(pj);
-        pj_end(pj);
-        if (!success) pj_kb(pj, "isError", true);
-        pj_end(pj);
-        return pj_drain(pj);
+        return create_tool_text_response(success ? "File opened successfully." : "Failed to open file.");
     }
     
+    // Handle closeFile tool
     if (!strcmp(tool_name, "closeFile")) {
         if (!file_opened) {
-            pj_ks(pj, "text", "No file was open.");
-            pj_end(pj);
-            pj_end(pj);
-            pj_end(pj);
-            return pj_drain(pj);
+            return create_tool_text_response("No file was open.");
         }
         
         char filepath_copy[1024];
@@ -787,128 +732,50 @@ static char *handle_call_tool(RJson *params) {
             memset(current_file, 0, sizeof(current_file));
         }
         
-        pj_ks(pj, "text", "File closed successfully.");
-        pj_end(pj);
-        pj_end(pj);
-        pj_end(pj);
-        return pj_drain(pj);
+        return create_tool_text_response("File closed successfully.");
     }
     
+    // For all other tools, ensure a file is open
+    if (!file_opened && (
+        !strcmp(tool_name, "runCommand") || 
+        !strcmp(tool_name, "analyze") || 
+        !strcmp(tool_name, "disassemble")
+    )) {
+        return create_tool_error_response("No file is currently open. Please open a file first.");
+    }
+    
+    // Handle runCommand tool
     if (!strcmp(tool_name, "runCommand")) {
-        if (!file_opened) {
-            pj_end(pj);
-            pj_end(pj);
-            pj_end(pj);
-            free(pj);
-            
-            PJ *err_pj = pj_new();
-            pj_o(err_pj);
-            pj_k(err_pj, "content");
-            pj_a(err_pj);
-            pj_o(err_pj);
-            pj_ks(err_pj, "type", "text");
-            pj_ks(err_pj, "text", "No file is currently open. Please open a file first.");
-            pj_end(err_pj);
-            pj_end(err_pj);
-            pj_kb(err_pj, "isError", true);
-            pj_end(err_pj);
-            return pj_drain(err_pj);
-        }
-        
         const char *command = r_json_get_str(tool_args, "command");
         if (!command) {
-            pj_end(pj);
-            pj_end(pj);
-            pj_end(pj);
-            free(pj);
-            
-            PJ *err_pj = pj_new();
-            pj_o(err_pj);
-            pj_ki(err_pj, "code", -32602);
-            pj_ks(err_pj, "message", "Missing required parameter: command");
-            pj_end(err_pj);
-            return pj_drain(err_pj);
+            return create_error_response(-32602, "Missing required parameter: command", NULL, NULL);
         }
         
         char *result = r2_cmd(command);
-        pj_ks(pj, "text", result);
-        pj_end(pj);
-        pj_end(pj);
-        pj_end(pj);
+        char *response = create_tool_text_response(result);
         free(result);
-        return pj_drain(pj);
+        return response;
     }
     
+    // Handle analyze tool
     if (!strcmp(tool_name, "analyze")) {
-        if (!file_opened) {
-            pj_end(pj);
-            pj_end(pj);
-            pj_end(pj);
-            free(pj);
-            
-            PJ *err_pj = pj_new();
-            pj_o(err_pj);
-            pj_k(err_pj, "content");
-            pj_a(err_pj);
-            pj_o(err_pj);
-            pj_ks(err_pj, "type", "text");
-            pj_ks(err_pj, "text", "No file is currently open. Please open a file first.");
-            pj_end(err_pj);
-            pj_end(err_pj);
-            pj_kb(err_pj, "isError", true);
-            pj_end(err_pj);
-            return pj_drain(err_pj);
-        }
-        
         const char *level = r_json_get_str(tool_args, "level");
         if (!level) level = "aaa";
         
         r2_analyze(level);
         char *result = r2_cmd("afl");
         char *text = format_string("Analysis completed with level %s.\n\n%s", level, result);
-        pj_ks(pj, "text", text);
-        pj_end(pj);
-        pj_end(pj);
-        pj_end(pj);
+        char *response = create_tool_text_response(text);
         free(result);
         free(text);
-        return pj_drain(pj);
+        return response;
     }
     
+    // Handle disassemble tool
     if (!strcmp(tool_name, "disassemble")) {
-        if (!file_opened) {
-            pj_end(pj);
-            pj_end(pj);
-            pj_end(pj);
-            free(pj);
-            
-            PJ *err_pj = pj_new();
-            pj_o(err_pj);
-            pj_k(err_pj, "content");
-            pj_a(err_pj);
-            pj_o(err_pj);
-            pj_ks(err_pj, "type", "text");
-            pj_ks(err_pj, "text", "No file is currently open. Please open a file first.");
-            pj_end(err_pj);
-            pj_end(err_pj);
-            pj_kb(err_pj, "isError", true);
-            pj_end(err_pj);
-            return pj_drain(err_pj);
-        }
-        
         const char *address = r_json_get_str(tool_args, "address");
         if (!address) {
-            pj_end(pj);
-            pj_end(pj);
-            pj_end(pj);
-            free(pj);
-            
-            PJ *err_pj = pj_new();
-            pj_o(err_pj);
-            pj_ki(err_pj, "code", -32602);
-            pj_ks(err_pj, "message", "Missing required parameter: address");
-            pj_end(err_pj);
-            return pj_drain(err_pj);
+            return create_error_response(-32602, "Missing required parameter: address", NULL, NULL);
         }
         
         // Use const_cast pattern
@@ -921,27 +788,12 @@ static char *handle_call_tool(RJson *params) {
         char cmd[128];
         snprintf(cmd, sizeof(cmd), "pd %d @ %s", num_instructions, address);
         char *disasm = r2_cmd(cmd);
-        pj_ks(pj, "text", disasm);
-        pj_end(pj);
-        pj_end(pj);
-        pj_end(pj);
+        char *response = create_tool_text_response(disasm);
         free(disasm);
-        return pj_drain(pj);
+        return response;
     }
     
-    pj_end(pj);
-    pj_end(pj);
-    pj_end(pj);
-    free(pj);
-    
-    PJ *err_pj = pj_new();
-    pj_o(err_pj);
-    pj_ki(err_pj, "code", -32602);
-    pj_ks(err_pj, "message", format_string("Unknown tool: %s", tool_name));
-    pj_end(err_pj);
-    char *err_str = pj_drain(err_pj);
-    free((char *)err_str); // Free the formatted string
-    return err_str;
+    return create_error_response(-32602, format_string("Unknown tool: %s", tool_name), NULL, NULL);
 }
 
 static char *handle_list_resource_templates(RJson *params) {
@@ -993,8 +845,12 @@ static void process_mcp_message(const char *msg) {
         }
         
         char *response = handle_mcp_request(method, params, id);
-        printf("%s\n", response);
+        
+        // Write directly to stdout to ensure no extra output
+        write(STDOUT_FILENO, response, strlen(response));
+        write(STDOUT_FILENO, "\n", 1);
         fflush(stdout);
+        
         free(response);
     } else {
         // We don't handle notifications anymore
