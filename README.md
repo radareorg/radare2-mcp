@@ -1,12 +1,15 @@
 # Radare2 MCP Server
+<img width="400" alt="Screenshot_2025-03-22_at_5 34 47_PM" src="https://github.com/user-attachments/assets/5322c3fc-fc07-4770-96a3-5a6d82d439c2" />
+<img width="400" alt="Screenshot_2025-03-22_at_5 36 17_PM" src="https://github.com/user-attachments/assets/132a1de0-6978-4202-8dce-aa3d60551b9a" />
+
 
 A MCP server for using radare2 with AI assistants like Claude.
+
 
 ## Implementation Details
 
 This implementation provides a simple MCP server that:
 - Uses a direct stdin/stdout communication model
-- Does not support stateful subscriptions 
 - Provides basic resource and tool capabilities
 - Allows binary analysis with radare2
 
