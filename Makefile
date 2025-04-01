@@ -1,8 +1,12 @@
-CC = gcc
+CC?= gcc
 TARGET = r2_mcp
 SRC = r2_mcp.c
 CFLAGS = -Wall -Wextra -g
 PKGCONFIG = pkg-config
+INSTALL_DIR?=install -d
+INSTALL_PROGRAM?=install -m 755
+PREFIX?=/usr/local
+R2PM_BINDIR?=$(shell r2pm -H R2PM_BINDIR)
 
 # Detect OS-specific settings
 UNAME_S := $(shell uname -s)
@@ -19,7 +23,7 @@ R2_LDFLAGS = $(shell $(PKGCONFIG) --libs r_core)
 CFLAGS += $(R2_CFLAGS)
 LDFLAGS = $(R2_LDFLAGS)
 
-.PHONY: all clean check_deps
+.PHONY: all clean check_deps help install uninstall user-install user-uninstall
 
 all: check_deps $(TARGET)
 
@@ -38,15 +42,28 @@ clean:
 	rm -f $(TARGET)
 
 install: all
-	install -d $(DESTDIR)/usr/local/bin
-	install -m 755 $(TARGET) $(DESTDIR)/usr/local/bin
+	$(INSTALL_DIR) $(DESTDIR)/$(PREFIX)/bin
+	$(INSTALL_PROGRAM) $(TARGET) $(DESTDIR)/$(PREFIX)/bin/r2mcp
+
+uninstall:
+	rm -f $(DESTDIR)/$(PREFIX)/bin/r2mcp
+
+user-install: all
+	$(INSTALL_DIR) $(R2PM_BINDIR)
+	$(INSTALL_PROGRAM) $(TARGET) $(R2PM_BINDIR)/r2mcp
+
+user-uninstall:
+	rm -f $(R2_BINDIR)/bin/r2mcp
 
 help:
 	@echo "Available targets:"
-	@echo "  all        - Build the server (default)"
-	@echo "  check_deps - Check for required dependencies"
-	@echo "  clean      - Remove built binaries"
-	@echo "  install    - Install the server to /usr/local/bin"
-	@echo "  help       - Display this help message"
+	@echo "  all            - Build the server (default)"
+	@echo "  check_deps     - Check for required dependencies"
+	@echo "  clean          - Remove built binaries"
+	@echo "  install        - Install the server to /usr/local/bin"
+	@echo "  uninstall      - Install the server to /usr/local/bin"
+	@echo "  user-install   - Install the server to /usr/local/bin"
+	@echo "  user-uninstall - Install the server to /usr/local/bin"
+	@echo "  help           - Display this help message"
 	@echo
-	@echo "Usage: make [target]" 
+	@echo "Usage: make [target]"
