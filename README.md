@@ -10,7 +10,7 @@ A MCP server for using radare2 with AI assistants like Claude.
 
 This implementation provides a simple MCP server that:
 - Uses a direct stdin/stdout communication model
-- Provides basic resource and tool capabilities
+- Provides basic tool capabilities
 - Allows binary analysis with radare2
 
 ## Installation
@@ -41,11 +41,7 @@ make install
 
 ## Usage
 
-Once built, you can run the server directly:
-
-```bash
-./r2_mcp
-```
+Once built, run with your MCP client
 
 ## Configuration
 

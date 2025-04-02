@@ -38,7 +38,6 @@ typedef struct {
 
 typedef struct {
     bool logging;
-    bool resources;
     bool tools;
 } ServerCapabilities;
 
@@ -63,7 +62,6 @@ static ServerState server_state = {
     },
     .capabilities = {
         .logging = true,
-        .resources = true,
         .tools = true
     },
     .instructions = "Use this server to analyze binaries with radare2",
@@ -133,10 +131,7 @@ void read_buffer_free(ReadBuffer *buf) {
 
 static char *get_capabilities();
 static char *handle_initialize(RJson *params);
-static char *handle_list_resources(RJson *params);
-static char *handle_list_resource_templates(RJson *params);
 static char *handle_list_tools(RJson *params);
-static char *handle_get_resource(RJson *params);
 static char *handle_call_tool(RJson *params);
 static char *format_string(const char *format, ...);
 static char *format_string(const char *format, ...) {
@@ -252,7 +247,6 @@ static bool check_client_capability(const char *capability) {
 
 static bool check_server_capability(const char *capability) {
     if (!strcmp(capability, "logging")) return server_state.capabilities.logging;
-    if (!strcmp(capability, "resources")) return server_state.capabilities.resources;
     if (!strcmp(capability, "tools")) return server_state.capabilities.tools;
     return false;
 }
@@ -286,11 +280,6 @@ static bool assert_request_handler_capability(const char *method, char **error) 
     } else if (!strncmp(method, "prompts/", 8)) {
         if (!check_server_capability("prompts")) {
             *error = strdup("Server does not support prompts");
-            return false;
-        }
-    } else if (!strncmp(method, "resources/", 10)) {
-        if (!check_server_capability("resources")) {
-            *error = strdup("Server does not support resources");
             return false;
         }
     } else if (!strncmp(method, "tools/", 6)) {
@@ -370,21 +359,6 @@ static char *create_tool_text_response(const char *text) {
     return pj_drain(pj);
 }
 
-// Helper function to create a successful resource response
-static char *create_resource_response(bool available, const char *media_type, const char *data) {
-    PJ *pj = pj_new();
-    pj_o(pj);
-    pj_kb(pj, "available", available);
-    if (media_type) pj_ks(pj, "mediaType", media_type);
-    if (data) pj_ks(pj, "data", data);
-    pj_end(pj);
-    
-    char *resource_json = pj_drain(pj);
-    char *response = create_success_response(resource_json, NULL);
-    free(resource_json);
-    return response;
-}
-
 static char *handle_mcp_request(const char *method, RJson *params, const char *id) {
     char *error = NULL;
     char *result = NULL;
@@ -400,11 +374,11 @@ static char *handle_mcp_request(const char *method, RJson *params, const char *i
     } else if (!strcmp(method, "ping")) {
         result = strdup("{}");
     } else if (!strcmp(method, "resources/templates/list")) {
-        result = handle_list_resource_templates(params);
+        return create_error_response(-32601, "Method not implemented: templates are not supported", id, NULL);
     } else if (!strcmp(method, "resources/list")) {
-        result = handle_list_resources(params);
+        return create_error_response(-32601, "Method not implemented: resources are not supported", id, NULL);
     } else if (!strcmp(method, "resources/read") || !strcmp(method, "resource/read")) {
-        result = handle_get_resource(params);
+        return create_error_response(-32601, "Method not implemented: resources are not supported", id, NULL);
     } else if (!strcmp(method, "resources/subscribe") || !strcmp(method, "resource/subscribe")) {
         return create_error_response(-32601, "Method not implemented: subscriptions are not supported", id, NULL);
     } else if (!strcmp(method, "tools/list") || !strcmp(method, "tool/list")) {
@@ -450,85 +424,12 @@ static char *get_capabilities() {
     PJ *pj = pj_new();
     pj_o(pj);
     
-    pj_k(pj, "resources");
-    pj_o(pj);
-    pj_kb(pj, "subscribe", true);
-    pj_end(pj);
-    
     pj_k(pj, "tools");
     pj_o(pj);
-    pj_kb(pj, "listChanged", true);
     pj_end(pj);
     
     pj_end(pj);
     return pj_drain(pj);
-}
-
-static char *handle_list_resources(RJson *params) {
-    // Add pagination support
-    const char *cursor = r_json_get_str(params, "cursor");
-    int page_size = 10; // Default page size
-    int start_index = 0;
-    
-    // Parse cursor if provided
-    if (cursor) {
-        start_index = atoi(cursor);
-        if (start_index < 0) start_index = 0;
-    }
-    
-    // Use more straightforward JSON construction for resources list
-    char *result = NULL;
-    size_t result_size = 0;
-    FILE *stream = open_memstream(&result, &result_size);
-    
-    if (!stream) {
-        fprintf(stderr, "Failed to create memory stream\n");
-        return strdup("{\"resources\":[]}");
-    }
-    
-    fprintf(stream, "{\"resources\":[");
-    
-    // Define our resources
-    const char *resources[][4] = {
-        {"r2://currentFile", "Current File Info", "Get information about the currently open file", "application/json"},
-        {"r2://functions", "Functions", "List functions in the binary", "application/json"},
-        {"r2://imports", "Imports", "List imports in the binary", "application/json"},
-        {"r2://exports", "Exports", "List exports in the binary", "application/json"},
-        {"r2://strings", "Strings", "Get strings from the binary", "application/json"},
-        // Add more resources here
-    };
-    
-    int total_resources = sizeof(resources) / sizeof(resources[0]);
-    int end_index = start_index + page_size;
-    if (end_index > total_resources) end_index = total_resources;
-    
-    // Add resources for this page
-    for (int i = start_index; i < end_index; i++) {
-        if (i > start_index) {
-            fprintf(stream, ",");
-        }
-        
-        fprintf(stream, "{\"uri\":\"%s\",\"name\":\"%s\",\"description\":\"%s\",\"mimeType\":\"%s\"}",
-                resources[i][0], resources[i][1], resources[i][2], resources[i][3]);
-    }
-    
-    fprintf(stream, "]");
-    
-    // Add nextCursor if there are more resources
-    if (end_index < total_resources) {
-        char next_cursor[16];
-        snprintf(next_cursor, sizeof(next_cursor), "%d", end_index);
-        fprintf(stream, ",\"nextCursor\":\"%s\"", next_cursor);
-    }
-    
-    fprintf(stream, "}");
-    
-    fclose(stream);
-    
-    // Log the generated JSON for debugging
-    fprintf(stderr, "Generated JSON: %s\n", result);
-    
-    return result;
 }
 
 static char *handle_list_tools(RJson *params) {
@@ -618,85 +519,6 @@ static char *handle_list_tools(RJson *params) {
     return result;
 }
 
-static char *handle_get_resource(RJson *params) {
-    const char *uri = r_json_get_str(params, "uri");
-    if (!uri) {
-        return create_error_response(-32602, "Missing required parameter: uri", NULL, NULL);
-    }
-    
-    if (!file_opened) {
-        return create_error_response(-32602, "No file is currently open. Please open a file first.", NULL, uri);
-    }
-    
-    // Handle file structure resource
-    if (!strcmp(uri, "fileStructure")) {
-        char *result = r2_cmd("is");
-        if (!result || !*result) {
-            free(result);
-            result = r2_cmd("afl");
-            if (!result) {
-                return create_error_response(-32602, "Failed to get file structure.", NULL, uri);
-            }
-            if (!*result) {
-                free(result);
-                result = strdup("No symbols or functions found. Try running analysis first with the analyze tool.");
-            }
-        }
-        
-        char *response = create_resource_response(true, "text/plain", result);
-        free(result);
-        return response;
-    }
-    
-    // Handle memory resource
-    if (!strncmp(uri, "memory:", 7)) {
-        const char *address_str = uri + 7;
-        if (!*address_str) {
-            return create_error_response(-32602, "Invalid memory URI format, expected memory:ADDRESS.", NULL, uri);
-        }
-        
-        char cmd[128];
-        snprintf(cmd, sizeof(cmd), "x 16 @ %s", address_str);
-        char *hex_dump = r2_cmd(cmd);
-        
-        snprintf(cmd, sizeof(cmd), "ps @ %s", address_str);
-        char *string_dump = r2_cmd(cmd);
-        
-        char *result = format_string("Hex dump:\n%s\n\nString dump:\n%s", hex_dump, string_dump);
-        char *response = create_resource_response(true, "text/plain", result);
-        
-        free(hex_dump);
-        free(string_dump);
-        free(result);
-        return response;
-    }
-    
-    // Handle disassembly resource
-    if (!strncmp(uri, "disassembly:", 12)) {
-        const char *address_str = uri + 12;
-        if (!*address_str) {
-            return create_error_response(-32602, "Invalid disassembly URI format, expected disassembly:ADDRESS.", NULL, uri);
-        }
-        
-        char cmd[128];
-        snprintf(cmd, sizeof(cmd), "pdf @ %s", address_str);
-        char *disasm = r2_cmd(cmd);
-        
-        char *response = create_resource_response(true, "text/plain", disasm);
-        free(disasm);
-        return response;
-    }
-    
-    // Handle info resource
-    if (!strcmp(uri, "info")) {
-        char *result = r2_cmd("i");
-        char *response = create_resource_response(true, "text/plain", result);
-        free(result);
-        return response;
-    }
-    
-    return create_error_response(-32602, format_string("Unknown resource: %s", uri), NULL, uri);
-}
 
 static char *handle_call_tool(RJson *params) {
     const char *tool_name = r_json_get_str(params, "name");
@@ -794,26 +616,6 @@ static char *handle_call_tool(RJson *params) {
     }
     
     return create_error_response(-32602, format_string("Unknown tool: %s", tool_name), NULL, NULL);
-}
-
-static char *handle_list_resource_templates(RJson *params) {
-    (void)params;
-    
-    PJ *pj = pj_new();
-    pj_o(pj);
-    pj_k(pj, "resourceTemplates");
-    pj_a(pj);
-    
-    pj_o(pj);
-    pj_ks(pj, "uriTemplate", "file:///{path}");
-    pj_ks(pj, "name", "File Access");
-    pj_ks(pj, "description", "Access file contents");
-    pj_ks(pj, "mimeType", "application/octet-stream");
-    pj_end(pj);
-    
-    pj_end(pj);
-    pj_end(pj);
-    return pj_drain(pj);
 }
 
 // Added back the direct_mode_loop implementation
