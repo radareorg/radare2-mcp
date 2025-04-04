@@ -55,6 +55,10 @@ user-install: all
 user-uninstall:
 	rm -f $(R2_BINDIR)/bin/r2mcp
 
+indent fmt:
+	python indent.py
+# clang-format -i r2mcp.c
+
 help:
 	@echo "Available targets:"
 	@echo "  all            - Build the server (default)"
