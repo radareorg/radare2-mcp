@@ -1,18 +1,20 @@
 /* r2mcp - MIT - Copyright 2025 - dnakov */
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <stdbool.h>
-#include <unistd.h>
-#include <stdarg.h>
 #include <r_core.h>
 #include <r_util/r_json.h>
 #include <r_util/r_print.h>
-#include <signal.h>
-#include <sys/select.h>
-#include <errno.h>
-#include <fcntl.h>
+
+#define R2MCP_DEBUG 1
+#define R2MCP_LOGFILE "/tmp/r2mcp.txt"
+
+static inline void r2mcp_log(const char *x) {
+#if R2MCP_DEBUG
+	r_file_dump (R2MCP_LOGFILE, (const ut8*)(x), -1, true);
+	r_file_dump (R2MCP_LOGFILE, (const ut8*)"\n", -1, true);
+#else
+	// do nothing
+#endif
+}
 
 static const char *r_json_get_str(const RJson *json, const char *key) {
 	if (!json || !key) {
@@ -339,7 +341,10 @@ static char *create_success_response(const char *result, const char *id) {
 		pj_null (pj);
 	}
 	pj_end (pj);
-	return pj_drain (pj);
+	char *s = pj_drain (pj);
+	r2mcp_log (">>>");
+	r2mcp_log (s);
+	return s;
 }
 
 // Helper function to create tool error responses with specific format
@@ -628,6 +633,8 @@ static char *handle_call_tool(RJson *params) {
 
 // Added back the direct_mode_loop implementation
 static void process_mcp_message(const char *msg) {
+	r2mcp_log ("<<<");
+	r2mcp_log (msg);
 	RJson *request = r_json_parse ((char *)msg);
 	if (!request) {
 		R_LOG_ERROR ("Invalid JSON");
