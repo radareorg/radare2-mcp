@@ -51,3 +51,26 @@ To use this with Claude Desktop, update your Claude configuration file:
   }
 }
 ```
+
+## Docker
+
+Alternatively, you can use Docker to run r2mcp.
+
+```bash
+docker build -t r2mcp .
+```
+
+Then, update your Claude Desktop configuration file to use the Docker image:
+
+```json
+{
+  "mcpServers": {
+    "radare2": {
+      "command": "docker",
+      "args": ["run", "--rm", "-i", "-v", "/tmp/data:/data", "r2mcp"]
+    }
+  }
+}
+```
+
+
