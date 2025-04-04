@@ -1,6 +1,6 @@
 CC?= gcc
-TARGET = r2_mcp
-SRC = r2_mcp.c
+TARGET = r2mcp
+SRC = r2mcp.c
 CFLAGS = -Wall -Wextra -g
 PKGCONFIG = pkg-config
 INSTALL_DIR?=install -d
