@@ -4,13 +4,13 @@
 #include <r_util/r_json.h>
 #include <r_util/r_print.h>
 
-#define R2MCP_DEBUG 1
+#define R2MCP_DEBUG   1
 #define R2MCP_LOGFILE "/tmp/r2mcp.txt"
 
 static inline void r2mcp_log(const char *x) {
 #if R2MCP_DEBUG
-	r_file_dump (R2MCP_LOGFILE, (const ut8*)(x), -1, true);
-	r_file_dump (R2MCP_LOGFILE, (const ut8*)"\n", -1, true);
+	r_file_dump (R2MCP_LOGFILE, (const ut8 *)(x), -1, true);
+	r_file_dump (R2MCP_LOGFILE, (const ut8 *)"\n", -1, true);
 #else
 	// do nothing
 #endif

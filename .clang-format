@@ -1,4 +1,8 @@
+BasedOnStyle: LLVM
 Language: Cpp
+PointerAlignment: Right
+AlwaysBreakAfterDefinitionReturnType: None
+BinPackParameters: true
 MaxEmptyLinesToKeep: 1
 SpaceInEmptyParentheses: false
 SpacesInContainerLiterals: true
@@ -10,7 +14,6 @@ SpaceBeforeParensOptions:
   AfterForeachMacros: true
   AfterControlStatements: true
   BeforeNonEmptyParentheses: false
-BasedOnStyle: LLVM
 SpacesInParentheses: false
 InsertBraces: true
 ContinuationIndentWidth: 8
