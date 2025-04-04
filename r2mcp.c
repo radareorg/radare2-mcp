@@ -52,6 +52,7 @@ typedef struct {
 	RJson *client_info;
 } ServerState;
 
+// TODO: remove globals
 static RCore *r_core = NULL;
 static bool file_opened = false;
 static char current_file[1024] = { 0 };
@@ -94,7 +95,7 @@ static void read_buffer_append(ReadBuffer *buf, const char *data, size_t len) {
 		size_t new_capacity = buf->capacity * 2;
 		char *new_data = realloc (buf->data, new_capacity);
 		if (!new_data) {
-			fprintf (stderr, "Failed to resize buffer\n");
+			R_LOG_ERROR ("Failed to resize buffer");
 			return;
 		}
 		buf->data = new_data;
@@ -148,13 +149,13 @@ static char *format_string(const char *format, ...) {
 static bool init_r2(void) {
 	r_core = r_core_new ();
 	if (!r_core) {
-		fprintf (stderr, "Failed to initialize radare2 core\n");
+		R_LOG_ERROR ("Failed to initialize radare2 core");
 		return false;
 	}
 
 	r_config_set_i (r_core->config, "scr.color", 0);
 
-	fprintf (stderr, "Radare2 core initialized\n");
+	R_LOG_INFO ("Radare2 core initialized");
 	return true;
 }
 
@@ -168,15 +169,15 @@ static void cleanup_r2() {
 }
 
 static bool r2_open_file(const char *filepath) {
-	fprintf (stderr, "Attempting to open file: %s\n", filepath);
+	R_LOG_INFO ("Attempting to open file: %s\n", filepath);
 
 	if (!r_core && !init_r2 ()) {
-		fprintf (stderr, "Failed to initialize r2 core\n");
+		R_LOG_ERROR ("Failed to initialize r2 core\n");
 		return false;
 	}
 
 	if (file_opened) {
-		fprintf (stderr, "Closing previously opened file: %s\n", current_file);
+		R_LOG_INFO ("Closing previously opened file: %s", current_file);
 		r_core_cmd0 (r_core, "o-*");
 		file_opened = false;
 		memset (current_file, 0, sizeof (current_file));
@@ -185,33 +186,32 @@ static bool r2_open_file(const char *filepath) {
 	r_core_cmd0 (r_core, "e bin.relocs.apply=true");
 	r_core_cmd0 (r_core, "e bin.cache=true");
 
-	char cmd[1024];
-	snprintf (cmd, sizeof (cmd), "o %s", filepath);
-	fprintf (stderr, "Running r2 command: %s\n", cmd);
-
+	char *cmd = r_str_newf ("o %s", filepath);
+	R_LOG_INFO ("Running r2 command: %s", cmd);
 	char *result = r_core_cmd_str (r_core, cmd);
+	free (cmd);
 	bool success = (result && strlen (result) > 0);
 	free (result);
 
 	if (!success) {
-		fprintf (stderr, "Trying alternative method to open file...\n");
+		R_LOG_INFO ("Trying alternative method to open file");
 		RIODesc *fd = r_core_file_open (r_core, filepath, R_PERM_R, 0);
 		if (fd) {
 			r_core_bin_load (r_core, filepath, 0);
-			fprintf (stderr, "File opened using r_core_file_open\n");
+			R_LOG_INFO ("File opened using r_core_file_open");
 			success = true;
 		} else {
-			fprintf (stderr, "Failed to open file: %s\n", filepath);
+			R_LOG_ERROR ("Failed to open file: %s", filepath);
 			return false;
 		}
 	}
 
-	fprintf (stderr, "Loading binary information\n");
+	R_LOG_INFO ("Loading binary information");
 	r_core_cmd0 (r_core, "ob");
 
 	strncpy (current_file, filepath, sizeof (current_file) - 1);
 	file_opened = true;
-	fprintf (stderr, "File opened successfully: %s\n", filepath);
+	R_LOG_INFO ("File opened successfully: %s", filepath);
 
 	return true;
 }
@@ -470,7 +470,7 @@ static char *handle_list_tools(RJson *params) {
 	FILE *stream = open_memstream (&result, &result_size);
 
 	if (!stream) {
-		fprintf (stderr, "Failed to create memory stream\n");
+		R_LOG_ERROR ("Failed to create memory stream");
 		return strdup ("{\"tools\":[]}");
 	}
 
@@ -507,7 +507,6 @@ static char *handle_list_tools(RJson *params) {
 		if (i > start_index) {
 			fprintf (stream, ",");
 		}
-
 		fprintf (stream, "{\"name\":\"%s\",\"description\":\"%s\",\"inputSchema\":%s}",
 			tools[i][0], tools[i][1], tools[i][2]);
 	}
@@ -526,7 +525,7 @@ static char *handle_list_tools(RJson *params) {
 	fclose (stream);
 
 	// Log the generated JSON for debugging
-	fprintf (stderr, "Generated JSON: %s\n", result);
+	R_LOG_INFO ("Generated JSON: %s", result);
 
 	return result;
 }
@@ -631,7 +630,7 @@ static char *handle_call_tool(RJson *params) {
 static void process_mcp_message(const char *msg) {
 	RJson *request = r_json_parse ((char *)msg);
 	if (!request) {
-		fprintf (stderr, "Invalid JSON\n");
+		R_LOG_ERROR ("Invalid JSON");
 		return;
 	}
 
@@ -640,7 +639,7 @@ static void process_mcp_message(const char *msg) {
 	RJson *id_json = (RJson *)r_json_get (request, "id");
 
 	if (!method) {
-		fprintf (stderr, "Invalid JSON-RPC message: missing method\n");
+		R_LOG_ERROR ("Invalid JSON-RPC message: missing method");
 		r_json_free (request);
 		return;
 	}
@@ -665,14 +664,14 @@ static void process_mcp_message(const char *msg) {
 		free (response);
 	} else {
 		// We don't handle notifications anymore
-		fprintf (stderr, "Ignoring notification: %s\n", method);
+		R_LOG_INFO ("Ignoring notification: %s", method);
 	}
 
 	r_json_free (request);
 }
 
 static void direct_mode_loop(void) {
-	fprintf (stderr, "Running in MCP direct mode (stdin/stdout)\n");
+	R_LOG_INFO ("Running in MCP direct mode (stdin/stdout)");
 
 	ReadBuffer *buffer = read_buffer_new ();
 	char chunk[READ_CHUNK_SIZE];
@@ -694,7 +693,7 @@ static void direct_mode_loop(void) {
 
 		if (ret < 0) {
 			if (errno != EINTR) {
-				fprintf (stderr, "Select error: %s\n", strerror (errno));
+				R_LOG_ERROR ("Select: %s", strerror (errno));
 				break;
 			}
 			continue;
@@ -702,7 +701,7 @@ static void direct_mode_loop(void) {
 
 		if (ret == 0) {
 			if (write (STDOUT_FILENO, "", 0) < 0) {
-				fprintf (stderr, "Client disconnected (stdout closed)\n");
+				R_LOG_WARN ("Client disconnected (stdout closed)");
 				break;
 			}
 			continue;
@@ -719,11 +718,11 @@ static void direct_mode_loop(void) {
 					free (msg);
 				}
 			} else if (bytes_read == 0) {
-				fprintf (stderr, "End of input stream\n");
+				R_LOG_INFO ("End of input stream");
 				break;
 			} else {
 				if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) {
-					fprintf (stderr, "Error reading from stdin: %s\n", strerror (errno));
+					R_LOG_ERROR ("Reading from stdin: %s", strerror (errno));
 					break;
 				}
 			}
@@ -731,7 +730,7 @@ static void direct_mode_loop(void) {
 	}
 
 	read_buffer_free (buffer);
-	fprintf (stderr, "Direct mode loop terminated\n");
+	R_LOG_INFO ("Direct mode loop terminated");
 }
 
 int main(int argc, char **argv) {
@@ -751,7 +750,7 @@ int main(int argc, char **argv) {
 	signal (SIGPIPE, SIG_IGN);
 
 	if (!init_r2 ()) {
-		fprintf (stderr, "Failed to initialize radare2\n");
+		R_LOG_ERROR ("Failed to initialize radare2");
 		return 1;
 	}
 
@@ -759,7 +758,7 @@ int main(int argc, char **argv) {
 		is_direct_mode = true;
 		direct_mode_loop ();
 		cleanup_r2 ();
-		fprintf (stderr, "MCP direct mode terminated gracefully\n");
+		R_LOG_INFO ("MCP direct mode terminated gracefully");
 		return 0;
 	}
 
