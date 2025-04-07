@@ -483,12 +483,18 @@ static char *handle_list_tools(RJson *params) {
 
 	// Define our tools with their descriptions and schemas
 	// Format: {name, description, schema_definition}
-	const char *tools[][3] = {
+	const char *tools[][5] = {
 		{ "openFile",
 			"Open a file for analysis",
 			"{\"type\":\"object\",\"properties\":{\"filePath\":{\"type\":\"string\",\"description\":\"Path to the file to open\"}},\"required\":[\"filePath\"]}" },
 		{ "closeFile",
 			"Close the currently open file",
+			"{\"type\":\"object\",\"properties\":{}}" },
+		{ "listFunctions",
+			"Enumerate all the functions found, listing the address and its name",
+			"{\"type\":\"object\",\"properties\":{}}" },
+		{ "listClasses",
+			"Enumerate all the class names",
 			"{\"type\":\"object\",\"properties\":{}}" },
 		{ "runCommand",
 			"Run a radare2 command and get the output",
@@ -553,6 +559,28 @@ static char *handle_call_tool(RJson *params) {
 
 		bool success = r2_open_file (filepath);
 		return create_tool_text_response (success ? "File opened successfully." : "Failed to open file.");
+	}
+
+	// Handle listClasses tool
+	if (!strcmp (tool_name, "listClasses")) {
+		if (!file_opened) {
+			return create_tool_text_response ("No file was open.");
+		}
+		char *res = r_core_cmd_str (r_core, "aflqq");
+		char *o = create_tool_text_response (res);
+		free (res);
+		return o;
+	}
+
+	// Handle listFunctions tool
+	if (!strcmp (tool_name, "listFunctions")) {
+		if (!file_opened) {
+			return create_tool_text_response ("No file was open.");
+		}
+		char *res = r_core_cmd_str (r_core, "afl,addr/cols/name");
+		char *o = create_tool_text_response (res);
+		free (res);
+		return o;
 	}
 
 	// Handle closeFile tool
