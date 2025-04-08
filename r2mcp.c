@@ -529,6 +529,9 @@ static char *handle_list_tools(RJson *params) {
 		{ "listDecompilers",
 			"List all the decompilers available for radare2",
 			"{\"type\":\"object\",\"properties\":{}}" },
+		{ "useDecompiler",
+			"Use given decompiler",
+			"{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"Name of the decompiler\"},\"required\":[\"name\"]}" },
 		{ "listStrings",
 			"List strings matching the given regexp",
 			"{\"type\":\"object\",\"properties\":{\"regexpFilter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"}}}" },
@@ -753,6 +756,38 @@ static char *handle_call_tool(RJson *params) {
 		char *response = create_tool_text_response (disasm);
 		free (disasm);
 		return response;
+	}
+
+	// Handle useDecompiler tool
+	if (!strcmp (tool_name, "useDecompiler")) {
+		const char *deco = r_json_get_str (tool_args, "useDecompiler");
+		if (!deco) {
+			return create_error_response (-32602, "Missing required parameter: address", NULL, NULL);
+		}
+		char *decompilersAvailable = r_core_cmd_str (r_core, "e cmd.pdc=?");
+		const char *response = "ok";
+		if (strstr (deco, "ghidra")) {
+			if (strstr (decompilersAvailable, "pdg")) {
+				r_core_cmd0 (r_core, "-e cmd.pdc=pdg");
+			} else {
+				response = "This decompiler is not available";
+			}
+		} else if (strstr (deco, "decai")) {
+			if (strstr (decompilersAvailable, "decai")) {
+				r_core_cmd0 (r_core, "-e cmd.pdc=decai -d");
+			} else {
+				response = "This decompiler is not available";
+			}
+		} else if (strstr (deco, "r2dec")) {
+			if (strstr (decompilersAvailable, "pdd")) {
+				r_core_cmd0 (r_core, "-e cmd.pdc=pdd");
+			} else {
+				response = "This decompiler is not available";
+			}
+		} else {
+			response = "Unknown decompiler";
+		}
+		return create_tool_text_response (response);
 	}
 
 	// Handle disassembleFunction tool
