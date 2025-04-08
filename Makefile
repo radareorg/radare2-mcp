@@ -52,6 +52,9 @@ user-install: all
 	$(INSTALL_DIR) $(R2PM_BINDIR)
 	$(INSTALL_PROGRAM) $(TARGET) $(R2PM_BINDIR)/r2mcp
 
+doc:
+	cat INSTALL.md
+
 user-uninstall:
 	rm -f $(R2_BINDIR)/bin/r2mcp
 
