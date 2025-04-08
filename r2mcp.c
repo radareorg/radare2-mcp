@@ -1,4 +1,4 @@
-/* r2mcp - MIT - Copyright 2025 - dnakov */
+/* r2mcp - MIT - Copyright 2025 - pancake, dnakov */
 
 #include <r_core.h>
 #include <r_util/r_json.h>
@@ -538,6 +538,12 @@ static char *handle_list_tools(RJson *params) {
 		{ "analyze",
 			"Run analysis on the current file",
 			"{\"type\":\"object\",\"properties\":{\"level\":{\"type\":\"number\",\"description\":\"Analysis level (0, 1, 2, 3)\"}},\"required\":[]}" },
+		{ "decompileFunction",
+			"Decompile function at given address",
+			"{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the function to decompile\"},\"required\":[\"address\"]}" },
+		{ "disassembleFunction",
+			"Disassemble function at given address",
+			"{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the function to disassemble\"},\"required\":[\"address\"]}" },
 		{ "disassemble",
 			"Disassemble instructions at a given address",
 			"{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address to start disassembly\"},\"numInstructions\":{\"type\":\"integer\",\"description\":\"Number of instructions to disassemble\"}},\"required\":[\"address\"]}" }
@@ -745,6 +751,34 @@ static char *handle_call_tool(RJson *params) {
 		snprintf (cmd, sizeof (cmd), "pd %d @ %s", num_instructions, address);
 		char *disasm = r2_cmd (cmd);
 		char *response = create_tool_text_response (disasm);
+		free (disasm);
+		return response;
+	}
+
+	// Handle disassembleFunction tool
+	if (!strcmp (tool_name, "disassembleFunction")) {
+		const char *address = r_json_get_str (tool_args, "address");
+		if (!address) {
+			return create_error_response (-32602, "Missing required parameter: address", NULL, NULL);
+		}
+		char *cmd = r_str_newf ("'@%s'pdf", address);
+		char *disasm = r2_cmd (cmd);
+		char *response = create_tool_text_response (disasm);
+		free (cmd);
+		free (disasm);
+		return response;
+	}
+
+	// Handle decompileFunction tool
+	if (!strcmp (tool_name, "decompileFunction")) {
+		const char *address = r_json_get_str (tool_args, "address");
+		if (!address) {
+			return create_error_response (-32602, "Missing required parameter: address", NULL, NULL);
+		}
+		char *cmd = r_str_newf ("'@%s'pdc", address);
+		char *disasm = r2_cmd (cmd);
+		char *response = create_tool_text_response (disasm);
+		free (cmd);
 		free (disasm);
 		return response;
 	}
