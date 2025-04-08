@@ -568,6 +568,9 @@ static char *handle_list_tools(RJson *params) {
 		{ "listDecompilers",
 			"List all the decompilers available for radare2",
 			"{\"type\":\"object\",\"properties\":{}}" },
+		{ "renameFunction",
+			"Rename function at given address",
+			"{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"Name of the decompiler\"},\"address\":{\"type\":\"string\",\"description\":\"address of the function to rename\"}},\"required\":[\"name\",\"address\"]}" },
 		{ "useDecompiler",
 			"Use given decompiler",
 			"{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"Name of the decompiler\"},\"required\":[\"name\"]}" },
@@ -875,6 +878,21 @@ static char *handle_call_tool(RJson *params) {
 		free (cmd);
 		free (disasm);
 		return response;
+	}
+
+	// Handle renameFunction tool
+	if (!strcmp (tool_name, "renameFunction")) {
+		const char *address = r_json_get_str (tool_args, "address");
+		if (!address) {
+			return create_error_response (-32602, "Missing required parameter: address", NULL, NULL);
+		}
+		const char *name = r_json_get_str (tool_args, "name");
+		if (!name) {
+			return create_error_response (-32602, "Missing required parameter: name", NULL, NULL);
+		}
+		char *cmd = r_str_newf ("'@%s'afn %s", address, name);
+		r_core_cmd0 (r_core, cmd);
+		return create_tool_text_response ("ok");
 	}
 
 	// Handle decompileFunction tool
