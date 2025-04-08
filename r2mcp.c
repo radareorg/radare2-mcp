@@ -562,6 +562,9 @@ static char *handle_list_tools(RJson *params) {
 		{ "listSymbols",
 			"Enumerate all the symbols exported from the binary",
 			"{\"type\":\"object\",\"properties\":{}}" },
+		{ "listEntrypoints",
+			"Enumerate entrypoints",
+			"{\"type\":\"object\",\"properties\":{}}" },
 		{ "listClasses",
 			"Enumerate all the class names from C++, ObjC, Swift, Java, Dalvik",
 			"{\"type\":\"object\",\"properties\":{\"regexpFilter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"}}}" },
@@ -718,6 +721,17 @@ static char *handle_call_tool(RJson *params) {
 		}
 		char *res = r_core_cmd_str (r_core, "isq~!func.,!imp.");
 		// TODO: remove imports and func
+		char *o = create_tool_text_response (res);
+		free (res);
+		return o;
+	}
+
+	// Handle listEntrypoints tool
+	if (!strcmp (tool_name, "listEntrypoints")) {
+		if (!file_opened) {
+			return create_tool_text_response ("No file was open.");
+		}
+		char *res = r_core_cmd_str (r_core, "ies");
 		char *o = create_tool_text_response (res);
 		free (res);
 		return o;
