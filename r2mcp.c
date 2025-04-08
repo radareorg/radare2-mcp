@@ -508,7 +508,10 @@ static char *handle_list_tools(RJson *params) {
 			"Enumerate all the functions found, listing the address and its name",
 			"{\"type\":\"object\",\"properties\":{}}" },
 		{ "listClasses",
-			"Enumerate all the class names",
+			"Enumerate all the class names from C++, ObjC, Swift, Java, Dalvik",
+			"{\"type\":\"object\",\"properties\":{\"regexpFilter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"}}}" },
+		{ "listDecompilers",
+			"List all the decompilers available for radare2",
 			"{\"type\":\"object\",\"properties\":{}}" },
 		{ "listStrings",
 			"List strings matching the given regexp",
@@ -583,7 +586,29 @@ static char *handle_call_tool(RJson *params) {
 		if (!file_opened) {
 			return create_tool_text_response ("No file was open.");
 		}
-		char *res = r_core_cmd_str (r_core, "aflqq");
+		const char *filter = r_json_get_str (tool_args, "filter");
+		char *res = r_core_cmd_str (r_core, "icqq");
+		if (R_STR_ISNOTEMPTY (filter)) {
+			RStrBuf *sb = r_strbuf_new ("");
+			RList *strings = r_str_split_list (res, "\n", 0);
+			RListIter *iter;
+			const char *str;
+			RRegex rx;
+			int re_flags = r_regex_flags ("e");
+			bool ok = r_regex_init (&rx, filter, re_flags);
+			if (ok) {
+				r_list_foreach (strings, iter, str) {
+					if (r_regex_exec (&rx, str, 0, 0, 0) == 0) {
+						r_strbuf_appendf (sb, "%s\n", str);
+					}
+				}
+				r_regex_fini (&rx);
+			} else {
+				R_LOG_ERROR ("Invalid regex: %s", filter);
+			}
+			free (res);
+			res = r_strbuf_drain (sb);
+		}
 		char *o = create_tool_text_response (res);
 		free (res);
 		return o;
@@ -637,7 +662,7 @@ static char *handle_call_tool(RJson *params) {
 
 	// Handle listStrings tool
 	if (!strcmp (tool_name, "listStrings")) {
-		const char *filter= r_json_get_str (tool_args, "filter");
+		const char *filter = r_json_get_str (tool_args, "filter");
 
 		char *result = r2_cmd ("izqq");
 		if (R_STR_ISNOTEMPTY (filter)) {
