@@ -408,6 +408,7 @@ static char *create_success_response(const char *result, const char *id) {
 	return s;
 }
 
+#if 0
 // Helper function to create tool error responses with specific format
 static char *create_tool_error_response(const char *error_message) {
 	PJ *pj = pj_new ();
@@ -423,6 +424,7 @@ static char *create_tool_error_response(const char *error_message) {
 	pj_end (pj);
 	return pj_drain (pj);
 }
+#endif
 
 // Helper function to create a simple text tool result
 static char *create_tool_text_response(const char *text) {
@@ -544,7 +546,7 @@ static char *handle_list_tools(RJson *params) {
 
 	// Define our tools with their descriptions and schemas
 	// Format: {name, description, schema_definition}
-	const char *tools[17][3] = {
+	const char *tools[18][3] = {
 		{ "openFile",
 			"Open a file for analysis",
 			"{\"type\":\"object\",\"properties\":{\"filePath\":{\"type\":\"string\",\"description\":\"Path to the file to open\"}},\"required\":[\"filePath\"]}" },
@@ -566,6 +568,9 @@ static char *handle_list_tools(RJson *params) {
 		{ "listEntrypoints",
 			"Enumerate entrypoints",
 			"{\"type\":\"object\",\"properties\":{}}" },
+		{ "listMethods",
+			"Enumerate methods for the given class",
+			"{\"type\":\"object\",\"properties\":{\"classname\":{\"type\":\"string\",\"description\":\"Name of the class to list its methods\"}},\"required\":[\"classname\"]}" },
 		{ "listClasses",
 			"Enumerate all the class names from C++, ObjC, Swift, Java, Dalvik",
 			"{\"type\":\"object\",\"properties\":{\"regexpFilter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"}}}" },
@@ -653,6 +658,23 @@ static char *handle_call_tool(RJson *params) {
 
 		bool success = r2_open_file (filepath);
 		return create_tool_text_response (success ? "File opened successfully." : "Failed to open file.");
+	}
+
+	// Handle listMethods tool
+	if (!strcmp (tool_name, "listMethods")) {
+		if (!file_opened) {
+			return create_tool_text_response ("No file was open.");
+		}
+		const char *classname = r_json_get_str (tool_args, "classname");
+		if (!classname) {
+			return create_tool_text_response ("Missing classname parameter");
+		}
+		char *cmd = r_str_newf ("'ic %s", classname);
+		char *res = r2_cmd (cmd);
+		free (cmd);
+		char *o = create_tool_text_response (res);
+		free (res);
+		return o;
 	}
 
 	// Handle listClasses tool
