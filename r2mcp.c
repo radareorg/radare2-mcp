@@ -202,7 +202,7 @@ static bool r2_open_file(const char *filepath) {
 
 	char *cmd = r_str_newf ("o %s", filepath);
 	R_LOG_INFO ("Running r2 command: %s", cmd);
-	char *result = r_core_cmd_str (r_core, cmd);
+	char *result = r2_cmd (cmd);
 	free (cmd);
 	bool success = (result && strlen (result) > 0);
 	free (result);
@@ -587,7 +587,7 @@ static char *handle_call_tool(RJson *params) {
 			return create_tool_text_response ("No file was open.");
 		}
 		const char *filter = r_json_get_str (tool_args, "filter");
-		char *res = r_core_cmd_str (r_core, "icqq");
+		char *res = r2_cmd ("icqq");
 		if (R_STR_ISNOTEMPTY (filter)) {
 			RStrBuf *sb = r_strbuf_new ("");
 			RList *strings = r_str_split_list (res, "\n", 0);
@@ -616,7 +616,7 @@ static char *handle_call_tool(RJson *params) {
 
 	// Handle listDecompilers tool
 	if (!strcmp (tool_name, "listDecompilers")) {
-		char *res = r_core_cmd_str (r_core, "e cmd.pdc=?");
+		char *res = r2_cmd ("e cmd.pdc=?");
 		char *o = create_tool_text_response (res);
 		free (res);
 		return o;
@@ -627,7 +627,7 @@ static char *handle_call_tool(RJson *params) {
 		if (!file_opened) {
 			return create_tool_text_response ("No file was open.");
 		}
-		char *res = r_core_cmd_str (r_core, "afl,addr/cols/name");
+		char *res = r2_cmd ("afl,addr/cols/name");
 		char *o = create_tool_text_response (res);
 		free (res);
 		return o;
