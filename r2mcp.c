@@ -586,6 +586,9 @@ static char *handle_list_tools(RJson *params) {
 		{ "analyze",
 			"Run analysis on the current file",
 			"{\"type\":\"object\",\"properties\":{\"level\":{\"type\":\"number\",\"description\":\"Analysis level (0, 1, 2, 3)\"}},\"required\":[]}" },
+		{ "xrefsTo",
+			"List all the references to the given address",
+			"{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the address to check for crossed references\"},\"required\":[\"address\"]}" },
 		{ "decompileFunction",
 			"Decompile function at given address",
 			"{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the function to decompile\"},\"required\":[\"address\"]}" },
@@ -878,6 +881,20 @@ static char *handle_call_tool(RJson *params) {
 			response = "Unknown decompiler";
 		}
 		return create_tool_text_response (response);
+	}
+
+	// Handle xrefsTo tool
+	if (!strcmp (tool_name, "xrefsTo")) {
+		const char *address = r_json_get_str (tool_args, "address");
+		if (!address) {
+			return create_error_response (-32602, "Missing required parameter: address", NULL, NULL);
+		}
+		char *cmd = r_str_newf ("'@%s'axt", address);
+		char *disasm = r2_cmd (cmd);
+		char *response = create_tool_text_response (disasm);
+		free (cmd);
+		free (disasm);
+		return response;
 	}
 
 	// Handle disassembleFunction tool
