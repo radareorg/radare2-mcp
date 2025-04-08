@@ -149,6 +149,17 @@ static char *format_string(const char *format, ...) {
 	return strdup (buffer);
 }
 
+static void r2_settings(RCore *core) {
+	r_config_set_i (core->config, "scr.color", 0);
+	r_config_set_b (core->config, "scr.utf8", "false");
+	r_config_set_b (core->config, "scr.interactive", "false");
+	r_config_set_b (core->config, "emu.str", "true");
+	r_config_set_b (core->config, "asm.bytes", "false");
+	r_config_set_b (core->config, "asm.lines.fcn", "false");
+	r_config_set_b (core->config, "asm.cmt.right", "false");
+	r_config_set_b (core->config, "scr.html", "false");
+}
+
 static bool init_r2(void) {
 	r_core = r_core_new ();
 	if (!r_core) {
@@ -156,13 +167,13 @@ static bool init_r2(void) {
 		return false;
 	}
 
-	r_config_set_i (r_core->config, "scr.color", 0);
+	r2_settings (r_core);
 
 	R_LOG_INFO ("Radare2 core initialized");
 	return true;
 }
 
-static void cleanup_r2() {
+static void cleanup_r2(void) {
 	if (r_core) {
 		r_core_free (r_core);
 		r_core = NULL;
@@ -223,7 +234,9 @@ static char *r2_cmd(const char *cmd) {
 	if (!r_core || !file_opened) {
 		return strdup ("Error: No file is open");
 	}
-	return r_core_cmd_str (r_core, cmd);
+	char *res = r_core_cmd_str (r_core, cmd);
+	r2_settings (r_core);
+	return res;
 }
 
 static bool r2_analyze(const char *level) {
