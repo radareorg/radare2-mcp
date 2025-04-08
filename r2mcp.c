@@ -544,7 +544,7 @@ static char *handle_list_tools(RJson *params) {
 
 	// Define our tools with their descriptions and schemas
 	// Format: {name, description, schema_definition}
-	const char *tools[18][3] = {
+	const char *tools[17][3] = {
 		{ "openFile",
 			"Open a file for analysis",
 			"{\"type\":\"object\",\"properties\":{\"filePath\":{\"type\":\"string\",\"description\":\"Path to the file to open\"}},\"required\":[\"filePath\"]}" },
@@ -581,9 +581,11 @@ static char *handle_list_tools(RJson *params) {
 		{ "listStrings",
 			"List strings matching the given regexp",
 			"{\"type\":\"object\",\"properties\":{\"regexpFilter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"}}}" },
+#if 0
 		{ "runCommand",
 			"Run a radare2 command and get the output",
 			"{\"type\":\"object\",\"properties\":{\"command\":{\"type\":\"string\",\"description\":\"Command to execute\"}},\"required\":[\"command\"]}" },
+#endif
 		{ "analyze",
 			"Run analysis on the current file",
 			"{\"type\":\"object\",\"properties\":{\"level\":{\"type\":\"number\",\"description\":\"Analysis level (0, 1, 2, 3)\"}},\"required\":[]}" },
@@ -767,13 +769,12 @@ static char *handle_call_tool(RJson *params) {
 		return create_tool_text_response ("File closed successfully.");
 	}
 
-	// For all other tools, ensure a file is open
-	if (!file_opened && (!strcmp (tool_name, "runCommand") || !strcmp (tool_name, "analyze") || !strcmp (tool_name, "disassemble"))) {
-		return create_tool_error_response ("No file is currently open. Please open a file first.");
-	}
-
+#if 0
 	// Handle runCommand tool
 	if (!strcmp (tool_name, "runCommand")) {
+		if (!r_core || !file_opened) {
+			return strdup ("Error: No file is open");
+		}
 		const char *command = r_json_get_str (tool_args, "command");
 		if (!command) {
 			return create_error_response (-32602, "Missing required parameter: command", NULL, NULL);
@@ -784,6 +785,7 @@ static char *handle_call_tool(RJson *params) {
 		free (result);
 		return response;
 	}
+#endif
 
 	// Handle listStrings tool
 	if (!strcmp (tool_name, "listStrings")) {
