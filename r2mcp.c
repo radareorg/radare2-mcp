@@ -109,11 +109,36 @@ static void r2_settings(RCore *core) {
 	r_config_set_b (core->config, "scr.html", "false");
 }
 
+static char *r2_cmd_filter(const char *cmd, bool *changed) {
+	char *res = strdup (cmd);
+	char fchars[] = "|>`";
+	*changed = false;
+	char *ch = strstr (cmd, "$(");
+	if (ch) {
+		*changed = true;
+		*ch = 0;
+	}
+	for (ch = fchars; *ch; ch++) {
+		char *p = strchr (res, *ch);
+		if (p) {
+			*changed = true;
+			*p = 0;
+		}
+	}
+	return res;
+}
+
 static char *r2_cmd(const char *cmd) {
 	if (!r_core || !file_opened) {
 		return strdup ("Error: No file is open");
 	}
-	char *res = r_core_cmd_str (r_core, cmd);
+	bool changed = false;
+	char *filteredCommand = r2_cmd_filter (cmd, &changed);
+	if (changed) {
+		r2mcp_log ("command injection prevented");
+	}
+	char *res = r_core_cmd_str (r_core, filteredCommand);
+	free (filteredCommand);
 	r2_settings (r_core);
 	return res;
 }
