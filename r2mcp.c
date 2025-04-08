@@ -614,6 +614,14 @@ static char *handle_call_tool(RJson *params) {
 		return o;
 	}
 
+	// Handle listDecompilers tool
+	if (!strcmp (tool_name, "listDecompilers")) {
+		char *res = r_core_cmd_str (r_core, "e cmd.pdc=?");
+		char *o = create_tool_text_response (res);
+		free (res);
+		return o;
+	}
+
 	// Handle listFunctions tool
 	if (!strcmp (tool_name, "listFunctions")) {
 		if (!file_opened) {
