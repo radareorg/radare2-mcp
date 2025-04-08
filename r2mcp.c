@@ -63,7 +63,8 @@ static bool is_direct_mode = false;
 static ServerState server_state = {
 	.info = {
 		.name = "Radare2 MCP Connector",
-		.version = "1.0.0" },
+		.version = "1.0.0"
+	},
 	.capabilities = { .logging = true, .tools = true },
 	.instructions = "Use this server to analyze binaries with radare2",
 	.initialized = false,
@@ -496,6 +497,9 @@ static char *handle_list_tools(RJson *params) {
 		{ "listClasses",
 			"Enumerate all the class names",
 			"{\"type\":\"object\",\"properties\":{}}" },
+		{ "listStrings",
+			"List strings matching the given regexp",
+			"{\"type\":\"object\",\"properties\":{\"regexpFilter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"}}}" },
 		{ "runCommand",
 			"Run a radare2 command and get the output",
 			"{\"type\":\"object\",\"properties\":{\"command\":{\"type\":\"string\",\"description\":\"Command to execute\"}},\"required\":[\"command\"]}" },
@@ -613,6 +617,37 @@ static char *handle_call_tool(RJson *params) {
 		}
 
 		char *result = r2_cmd (command);
+		char *response = create_tool_text_response (result);
+		free (result);
+		return response;
+	}
+
+	// Handle listStrings tool
+	if (!strcmp (tool_name, "listStrings")) {
+		const char *filter= r_json_get_str (tool_args, "filter");
+
+		char *result = r2_cmd ("izqq");
+		if (R_STR_ISNOTEMPTY (filter)) {
+			RStrBuf *sb = r_strbuf_new ("");
+			RList *strings = r_str_split_list (result, "\n", 0);
+			RListIter *iter;
+			const char *str;
+			RRegex rx;
+			int re_flags = r_regex_flags ("e");
+			bool ok = r_regex_init (&rx, filter, re_flags);
+			if (ok) {
+				r_list_foreach (strings, iter, str) {
+					if (r_regex_exec (&rx, str, 0, 0, 0) == 0) {
+						r_strbuf_appendf (sb, "%s\n", str);
+					}
+				}
+				r_regex_fini (&rx);
+			} else {
+				R_LOG_ERROR ("Invalid regex: %s", filter);
+			}
+			free (result);
+			result = r_strbuf_drain (sb);
+		}
 		char *response = create_tool_text_response (result);
 		free (result);
 		return response;
