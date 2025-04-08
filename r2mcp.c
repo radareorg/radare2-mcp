@@ -750,9 +750,9 @@ static char *handle_call_tool(RJson *params) {
 			num_instructions = (int)num_instr_json->num.u_value;
 		}
 
-		char cmd[128];
-		snprintf (cmd, sizeof (cmd), "pd %d @ %s", num_instructions, address);
+		char *cmd = r_str_newf ("'@%s'pd %d", address, num_instructions);
 		char *disasm = r2_cmd (cmd);
+		free (cmd);
 		char *response = create_tool_text_response (disasm);
 		free (disasm);
 		return response;
