@@ -16,6 +16,19 @@ static inline void r2mcp_log(const char *x) {
 #endif
 }
 
+static st64 r_json_get_num(const RJson *json, const char *key) {
+	if (!json || !key) {
+		return 0;
+	}
+
+	const RJson *field = r_json_get (json, key);
+	if (!field || field->type != R_JSON_STRING) {
+		return 0;
+	}
+
+	return r_num_get (NULL, field->str_value);
+}
+
 static const char *r_json_get_str(const RJson *json, const char *key) {
 	if (!json || !key) {
 		return NULL;
@@ -85,6 +98,26 @@ typedef struct {
 	size_t capacity;
 } ReadBuffer;
 
+static void r2_settings(RCore *core) {
+	r_config_set_i (core->config, "scr.color", 0);
+	r_config_set_b (core->config, "scr.utf8", "false");
+	r_config_set_b (core->config, "scr.interactive", "false");
+	r_config_set_b (core->config, "emu.str", "true");
+	r_config_set_b (core->config, "asm.bytes", "false");
+	r_config_set_b (core->config, "asm.lines.fcn", "false");
+	r_config_set_b (core->config, "asm.cmt.right", "false");
+	r_config_set_b (core->config, "scr.html", "false");
+}
+
+static char *r2_cmd(const char *cmd) {
+	if (!r_core || !file_opened) {
+		return strdup ("Error: No file is open");
+	}
+	char *res = r_core_cmd_str (r_core, cmd);
+	r2_settings (r_core);
+	return res;
+}
+
 ReadBuffer *read_buffer_new(void) {
 	ReadBuffer *buf = R_NEW (ReadBuffer);
 	buf->data = malloc (BUFFER_SIZE);
@@ -147,17 +180,6 @@ static char *format_string(const char *format, ...) {
 	vsnprintf (buffer, sizeof (buffer), format, args);
 	va_end (args);
 	return strdup (buffer);
-}
-
-static void r2_settings(RCore *core) {
-	r_config_set_i (core->config, "scr.color", 0);
-	r_config_set_b (core->config, "scr.utf8", "false");
-	r_config_set_b (core->config, "scr.interactive", "false");
-	r_config_set_b (core->config, "emu.str", "true");
-	r_config_set_b (core->config, "asm.bytes", "false");
-	r_config_set_b (core->config, "asm.lines.fcn", "false");
-	r_config_set_b (core->config, "asm.cmt.right", "false");
-	r_config_set_b (core->config, "scr.html", "false");
 }
 
 static bool init_r2(void) {
@@ -230,22 +252,16 @@ static bool r2_open_file(const char *filepath) {
 	return true;
 }
 
-static char *r2_cmd(const char *cmd) {
-	if (!r_core || !file_opened) {
-		return strdup ("Error: No file is open");
-	}
-	char *res = r_core_cmd_str (r_core, cmd);
-	r2_settings (r_core);
-	return res;
-}
-
-static bool r2_analyze(const char *level) {
+static bool r2_analyze(int level) {
 	if (!r_core || !file_opened) {
 		return false;
 	}
-
-	char cmd[32];
-	snprintf (cmd, sizeof (cmd), "%s", level);
+	const char *cmd = "aa";
+	switch (level) {
+	case 1: cmd = "aaa"; break;
+	case 2: cmd = "aaaa"; break;
+	case 3: cmd = "aaaaa"; break;
+	}
 	r_core_cmd0 (r_core, cmd);
 	return true;
 }
@@ -521,7 +537,7 @@ static char *handle_list_tools(RJson *params) {
 			"{\"type\":\"object\",\"properties\":{\"command\":{\"type\":\"string\",\"description\":\"Command to execute\"}},\"required\":[\"command\"]}" },
 		{ "analyze",
 			"Run analysis on the current file",
-			"{\"type\":\"object\",\"properties\":{\"level\":{\"type\":\"string\",\"description\":\"Analysis level (a, aa, aaa, aaaa)\"}},\"required\":[]}" },
+			"{\"type\":\"object\",\"properties\":{\"level\":{\"type\":\"number\",\"description\":\"Analysis level (0, 1, 2, 3)\"}},\"required\":[]}" },
 		{ "disassemble",
 			"Disassemble instructions at a given address",
 			"{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address to start disassembly\"},\"numInstructions\":{\"type\":\"integer\",\"description\":\"Number of instructions to disassemble\"}},\"required\":[\"address\"]}" }
@@ -701,14 +717,10 @@ static char *handle_call_tool(RJson *params) {
 
 	// Handle analyze tool
 	if (!strcmp (tool_name, "analyze")) {
-		const char *level = r_json_get_str (tool_args, "level");
-		if (!level) {
-			level = "aaa";
-		}
-
+		const int level = r_json_get_num (tool_args, "level");
 		r2_analyze (level);
-		char *result = r2_cmd ("afl");
-		char *text = format_string ("Analysis completed with level %s.\n\n%s", level, result);
+		char *result = r2_cmd ("aflc");
+		char *text = format_string ("Analysis completed with level %s.\n\nfound %d functions", level, atoi (result));
 		char *response = create_tool_text_response (text);
 		free (result);
 		free (text);
