@@ -110,19 +110,24 @@ static void r2_settings(RCore *core) {
 }
 
 static char *r2_cmd_filter(const char *cmd, bool *changed) {
-	char *res = strdup (cmd);
+	char *res = r_str_trim_dup (cmd);
 	char fchars[] = "|>`";
 	*changed = false;
-	char *ch = strstr (cmd, "$(");
-	if (ch) {
+	if (*res == '!') {
 		*changed = true;
-		*ch = 0;
-	}
-	for (ch = fchars; *ch; ch++) {
-		char *p = strchr (res, *ch);
-		if (p) {
+		*res = 0;
+	} else {
+		char *ch = strstr (res, "$(");
+		if (ch) {
 			*changed = true;
-			*p = 0;
+			*ch = 0;
+		}
+		for (ch = fchars; *ch; ch++) {
+			char *p = strchr (res, *ch);
+			if (p) {
+				*changed = true;
+				*p = 0;
+			}
 		}
 	}
 	return res;
