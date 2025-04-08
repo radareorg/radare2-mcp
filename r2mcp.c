@@ -100,13 +100,13 @@ typedef struct {
 
 static void r2_settings(RCore *core) {
 	r_config_set_i (core->config, "scr.color", 0);
-	r_config_set_b (core->config, "scr.utf8", "false");
-	r_config_set_b (core->config, "scr.interactive", "false");
-	r_config_set_b (core->config, "emu.str", "true");
-	r_config_set_b (core->config, "asm.bytes", "false");
-	r_config_set_b (core->config, "asm.lines.fcn", "false");
-	r_config_set_b (core->config, "asm.cmt.right", "false");
-	r_config_set_b (core->config, "scr.html", "false");
+	r_config_set_b (core->config, "scr.utf8", false);
+	r_config_set_b (core->config, "scr.interactive", false);
+	r_config_set_b (core->config, "emu.str", true);
+	r_config_set_b (core->config, "asm.bytes", false);
+	r_config_set_b (core->config, "asm.lines.fcn", false);
+	r_config_set_b (core->config, "asm.cmt.right", false);
+	r_config_set_b (core->config, "scr.html", false);
 }
 
 static char *r2_cmd_filter(const char *cmd, bool *changed) {
@@ -252,9 +252,9 @@ static bool r2_open_file(const char *filepath) {
 	r_core_cmd0 (r_core, "e bin.relocs.apply=true");
 	r_core_cmd0 (r_core, "e bin.cache=true");
 
-	char *cmd = r_str_newf ("o %s", filepath);
+	char *cmd = r_str_newf ("'o %s", filepath);
 	R_LOG_INFO ("Running r2 command: %s", cmd);
-	char *result = r2_cmd (cmd);
+	char *result = r_core_cmd_str (r_core, cmd);
 	free (cmd);
 	bool success = (result && strlen (result) > 0);
 	free (result);
@@ -292,6 +292,7 @@ static bool r2_analyze(int level) {
 	case 2: cmd = "aaaa"; break;
 	case 3: cmd = "aaaaa"; break;
 	}
+	cmd = "af @@ sym.*";
 	r_core_cmd0 (r_core, cmd);
 	return true;
 }
@@ -518,7 +519,7 @@ static char *get_capabilities() {
 static char *handle_list_tools(RJson *params) {
 	// Add pagination support
 	const char *cursor = r_json_get_str (params, "cursor");
-	int page_size = 10; // Default page size
+	int page_size = 32; // Default page size XXX pagination doesnt work. just use > len(tools)
 	int start_index = 0;
 
 	// Parse cursor if provided
@@ -543,7 +544,7 @@ static char *handle_list_tools(RJson *params) {
 
 	// Define our tools with their descriptions and schemas
 	// Format: {name, description, schema_definition}
-	const char *tools[][5] = {
+	const char *tools[18][3] = {
 		{ "openFile",
 			"Open a file for analysis",
 			"{\"type\":\"object\",\"properties\":{\"filePath\":{\"type\":\"string\",\"description\":\"Path to the file to open\"}},\"required\":[\"filePath\"]}" },
@@ -576,7 +577,7 @@ static char *handle_list_tools(RJson *params) {
 			"{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"Name of the decompiler\"},\"address\":{\"type\":\"string\",\"description\":\"address of the function to rename\"}},\"required\":[\"name\",\"address\"]}" },
 		{ "useDecompiler",
 			"Use given decompiler",
-			"{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"Name of the decompiler\"},\"required\":[\"name\"]}" },
+			"{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"Name of the decompiler\"}},\"required\":[\"name\"]}" },
 		{ "listStrings",
 			"List strings matching the given regexp",
 			"{\"type\":\"object\",\"properties\":{\"regexpFilter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"}}}" },
@@ -588,13 +589,13 @@ static char *handle_list_tools(RJson *params) {
 			"{\"type\":\"object\",\"properties\":{\"level\":{\"type\":\"number\",\"description\":\"Analysis level (0, 1, 2, 3)\"}},\"required\":[]}" },
 		{ "xrefsTo",
 			"List all the references to the given address",
-			"{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the address to check for crossed references\"},\"required\":[\"address\"]}" },
+			"{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the address to check for crossed references\"}},\"required\":[\"address\"]}" },
 		{ "decompileFunction",
 			"Decompile function at given address",
-			"{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the function to decompile\"},\"required\":[\"address\"]}" },
+			"{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the function to decompile\"}},\"required\":[\"address\"]}" },
 		{ "disassembleFunction",
 			"Disassemble function at given address",
-			"{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the function to disassemble\"},\"required\":[\"address\"]}" },
+			"{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the function to disassemble\"}},\"required\":[\"address\"]}" },
 		{ "disassemble",
 			"Disassemble instructions at a given address",
 			"{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address to start disassembly\"},\"numInstructions\":{\"type\":\"integer\",\"description\":\"Number of instructions to disassemble\"}},\"required\":[\"address\"]}" }
@@ -619,9 +620,7 @@ static char *handle_list_tools(RJson *params) {
 
 	// Add nextCursor if there are more tools
 	if (end_index < total_tools) {
-		char next_cursor[16];
-		snprintf (next_cursor, sizeof (next_cursor), "%d", end_index);
-		fprintf (stream, ",\"nextCursor\":\"%s\"", next_cursor);
+		fprintf (stream, ",\"nextCursor\":\"%d\"", end_index);
 	}
 
 	fprintf (stream, "}");
@@ -745,7 +744,7 @@ static char *handle_call_tool(RJson *params) {
 		if (!file_opened) {
 			return create_tool_text_response ("No file was open.");
 		}
-		char *res = r2_cmd ("ilq");
+		char *res = r_core_cmd_str (r_core, "ilq");
 		char *o = create_tool_text_response (res);
 		free (res);
 		return o;
@@ -822,7 +821,7 @@ static char *handle_call_tool(RJson *params) {
 		const int level = r_json_get_num (tool_args, "level");
 		r2_analyze (level);
 		char *result = r2_cmd ("aflc");
-		char *text = format_string ("Analysis completed with level %s.\n\nfound %d functions", level, atoi (result));
+		char *text = format_string ("Analysis completed with level %d.\n\nfound %d functions", level, atoi (result));
 		char *response = create_tool_text_response (text);
 		free (result);
 		free (text);
