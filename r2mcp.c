@@ -988,6 +988,7 @@ static void process_mcp_message(const char *msg) {
 	RJson *id_json = (RJson *)r_json_get (request, "id");
 
 	if (!method) {
+		R_LOG_INFO (">>> %s", msg);
 		R_LOG_ERROR ("Invalid JSON-RPC message: missing method");
 		r_json_free (request);
 		return;
@@ -1045,84 +1046,207 @@ static void set_nonblocking_io(bool nonblocking) {
 	setvbuf (stdout, NULL, _IOLBF, 0);
 }
 
+// Patch for direct_mode_loop function
 static void direct_mode_loop(void) {
-	r2mcp_log ("Starting MCP direct mode (stdin/stdout)");
+    r2mcp_log("Starting MCP direct mode (stdin/stdout)");
 
-	// Set proper IO modes for mcpo
-	set_nonblocking_io (false);
+    // Send an initial greeting to mcpo to start the conversation
+    // This is crucial - mcpo might be waiting for the program to send something first
+    const char *greeting = "{\"jsonrpc\":\"2.0\",\"method\":\"greeting\",\"params\":{\"version\":\"" LATEST_PROTOCOL_VERSION "\"}}\n";
+    write(STDOUT_FILENO, greeting, strlen(greeting));
+    fsync(STDOUT_FILENO);
+    r2mcp_log("Sent initial greeting");
 
-	// Unbuffered stdout
-	setvbuf (stdout, NULL, _IONBF, 0);
+    // Use consistent unbuffered mode for stdout
+    setvbuf(stdout, NULL, _IONBF, 0);
 
-	ReadBuffer *buffer = read_buffer_new ();
-	char chunk[READ_CHUNK_SIZE];
+    // Use non-blocking IO with timeout handling
+    set_nonblocking_io(true);
 
-	while (running) {
-		// Read from stdin one message at a time
-		ssize_t bytes_read = read (STDIN_FILENO, chunk, sizeof (chunk) - 1);
+    ReadBuffer *buffer = read_buffer_new();
+    char chunk[READ_CHUNK_SIZE];
 
-		if (bytes_read > 0) {
-			// Ensure null termination
-			chunk[bytes_read] = '\0';
+    // Set up timeout handling
+    fd_set read_fds;
+    struct timeval tv;
 
-			// Append to our buffer
-			read_buffer_append (buffer, chunk, bytes_read);
+    while (running) {
+        // Set up select with timeout
+        FD_ZERO(&read_fds);
+        FD_SET(STDIN_FILENO, &read_fds);
 
-			// Process any complete messages in the buffer
-			char *msg;
-			while ((msg = read_buffer_get_message (buffer)) != NULL) {
-				process_mcp_message (msg);
-				free (msg);
-			}
-		} else if (bytes_read == 0) {
-			// EOF - stdin closed
-			r2mcp_log ("End of input stream - exiting");
-			break;
-		} else {
-			// Error
-			if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) {
-				r2mcp_log ("Read error");
-				break;
-			}
-		}
-	}
+        // 5 second timeout
+        tv.tv_sec = 5;
+        tv.tv_usec = 0;
 
-	read_buffer_free (buffer);
-	r2mcp_log ("Direct mode loop terminated");
+        int select_result = select(STDIN_FILENO + 1, &read_fds, NULL, NULL, &tv);
+
+        if (select_result == -1) {
+            // Error in select
+            if (errno != EINTR) {
+                r2mcp_log("Select error");
+                break;
+            }
+            continue;
+        } else if (select_result == 0) {
+            // Timeout - send a ping to keep the connection alive
+            const char *ping = "{\"jsonrpc\":\"2.0\",\"method\":\"ping\",\"id\":\"keepalive\"}\n";
+            write(STDOUT_FILENO, ping, strlen(ping));
+            fsync(STDOUT_FILENO);
+            r2mcp_log("Sent keepalive ping");
+            continue;
+        }
+
+        // Data is available to read
+        ssize_t bytes_read = read(STDIN_FILENO, chunk, sizeof(chunk) - 1);
+
+        if (bytes_read > 0) {
+            // Ensure null termination
+            chunk[bytes_read] = '\0';
+            r2mcp_log("Read data from stdin");
+
+            // Debug: Log the raw input
+            r2mcp_log("Raw input:");
+            r2mcp_log(chunk);
+
+            // Append to our buffer
+            read_buffer_append(buffer, chunk, bytes_read);
+
+            // Process any complete messages in the buffer
+            char *msg;
+            while ((msg = read_buffer_get_message(buffer)) != NULL) {
+                r2mcp_log("Processing complete message");
+                process_mcp_message(msg);
+                free(msg);
+            }
+        } else if (bytes_read == 0) {
+            // EOF - stdin closed
+            r2mcp_log("End of input stream - exiting");
+            break;
+        } else {
+            // Error
+            if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) {
+                r2mcp_log("Read error");
+                break;
+            }
+            // For EAGAIN/EWOULDBLOCK, just continue the loop
+        }
+    }
+
+    read_buffer_free(buffer);
+    r2mcp_log("Direct mode loop terminated");
 }
 
+// Patch for main function
 int main(int argc, char **argv) {
-	(void)argc;
-	(void)argv;
+    (void)argc;
+    (void)argv;
 
-	struct sigaction sa = { 0 };
-	sa.sa_flags = 0;
-	sa.sa_handler = signal_handler;
-	sigemptyset (&sa.sa_mask);
+    // Enable logging right away
+    r2mcp_log("r2mcp starting");
 
-	if (!isatty (STDIN_FILENO)) {
-		is_direct_mode = true;
-		r2mcp_log ("Starting in direct mode");
-		direct_mode_loop ();
-		cleanup_r2 ();
-		r2mcp_log ("MCP direct mode terminated gracefully");
-		return 0;
-	}
+    // Set up signal handlers
+    struct sigaction sa = { 0 };
+    sa.sa_flags = 0;
+    sa.sa_handler = signal_handler;
+    sigemptyset(&sa.sa_mask);
 
-	sigaction (SIGINT, &sa, NULL);
-	sigaction (SIGTERM, &sa, NULL);
-	sigaction (SIGHUP, &sa, NULL);
+    sigaction(SIGINT, &sa, NULL);
+    sigaction(SIGTERM, &sa, NULL);
+    sigaction(SIGHUP, &sa, NULL);
+    signal(SIGPIPE, SIG_IGN);
 
-	fsync (STDIN_FILENO);
-	fsync (STDOUT_FILENO);
+    r2mcp_log("Signal handlers installed");
 
-	signal (SIGPIPE, SIG_IGN);
+    // Initialize r2 right away
+    if (!init_r2()) {
+        R_LOG_ERROR("Failed to initialize radare2");
+        r2mcp_log("Failed to initialize radare2");
+        return 1;
+    }
 
-	if (!init_r2 ()) {
-		R_LOG_ERROR ("Failed to initialize radare2");
-		return 1;
-	}
+    r2mcp_log("r2 initialized");
 
-	cleanup_r2 ();
-	return 0;
+    // Force direct mode if running with mcpo
+    char *mcpo_env = getenv("MCPO_ENABLED");
+    if (mcpo_env != NULL) {
+        r2mcp_log("MCPO environment detected, forcing direct mode");
+        is_direct_mode = true;
+    } else {
+        // Check stdin
+        if (!isatty(STDIN_FILENO)) {
+            r2mcp_log("stdin is not a TTY, using direct mode");
+            is_direct_mode = true;
+        } else {
+            r2mcp_log("stdin is a TTY");
+            // Check command line args for direct mode
+            for (int i = 1; i < argc; i++) {
+                if (!strcmp(argv[i], "--direct") || !strcmp(argv[i], "-d")) {
+                    r2mcp_log("Direct mode requested via command line");
+                    is_direct_mode = true;
+                    break;
+                }
+            }
+        }
+    }
+
+    // Always run in direct mode for now
+    is_direct_mode = true;
+    r2mcp_log("Starting direct mode loop");
+    direct_mode_loop();
+
+    r2mcp_log("Cleaning up r2");
+    cleanup_r2();
+    r2mcp_log("r2mcp exiting");
+    return 0;
 }
+
+// Add a helper function to read a message with timeout
+static char *read_buffer_get_message_timeout(ReadBuffer *buf, int timeout_sec) {
+    time_t start_time = time(NULL);
+
+    while (1) {
+        // Check if we have a complete message
+        char *msg = read_buffer_get_message(buf);
+        if (msg) {
+            return msg;
+        }
+
+        // Check for timeout
+        if (difftime(time(NULL), start_time) > timeout_sec) {
+            r2mcp_log("Timeout waiting for complete message");
+            return NULL;
+        }
+
+        // Read more data
+        fd_set read_fds;
+        struct timeval tv;
+        FD_ZERO(&read_fds);
+        FD_SET(STDIN_FILENO, &read_fds);
+
+        // Short timeout for polling
+        tv.tv_sec = 1;
+        tv.tv_usec = 0;
+
+        int select_result = select(STDIN_FILENO + 1, &read_fds, NULL, NULL, &tv);
+
+        if (select_result <= 0) {
+            continue;  // Try again or timeout will eventually trigger
+        }
+
+        char chunk[READ_CHUNK_SIZE];
+        ssize_t bytes_read = read(STDIN_FILENO, chunk, sizeof(chunk) - 1);
+
+        if (bytes_read <= 0) {
+            if (bytes_read == 0 || (errno != EAGAIN && errno != EWOULDBLOCK)) {
+                // EOF or error
+                return NULL;
+            }
+            continue;
+        }
+
+        // Append the data and try again
+        read_buffer_append(buf, chunk, bytes_read);
+    }
+}
+
