@@ -107,6 +107,12 @@ static void r2_settings(RCore *core) {
 	r_config_set_b (core->config, "asm.lines.fcn", false);
 	r_config_set_b (core->config, "asm.cmt.right", false);
 	r_config_set_b (core->config, "scr.html", false);
+	r_config_set_b (core->config, "scr.prompt", false);
+	r_config_set_b (core->config, "scr.echo", false);
+	r_config_set_b (core->config, "scr.flush", true);
+	r_config_set_b (core->config, "scr.null", false);
+	r_config_set_b (core->config, "scr.pipecolor", false);
+	r_config_set_b (core->config, "scr.utf8", false);
 }
 
 static char *r2_cmd_filter(const char *cmd, bool *changed) {
