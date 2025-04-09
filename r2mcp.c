@@ -607,6 +607,7 @@ int main(int argc, char **argv) {
 }
 
 // Properly handle the "initialize" method
+// Fixed handle_initialize function with properly structured capabilities
 static char *handle_initialize(RJson *params) {
     if (server_state.client_capabilities) {
         r_json_free(server_state.client_capabilities);
@@ -629,21 +630,20 @@ static char *handle_initialize(RJson *params) {
     pj_ks(pj, "version", server_state.info.version);
     pj_end(pj);
 
+    // Capabilities need to be objects with specific structure, not booleans
     pj_k(pj, "capabilities");
     pj_o(pj);
 
-    // Tools capability
-    pj_kb(pj, "tools", true);
-
-    // Explicitly list what we don't support
-    pj_kb(pj, "prompts", false);
-    pj_kb(pj, "roots", false);
-    pj_kb(pj, "resources", false);
-    pj_kb(pj, "notifications", false);
-    pj_kb(pj, "logging", false);
-    pj_kb(pj, "sampling", false);
-
+    // Tools capability - needs to be an object
+    pj_k(pj, "tools");
+    pj_o(pj);
+    pj_kb(pj, "listChanged", false);
     pj_end(pj);
+
+    // For any capability we don't support, don't include it at all
+    // Don't add: prompts, roots, resources, notifications, logging, sampling
+
+    pj_end(pj); // End capabilities
 
     if (server_state.instructions) {
         pj_ks(pj, "instructions", server_state.instructions);
@@ -652,6 +652,22 @@ static char *handle_initialize(RJson *params) {
     pj_end(pj);
 
     server_state.initialized = true;
+    return pj_drain(pj);
+}
+
+// Original get_capabilities function can also be fixed for reference
+static char *get_capabilities(void) {
+    PJ *pj = pj_new();
+    pj_o(pj);
+
+    // Only include tools capability
+    pj_ko(pj, "tools");
+    pj_kb(pj, "listChanged", false);
+    pj_end(pj);
+
+    // Don't include capabilities we don't support
+
+    pj_end(pj);
     return pj_drain(pj);
 }
 
@@ -758,29 +774,6 @@ static char *handle_mcp_request(const char *method, RJson *params, const char *i
 	return response;
 }
 
-static char *get_capabilities(void) {
-	PJ *pj = pj_new ();
-	pj_o (pj);
-
-	pj_ko (pj, "experimental");
-	pj_end (pj);
-
-	pj_ko (pj, "tools");
-	pj_kb (pj, "listChanged", false);
-	pj_end (pj);
-
-	pj_ko (pj, "prompts");
-	pj_kb (pj, "listChanged", false);
-	pj_end (pj);
-
-	pj_ko (pj, "resources");
-	pj_kb (pj, "listChanged", false);
-	pj_kb (pj, "subscribe", false);
-	pj_end (pj);
-
-	pj_end (pj);
-	return pj_drain (pj);
-}
 
 static char *handle_list_tools(RJson *params) {
 	// Add pagination support
