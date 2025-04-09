@@ -14,3 +14,10 @@ Add the following JSON in your claude's config:
   }
 }
 ```
+
+To use r2mcp with OpenWebUI and local models run the mcp-server proxy like this:
+
+```bash
+pip install mcpo
+mcpo -- r2pm -r r2mcp
+```
