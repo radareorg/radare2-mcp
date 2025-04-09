@@ -279,7 +279,6 @@ static bool r2_analyze(int level) {
 	case 2: cmd = "aaaa"; break;
 	case 3: cmd = "aaaaa"; break;
 	}
-	cmd = "af @@ sym.*";
 	r_core_cmd0 (r_core, cmd);
 	return true;
 }
