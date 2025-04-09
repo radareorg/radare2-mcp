@@ -701,24 +701,6 @@ static char *create_success_response(const char *result, const char *id) {
 	return s;
 }
 
-#if 0
-// Helper function to create tool error responses with specific format
-static char *create_tool_error_response(const char *error_message) {
-	PJ *pj = pj_new ();
-	pj_o (pj);
-	pj_k (pj, "content");
-	pj_a (pj);
-	pj_o (pj);
-	pj_ks (pj, "type", "text");
-	pj_ks (pj, "text", error_message);
-	pj_end (pj);
-	pj_end (pj);
-	pj_kb (pj, "isError", true);
-	pj_end (pj);
-	return pj_drain (pj);
-}
-#endif
-
 // Helper function to create a simple text tool result
 static char *create_tool_text_response(const char *text) {
 	PJ *pj = pj_new ();
@@ -793,16 +775,16 @@ static char *handle_list_tools(RJson *params) {
 	// Format: {name, description, schema_definition}
 	const char *tools[26][3] = {
 		{ "openFile",
-			"Open a file for analysis",
+			"Open given file with radare2 to start the analysis",
 			"{\"type\":\"object\",\"properties\":{\"filePath\":{\"type\":\"string\",\"description\":\"Path to the file to open\"}},\"required\":[\"filePath\"]}" },
 		{ "closeFile",
 			"Close the currently open file",
 			"{\"type\":\"object\",\"properties\":{}}" },
 		{ "listFunctions",
-			"Enumerate all the functions found, listing the address and its name",
+			"List all functions found after the analysis",
 			"{\"type\":\"object\",\"properties\":{}}" },
 		{ "listLibraries",
-			"Enumerate all the libraries used by the binary",
+			"List libraries linked to this binary",
 			"{\"type\":\"object\",\"properties\":{}}" },
 		{ "listImports",
 			"Enumerate all the symbols imported in the binary",
@@ -814,7 +796,7 @@ static char *handle_list_tools(RJson *params) {
 			"Show function details",
 			"{\"type\":\"object\",\"properties\":{}}" },
 		{ "getCurrentAddress",
-			"Show function details",
+			"Get name and address for the current offset",
 			"{\"type\":\"object\",\"properties\":{}}" },
 		{ "showHeaders",
 			"Show program headers details and information from the binary",
@@ -823,28 +805,28 @@ static char *handle_list_tools(RJson *params) {
 			"Enumerate all the symbols exported from the binary",
 			"{\"type\":\"object\",\"properties\":{}}" },
 		{ "listEntrypoints",
-			"Enumerate entrypoints",
+			"Enumerate entrypoints, constructor functions and main",
 			"{\"type\":\"object\",\"properties\":{}}" },
 		{ "listMethods",
 			"Enumerate methods for the given class",
 			"{\"type\":\"object\",\"properties\":{\"classname\":{\"type\":\"string\",\"description\":\"Name of the class to list its methods\"}},\"required\":[\"classname\"]}" },
 		{ "listClasses",
-			"Enumerate all the class names from C++, ObjC, Swift, Java, Dalvik",
+			"List C++, ObjC, Swift, Java, Dalvik class names",
 			"{\"type\":\"object\",\"properties\":{\"regexpFilter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"}}}" },
 		{ "listDecompilers",
 			"List all the decompilers available for radare2",
 			"{\"type\":\"object\",\"properties\":{}}" },
 		{ "renameFunction",
-			"Rename function at given address",
+			"Change the name of the function located in given address",
 			"{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"Name of the decompiler\"},\"address\":{\"type\":\"string\",\"description\":\"address of the function to rename\"}},\"required\":[\"name\",\"address\"]}" },
 		{ "useDecompiler",
-			"Use given decompiler",
+			"Select a different decompiler backend",
 			"{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"Name of the decompiler\"}},\"required\":[\"name\"]}" },
 		{ "getFunctionPrototype",
 			"Get the signature / prototype for the function in the given address",
 			"{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address to put the comment in\"},\"prototype\":{\"type\":\"string\",\"description\":\"function signature or prototype description\"}},\"required\":[\"address\"]}" },
 		{ "setFunctionPrototype",
-			"Define the function signature",
+			"Define the function signature (return type, symbol name and argument types and names)",
 			"{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address to put the comment in\"},\"prototype\":{\"type\":\"string\",\"description\":\"function signature or prototype description\"}},\"required\":[\"address\",\"prototype\"]}" },
 		{ "setComment",
 			"List strings in the rodata section of the binary matching the given regexp",
@@ -873,7 +855,7 @@ static char *handle_list_tools(RJson *params) {
 			"Disassemble function at given address",
 			"{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the function to disassemble\"}},\"required\":[\"address\"]}" },
 		{ "disassemble",
-			"Disassemble instructions at a given address",
+			"Disassemble (numInstructions) at a given address",
 			"{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address to start disassembly\"},\"numInstructions\":{\"type\":\"integer\",\"description\":\"Number of instructions to disassemble\"}},\"required\":[\"address\"]}" }
 	};
 
@@ -942,9 +924,6 @@ static char *handle_call_tool(RJson *params) {
 
 	// Handle listClasses tool
 	if (!strcmp (tool_name, "listClasses")) {
-		if (!file_opened) {
-			return create_tool_text_response ("No file was open.");
-		}
 		const char *filter = r_json_get_str (tool_args, "filter");
 		char *res = r2_cmd ("icqq");
 		if (R_STR_ISNOTEMPTY (filter)) {
@@ -983,9 +962,6 @@ static char *handle_call_tool(RJson *params) {
 
 	// Handle listFunctions tool
 	if (!strcmp (tool_name, "listFunctions")) {
-		if (!file_opened) {
-			return create_tool_text_response ("No file was open.");
-		}
 		char *res = r2_cmd ("afl,addr/cols/name");
 		char *o = create_tool_text_response (res);
 		free (res);
@@ -994,9 +970,6 @@ static char *handle_call_tool(RJson *params) {
 
 	// Handle listImports tool
 	if (!strcmp (tool_name, "listImports")) {
-		if (!file_opened) {
-			return create_tool_text_response ("No file was open.");
-		}
 		char *res = r2_cmd ("iiq");
 		char *o = create_tool_text_response (res);
 		free (res);
@@ -1005,9 +978,6 @@ static char *handle_call_tool(RJson *params) {
 
 	// Handle listSections tool
 	if (!strcmp (tool_name, "listSections")) {
-		if (!file_opened) {
-			return create_tool_text_response ("No file was open.");
-		}
 		char *res = r_core_cmd_str (r_core, "iS;iSS");
 		char *o = create_tool_text_response (res);
 		free (res);
@@ -1040,9 +1010,6 @@ static char *handle_call_tool(RJson *params) {
 
 	// Handle listSymbols tool
 	if (!strcmp (tool_name, "listSymbols")) {
-		if (!file_opened) {
-			return create_tool_text_response ("No file was open.");
-		}
 		char *res = r_core_cmd_str (r_core, "isq~!func.,!imp.");
 		// TODO: remove imports and func
 		char *o = create_tool_text_response (res);
@@ -1052,9 +1019,6 @@ static char *handle_call_tool(RJson *params) {
 
 	// Handle listEntrypoints tool
 	if (!strcmp (tool_name, "listEntrypoints")) {
-		if (!file_opened) {
-			return create_tool_text_response ("No file was open.");
-		}
 		char *res = r_core_cmd_str (r_core, "ies");
 		char *o = create_tool_text_response (res);
 		free (res);
@@ -1063,9 +1027,6 @@ static char *handle_call_tool(RJson *params) {
 
 	// Handle listLibraries tool
 	if (!strcmp (tool_name, "listLibraries")) {
-		if (!file_opened) {
-			return create_tool_text_response ("No file was open.");
-		}
 		char *res = r_core_cmd_str (r_core, "ilq");
 		char *o = create_tool_text_response (res);
 		free (res);
@@ -1074,10 +1035,6 @@ static char *handle_call_tool(RJson *params) {
 
 	// Handle closeFile tool
 	if (!strcmp (tool_name, "closeFile")) {
-		if (!file_opened) {
-			return create_tool_text_response ("No file was open.");
-		}
-
 		char filepath_copy[1024];
 		strncpy (filepath_copy, current_file, sizeof (filepath_copy) - 1);
 		if (r_core) {
@@ -1328,54 +1285,3 @@ static char *handle_call_tool(RJson *params) {
 
 	return create_error_response (-32602, format_string ("Unknown tool: %s", tool_name), NULL, NULL);
 }
-
-#if 0
-// Add a helper function to read a message with timeout
-static char *read_buffer_get_message_timeout(ReadBuffer *buf, int timeout_sec) {
-	time_t start_time = time (NULL);
-
-	while (1) {
-		// Check if we have a complete message
-		char *msg = read_buffer_get_message (buf);
-		if (msg) {
-			return msg;
-		}
-
-		// Check for timeout
-		if (difftime (time (NULL), start_time) > timeout_sec) {
-			r2mcp_log ("Timeout waiting for complete message");
-			return NULL;
-		}
-
-		// Read more data
-		fd_set read_fds;
-		struct timeval tv;
-		FD_ZERO (&read_fds);
-		FD_SET (STDIN_FILENO, &read_fds);
-
-		// Short timeout for polling
-		tv.tv_sec = 1;
-		tv.tv_usec = 0;
-
-		int select_result = select (STDIN_FILENO + 1, &read_fds, NULL, NULL, &tv);
-
-		if (select_result <= 0) {
-			continue; // Try again or timeout will eventually trigger
-		}
-
-		char chunk[READ_CHUNK_SIZE];
-		ssize_t bytes_read = read (STDIN_FILENO, chunk, sizeof (chunk) - 1);
-
-		if (bytes_read <= 0) {
-			if (bytes_read == 0 || (errno != EAGAIN && errno != EWOULDBLOCK)) {
-				// EOF or error
-				return NULL;
-			}
-			continue;
-		}
-
-		// Append the data and try again
-		read_buffer_append (buf, chunk, bytes_read);
-	}
-}
-#endif
