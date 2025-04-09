@@ -105,6 +105,7 @@ static void r2_settings(RCore *core) {
 	r_config_set_b (core->config, "scr.interactive", false);
 	r_config_set_b (core->config, "emu.str", true);
 	r_config_set_b (core->config, "asm.bytes", false);
+	r_config_set_b (core->config, "anal.hasnext", true);
 	r_config_set_b (core->config, "asm.lines.fcn", false);
 	r_config_set_b (core->config, "asm.cmt.right", false);
 	r_config_set_b (core->config, "scr.html", false);
@@ -185,7 +186,6 @@ static void read_buffer_free(ReadBuffer *buf) {
 	}
 }
 
-static char *get_capabilities();
 static char *handle_initialize(RJson *params);
 static char *handle_list_tools(RJson *params);
 static char *handle_call_tool(RJson *params);
@@ -652,22 +652,6 @@ static char *handle_initialize(RJson *params) {
 	return pj_drain (pj);
 }
 
-// Original get_capabilities function can also be fixed for reference
-static char *get_capabilities(void) {
-	PJ *pj = pj_new ();
-	pj_o (pj);
-
-	// Only include tools capability
-	pj_ko (pj, "tools");
-	pj_kb (pj, "listChanged", false);
-	pj_end (pj);
-
-	// Don't include capabilities we don't support
-
-	pj_end (pj);
-	return pj_drain (pj);
-}
-
 // Create a proper success response
 static char *create_success_response(const char *result, const char *id) {
 	PJ *pj = pj_new ();
@@ -789,11 +773,9 @@ static char *handle_list_tools(RJson *params) {
 	RStrBuf *sb = r_strbuf_new ("");
 	r_strbuf_append (sb, "{\"tools\":[");
 
-	// fprintf (stream, "{\"tools\":[");
-
 	// Define our tools with their descriptions and schemas
 	// Format: {name, description, schema_definition}
-	const char *tools[18][3] = {
+	const char *tools[20][3] = {
 		{ "openFile",
 			"Open a file for analysis",
 			"{\"type\":\"object\",\"properties\":{\"filePath\":{\"type\":\"string\",\"description\":\"Path to the file to open\"}},\"required\":[\"filePath\"]}" },
@@ -808,6 +790,12 @@ static char *handle_list_tools(RJson *params) {
 			"{\"type\":\"object\",\"properties\":{}}" },
 		{ "listImports",
 			"Enumerate all the symbols imported in the binary",
+			"{\"type\":\"object\",\"properties\":{}}" },
+		{ "listSections",
+			"Show program sections and segments",
+			"{\"type\":\"object\",\"properties\":{}}" },
+		{ "showHeaders",
+			"Show program headers details and information from the binary",
 			"{\"type\":\"object\",\"properties\":{}}" },
 		{ "listSymbols",
 			"Enumerate all the symbols exported from the binary",
@@ -900,12 +888,12 @@ static char *handle_call_tool(RJson *params) {
 		bool success = r2_open_file (filepath);
 		return create_tool_text_response (success ? "File opened successfully." : "Failed to open file.");
 	}
-
+	if (!file_opened) {
+		return create_error_response (-32611, "Use the openFile method before calling any other method", NULL, NULL);
+		// return create_tool_text_response ("Use the openFile method toNo file was open.");
+	}
 	// Handle listMethods tool
 	if (!strcmp (tool_name, "listMethods")) {
-		if (!file_opened) {
-			return create_tool_text_response ("No file was open.");
-		}
 		const char *classname = r_json_get_str (tool_args, "classname");
 		if (!classname) {
 			return create_tool_text_response ("Missing classname parameter");
@@ -976,6 +964,28 @@ static char *handle_call_tool(RJson *params) {
 			return create_tool_text_response ("No file was open.");
 		}
 		char *res = r2_cmd ("iiq");
+		char *o = create_tool_text_response (res);
+		free (res);
+		return o;
+	}
+
+	// Handle listSections tool
+	if (!strcmp (tool_name, "listSections")) {
+		if (!file_opened) {
+			return create_tool_text_response ("No file was open.");
+		}
+		char *res = r_core_cmd_str (r_core, "iS;iSS");
+		char *o = create_tool_text_response (res);
+		free (res);
+		return o;
+	}
+
+	// Handle showHeaders tool
+	if (!strcmp (tool_name, "showHeaders")) {
+		if (!file_opened) {
+			return create_tool_text_response ("No file was open.");
+		}
+		char *res = r_core_cmd_str (r_core, "i;iH");
 		char *o = create_tool_text_response (res);
 		free (res);
 		return o;
