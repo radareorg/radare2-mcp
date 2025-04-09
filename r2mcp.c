@@ -115,6 +115,8 @@ static void r2_settings(RCore *core) {
 	r_config_set_b (core->config, "scr.interactive", false);
 	r_config_set_b (core->config, "emu.str", true);
 	r_config_set_b (core->config, "asm.bytes", false);
+	r_config_set_b (core->config, "anal.strings", true);
+	r_config_set_b (core->config, "asm.lines", false);
 	r_config_set_b (core->config, "anal.hasnext", true); // TODO: optional
 	r_config_set_b (core->config, "asm.lines.fcn", false);
 	r_config_set_b (core->config, "asm.cmt.right", false);
