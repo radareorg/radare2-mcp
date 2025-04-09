@@ -24,11 +24,21 @@ static st64 r_json_get_num(const RJson *json, const char *key) {
 	}
 
 	const RJson *field = r_json_get (json, key);
-	if (!field || field->type != R_JSON_STRING) {
+	if (!field) {
 		return 0;
 	}
-
-	return r_num_get (NULL, field->str_value);
+	switch (field->type) {
+	case R_JSON_STRING:
+		return r_num_get (NULL, field->str_value);
+	case R_JSON_INTEGER:
+		return field->num.s_value;
+	case R_JSON_BOOLEAN:
+		return field->num.u_value;
+	case R_JSON_DOUBLE:
+		return (int)field->num.dbl_value;
+	default:
+		return 0;
+	}
 }
 
 static const char *r_json_get_str(const RJson *json, const char *key) {
@@ -65,8 +75,8 @@ typedef struct {
 	ServerCapabilities capabilities;
 	const char *instructions;
 	bool initialized;
-	RJson *client_capabilities;
-	RJson *client_info;
+	const RJson *client_capabilities;
+	const RJson *client_info;
 } ServerState;
 
 // TODO: remove globals
@@ -105,7 +115,7 @@ static void r2_settings(RCore *core) {
 	r_config_set_b (core->config, "scr.interactive", false);
 	r_config_set_b (core->config, "emu.str", true);
 	r_config_set_b (core->config, "asm.bytes", false);
-	r_config_set_b (core->config, "anal.hasnext", true);
+	r_config_set_b (core->config, "anal.hasnext", true); // TODO: optional
 	r_config_set_b (core->config, "asm.lines.fcn", false);
 	r_config_set_b (core->config, "asm.cmt.right", false);
 	r_config_set_b (core->config, "scr.html", false);
@@ -606,12 +616,14 @@ int main(int argc, char **argv) {
 // Properly handle the "initialize" method
 // Fixed handle_initialize function with properly structured capabilities
 static char *handle_initialize(RJson *params) {
+#if 0
 	if (server_state.client_capabilities) {
 		r_json_free (server_state.client_capabilities);
 	}
 	if (server_state.client_info) {
 		r_json_free (server_state.client_info);
 	}
+#endif
 
 	server_state.client_capabilities = r_json_get (params, "capabilities");
 	server_state.client_info = r_json_get (params, "clientInfo");
@@ -822,7 +834,7 @@ static char *handle_list_tools(RJson *params) {
 			"List strings matching the given regexp",
 			"{\"type\":\"object\",\"properties\":{\"regexpFilter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"}}}" },
 #if 0
-		{ "runCommand",
+		{ "runCommand", // TODO: optional
 			"Run a radare2 command and get the output",
 			"{\"type\":\"object\",\"properties\":{\"command\":{\"type\":\"string\",\"description\":\"Command to execute\"}},\"required\":[\"command\"]}" },
 #endif
@@ -1217,6 +1229,7 @@ static char *handle_call_tool(RJson *params) {
 	return create_error_response (-32602, format_string ("Unknown tool: %s", tool_name), NULL, NULL);
 }
 
+#if 0
 // Add a helper function to read a message with timeout
 static char *read_buffer_get_message_timeout(ReadBuffer *buf, int timeout_sec) {
 	time_t start_time = time (NULL);
@@ -1265,3 +1278,4 @@ static char *read_buffer_get_message_timeout(ReadBuffer *buf, int timeout_sec) {
 		read_buffer_append (buf, chunk, bytes_read);
 	}
 }
+#endif
