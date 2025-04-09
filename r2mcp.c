@@ -831,7 +831,10 @@ static char *handle_list_tools(RJson *params) {
 			"Use given decompiler",
 			"{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"Name of the decompiler\"}},\"required\":[\"name\"]}" },
 		{ "listStrings",
-			"List strings matching the given regexp",
+			"List strings in the rodata section of the binary matching the given regexp",
+			"{\"type\":\"object\",\"properties\":{\"regexpFilter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"}}}" },
+		{ "listAllStrings",
+			"Scan the whole binary looking for hardcoded strings matching the given regexp if specified",
 			"{\"type\":\"object\",\"properties\":{\"regexpFilter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"}}}" },
 #if 0
 		{ "runCommand", // TODO: optional
@@ -1077,6 +1080,37 @@ static char *handle_call_tool(RJson *params) {
 		const char *filter = r_json_get_str (tool_args, "filter");
 
 		char *result = r2_cmd ("izqq");
+		if (R_STR_ISNOTEMPTY (filter)) {
+			RStrBuf *sb = r_strbuf_new ("");
+			RList *strings = r_str_split_list (result, "\n", 0);
+			RListIter *iter;
+			const char *str;
+			RRegex rx;
+			int re_flags = r_regex_flags ("e");
+			bool ok = r_regex_init (&rx, filter, re_flags);
+			if (ok) {
+				r_list_foreach (strings, iter, str) {
+					if (r_regex_exec (&rx, str, 0, 0, 0) == 0) {
+						r_strbuf_appendf (sb, "%s\n", str);
+					}
+				}
+				r_regex_fini (&rx);
+			} else {
+				R_LOG_ERROR ("Invalid regex: %s", filter);
+			}
+			free (result);
+			result = r_strbuf_drain (sb);
+		}
+		char *response = create_tool_text_response (result);
+		free (result);
+		return response;
+	}
+
+	// Handle listAllStrings tool
+	if (!strcmp (tool_name, "listAllStrings")) {
+		const char *filter = r_json_get_str (tool_args, "filter");
+
+		char *result = r2_cmd ("izzzqq");
 		if (R_STR_ISNOTEMPTY (filter)) {
 			RStrBuf *sb = r_strbuf_new ("");
 			RList *strings = r_str_split_list (result, "\n", 0);
