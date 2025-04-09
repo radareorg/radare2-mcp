@@ -44,7 +44,7 @@ static const char *r_json_get_str(const RJson *json, const char *key) {
 
 #define PORT            3000
 #define BUFFER_SIZE     65536
-#define READ_CHUNK_SIZE 4096
+#define READ_CHUNK_SIZE 32768
 
 #define LATEST_PROTOCOL_VERSION "2024-11-05"
 
@@ -506,7 +506,7 @@ static char *handle_initialize(RJson *params) {
 	return pj_drain (pj);
 }
 
-static char *get_capabilities() {
+static char *get_capabilities(void) {
 	PJ *pj = pj_new ();
 	pj_o (pj);
 
@@ -533,16 +533,10 @@ static char *handle_list_tools(RJson *params) {
 	}
 
 	// Use more straightforward JSON construction for tools list
-	char *result = NULL;
-	size_t result_size = 0;
-	FILE *stream = open_memstream (&result, &result_size);
+	RStrBuf *sb = r_strbuf_new ("");
+	r_strbuf_append (sb, "{\"tools\":[");
 
-	if (!stream) {
-		R_LOG_ERROR ("Failed to create memory stream");
-		return strdup ("{\"tools\":[]}");
-	}
-
-	fprintf (stream, "{\"tools\":[");
+	// fprintf (stream, "{\"tools\":[");
 
 	// Define our tools with their descriptions and schemas
 	// Format: {name, description, schema_definition}
@@ -617,27 +611,21 @@ static char *handle_list_tools(RJson *params) {
 	// Add tools for this page
 	for (int i = start_index; i < end_index; i++) {
 		if (i > start_index) {
-			fprintf (stream, ",");
+			r_strbuf_appendf (sb, ",");
 		}
-		fprintf (stream, "{\"name\":\"%s\",\"description\":\"%s\",\"inputSchema\":%s}",
+		r_strbuf_appendf (sb, "{\"name\":\"%s\",\"description\":\"%s\",\"inputSchema\":%s}",
 			tools[i][0], tools[i][1], tools[i][2]);
 	}
 
-	fprintf (stream, "]");
+	r_strbuf_append (sb, "]");
 
 	// Add nextCursor if there are more tools
 	if (end_index < total_tools) {
-		fprintf (stream, ",\"nextCursor\":\"%d\"", end_index);
+		r_strbuf_appendf (sb, ",\"nextCursor\":\"%d\"", end_index);
 	}
 
-	fprintf (stream, "}");
-
-	fclose (stream);
-
-	// Log the generated JSON for debugging
-	R_LOG_INFO ("Generated JSON: %s", result);
-
-	return result;
+	r_strbuf_appendf (sb, "}");
+	return r_strbuf_drain (sb);
 }
 
 static char *handle_call_tool(RJson *params) {
