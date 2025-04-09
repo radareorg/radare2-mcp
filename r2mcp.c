@@ -178,7 +178,6 @@ static void read_buffer_append(ReadBuffer *buf, const char *data, size_t len) {
 	buf->size += len;
 }
 
-
 static void read_buffer_free(ReadBuffer *buf) {
 	if (buf) {
 		free (buf->data);
@@ -377,68 +376,68 @@ static char *create_error_response(int code, const char *message, const char *id
 
 // Modified read_buffer functions to handle partial reads better
 static char *read_buffer_get_message(ReadBuffer *buf) {
-    // Search for a complete JSON-RPC message
-    // We need to find a properly balanced set of braces {}
-    if (buf->size == 0) {
-        return NULL;
-    }
+	// Search for a complete JSON-RPC message
+	// We need to find a properly balanced set of braces {}
+	if (buf->size == 0) {
+		return NULL;
+	}
 
-    // Ensure the buffer is null-terminated for string operations
-    if (buf->size < buf->capacity) {
-        buf->data[buf->size] = '\0';
-    } else {
-        // Expand capacity if needed
-        buf->capacity += 1;
-        buf->data = realloc(buf->data, buf->capacity);
-        buf->data[buf->size] = '\0';
-    }
+	// Ensure the buffer is null-terminated for string operations
+	if (buf->size < buf->capacity) {
+		buf->data[buf->size] = '\0';
+	} else {
+		// Expand capacity if needed
+		buf->capacity += 1;
+		buf->data = realloc (buf->data, buf->capacity);
+		buf->data[buf->size] = '\0';
+	}
 
-    // Look for a complete JSON message by counting braces
-    int brace_count = 0;
-    int start_pos = -1;
-    size_t i;
+	// Look for a complete JSON message by counting braces
+	int brace_count = 0;
+	int start_pos = -1;
+	size_t i;
 
-    for (i = 0; i < buf->size; i++) {
-        char c = buf->data[i];
+	for (i = 0; i < buf->size; i++) {
+		char c = buf->data[i];
 
-        // Find the first opening brace if we haven't already
-        if (start_pos == -1 && c == '{') {
-            start_pos = i;
-            brace_count = 1;
-            continue;
-        }
+		// Find the first opening brace if we haven't already
+		if (start_pos == -1 && c == '{') {
+			start_pos = i;
+			brace_count = 1;
+			continue;
+		}
 
-        // Count braces within a JSON object
-        if (start_pos != -1) {
-            if (c == '{') {
-                brace_count++;
-            } else if (c == '}') {
-                brace_count--;
+		// Count braces within a JSON object
+		if (start_pos != -1) {
+			if (c == '{') {
+				brace_count++;
+			} else if (c == '}') {
+				brace_count--;
 
-                // If we've found a complete JSON object
-                if (brace_count == 0) {
-                    // We have a complete message from start_pos to i (inclusive)
-                    size_t msg_len = i - start_pos + 1;
-                    char *msg = malloc(msg_len + 1);
-                    memcpy(msg, buf->data + start_pos, msg_len);
-                    msg[msg_len] = '\0';
+				// If we've found a complete JSON object
+				if (brace_count == 0) {
+					// We have a complete message from start_pos to i (inclusive)
+					size_t msg_len = i - start_pos + 1;
+					char *msg = malloc (msg_len + 1);
+					memcpy (msg, buf->data + start_pos, msg_len);
+					msg[msg_len] = '\0';
 
-                    // Move any remaining data to the beginning of the buffer
-                    size_t remaining = buf->size - (i + 1);
-                    if (remaining > 0) {
-                        memmove(buf->data, buf->data + i + 1, remaining);
-                    }
-                    buf->size = remaining;
+					// Move any remaining data to the beginning of the buffer
+					size_t remaining = buf->size - (i + 1);
+					if (remaining > 0) {
+						memmove (buf->data, buf->data + i + 1, remaining);
+					}
+					buf->size = remaining;
 
-                    r2mcp_log("Extracted complete JSON message");
-                    return msg;
-                }
-            }
-        }
-    }
+					r2mcp_log ("Extracted complete JSON message");
+					return msg;
+				}
+			}
+		}
+	}
 
-    // If we get here, we don't have a complete message yet
-    return NULL;
+	// If we get here, we don't have a complete message yet
+	return NULL;
 }
 // Set buffering modes for stdin/stdout
 static void set_nonblocking_io(bool nonblocking) {
@@ -454,254 +453,253 @@ static void set_nonblocking_io(bool nonblocking) {
 	setvbuf (stdout, NULL, _IOLBF, 0);
 }
 
-
 // MCPO protocol-compliant direct mode loop
 static void direct_mode_loop(void) {
-    r2mcp_log("Starting MCP direct mode (stdin/stdout)");
+	r2mcp_log ("Starting MCP direct mode (stdin/stdout)");
 
-    // Use consistent unbuffered mode for stdout
-    setvbuf(stdout, NULL, _IONBF, 0);
+	// Use consistent unbuffered mode for stdout
+	setvbuf (stdout, NULL, _IONBF, 0);
 
-    // Set to blocking I/O for simplicity
-    set_nonblocking_io(false);
+	// Set to blocking I/O for simplicity
+	set_nonblocking_io (false);
 
-    ReadBuffer *buffer = read_buffer_new();
-    char chunk[READ_CHUNK_SIZE];
+	ReadBuffer *buffer = read_buffer_new ();
+	char chunk[READ_CHUNK_SIZE];
 
-    while (running) {
-        // Read data from stdin
-        ssize_t bytes_read = read(STDIN_FILENO, chunk, sizeof(chunk) - 1);
+	while (running) {
+		// Read data from stdin
+		ssize_t bytes_read = read (STDIN_FILENO, chunk, sizeof (chunk) - 1);
 
-        if (bytes_read > 0) {
-            // Append to our buffer
-            read_buffer_append(buffer, chunk, bytes_read);
+		if (bytes_read > 0) {
+			// Append to our buffer
+			read_buffer_append (buffer, chunk, bytes_read);
 
-            // Try to process any complete messages
-            char *msg;
-            while ((msg = read_buffer_get_message(buffer)) != NULL) {
-                r2mcp_log("Complete message received:");
-                r2mcp_log(msg);
-                process_mcp_message(msg);
-                free(msg);
-            }
-        } else if (bytes_read == 0) {
-            // EOF - stdin closed
-            r2mcp_log("End of input stream - exiting");
-            break;
-        } else {
-            // Error
-            if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) {
-                r2mcp_log("Read error");
-                break;
-            }
-        }
-    }
+			// Try to process any complete messages
+			char *msg;
+			while ((msg = read_buffer_get_message (buffer)) != NULL) {
+				r2mcp_log ("Complete message received:");
+				r2mcp_log (msg);
+				process_mcp_message (msg);
+				free (msg);
+			}
+		} else if (bytes_read == 0) {
+			// EOF - stdin closed
+			r2mcp_log ("End of input stream - exiting");
+			break;
+		} else {
+			// Error
+			if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) {
+				r2mcp_log ("Read error");
+				break;
+			}
+		}
+	}
 
-    read_buffer_free(buffer);
-    r2mcp_log("Direct mode loop terminated");
+	read_buffer_free (buffer);
+	r2mcp_log ("Direct mode loop terminated");
 }
 
 // Modified process_mcp_message to handle the protocol correctly
 static void process_mcp_message(const char *msg) {
-    r2mcp_log("<<<");
-    r2mcp_log(msg);
+	r2mcp_log ("<<<");
+	r2mcp_log (msg);
 
-    RJson *request = r_json_parse((char *)msg);
-    if (!request) {
-        R_LOG_ERROR("Invalid JSON");
-        return;
-    }
+	RJson *request = r_json_parse ((char *)msg);
+	if (!request) {
+		R_LOG_ERROR ("Invalid JSON");
+		return;
+	}
 
-    const char *method = r_json_get_str(request, "method");
-    RJson *params = (RJson *)r_json_get(request, "params");
-    RJson *id_json = (RJson *)r_json_get(request, "id");
+	const char *method = r_json_get_str (request, "method");
+	RJson *params = (RJson *)r_json_get (request, "params");
+	RJson *id_json = (RJson *)r_json_get (request, "id");
 
-    if (!method) {
-        R_LOG_ERROR("Invalid JSON-RPC message: missing method");
-        r_json_free(request);
-        return;
-    }
+	if (!method) {
+		R_LOG_ERROR ("Invalid JSON-RPC message: missing method");
+		r_json_free (request);
+		return;
+	}
 
-    // Proper handling of notifications vs requests
-    if (id_json) {
-        // This is a request that requires a response
-        const char *id = NULL;
-        char id_buf[32] = { 0 };
+	// Proper handling of notifications vs requests
+	if (id_json) {
+		// This is a request that requires a response
+		const char *id = NULL;
+		char id_buf[32] = { 0 };
 
-        if (id_json->type == R_JSON_STRING) {
-            id = id_json->str_value;
-        } else if (id_json->type == R_JSON_INTEGER) {
-            snprintf(id_buf, sizeof(id_buf), "%lld", (long long)id_json->num.u_value);
-            id = id_buf;
-        }
+		if (id_json->type == R_JSON_STRING) {
+			id = id_json->str_value;
+		} else if (id_json->type == R_JSON_INTEGER) {
+			snprintf (id_buf, sizeof (id_buf), "%lld", (long long)id_json->num.u_value);
+			id = id_buf;
+		}
 
-        char *response = handle_mcp_request(method, params, id);
-        if (response) {
-            r2mcp_log(">>>");
-            r2mcp_log(response);
+		char *response = handle_mcp_request (method, params, id);
+		if (response) {
+			r2mcp_log (">>>");
+			r2mcp_log (response);
 
-            // Ensure the response ends with a newline
-            size_t resp_len = strlen(response);
-            bool has_newline = (resp_len > 0 && response[resp_len - 1] == '\n');
+			// Ensure the response ends with a newline
+			size_t resp_len = strlen (response);
+			bool has_newline = (resp_len > 0 && response[resp_len - 1] == '\n');
 
-            if (!has_newline) {
-                write(STDOUT_FILENO, response, resp_len);
-                write(STDOUT_FILENO, "\n", 1);
-            } else {
-                write(STDOUT_FILENO, response, resp_len);
-            }
+			if (!has_newline) {
+				write (STDOUT_FILENO, response, resp_len);
+				write (STDOUT_FILENO, "\n", 1);
+			} else {
+				write (STDOUT_FILENO, response, resp_len);
+			}
 
-            fsync(STDOUT_FILENO);
-            free(response);
-        }
-    } else {
-        // This is a notification, don't send a response
-        // Just handle it internally
-        if (!strcmp(method, "notifications/cancelled")) {
-            r2mcp_log("Received cancelled notification");
-        } else if (!strcmp(method, "notifications/initialized")) {
-            r2mcp_log("Received initialized notification");
-        } else {
-            r2mcp_log("Received unknown notification");
-        }
-    }
+			fsync (STDOUT_FILENO);
+			free (response);
+		}
+	} else {
+		// This is a notification, don't send a response
+		// Just handle it internally
+		if (!strcmp (method, "notifications/cancelled")) {
+			r2mcp_log ("Received cancelled notification");
+		} else if (!strcmp (method, "notifications/initialized")) {
+			r2mcp_log ("Received initialized notification");
+		} else {
+			r2mcp_log ("Received unknown notification");
+		}
+	}
 
-    r_json_free(request);
+	r_json_free (request);
 }
 
 // Main function with proper initialization
 int main(int argc, char **argv) {
-    (void)argc;
-    (void)argv;
+	(void)argc;
+	(void)argv;
 
-    // Print to stderr immediately to confirm we're starting
-    fprintf(stderr, "r2mcp starting\n");
+	// Print to stderr immediately to confirm we're starting
+	fprintf (stderr, "r2mcp starting\n");
 
-    // Enable logging
-    r2mcp_log("r2mcp starting");
+	// Enable logging
+	r2mcp_log ("r2mcp starting");
 
-    // Set up signal handlers
-    struct sigaction sa = { 0 };
-    sa.sa_flags = 0;
-    sa.sa_handler = signal_handler;
-    sigemptyset(&sa.sa_mask);
+	// Set up signal handlers
+	struct sigaction sa = { 0 };
+	sa.sa_flags = 0;
+	sa.sa_handler = signal_handler;
+	sigemptyset (&sa.sa_mask);
 
-    sigaction(SIGINT, &sa, NULL);
-    sigaction(SIGTERM, &sa, NULL);
-    sigaction(SIGHUP, &sa, NULL);
-    signal(SIGPIPE, SIG_IGN);
+	sigaction (SIGINT, &sa, NULL);
+	sigaction (SIGTERM, &sa, NULL);
+	sigaction (SIGHUP, &sa, NULL);
+	signal (SIGPIPE, SIG_IGN);
 
-    // Initialize r2
-    if (!init_r2()) {
-        R_LOG_ERROR("Failed to initialize radare2");
-        r2mcp_log("Failed to initialize radare2");
-        return 1;
-    }
+	// Initialize r2
+	if (!init_r2 ()) {
+		R_LOG_ERROR ("Failed to initialize radare2");
+		r2mcp_log ("Failed to initialize radare2");
+		return 1;
+	}
 
-    // Always use direct mode with mcpo
-    is_direct_mode = true;
-    direct_mode_loop();
+	// Always use direct mode with mcpo
+	is_direct_mode = true;
+	direct_mode_loop ();
 
-    cleanup_r2();
-    return 0;
+	cleanup_r2 ();
+	return 0;
 }
 
 // Properly handle the "initialize" method
 // Fixed handle_initialize function with properly structured capabilities
 static char *handle_initialize(RJson *params) {
-    if (server_state.client_capabilities) {
-        r_json_free(server_state.client_capabilities);
-    }
-    if (server_state.client_info) {
-        r_json_free(server_state.client_info);
-    }
+	if (server_state.client_capabilities) {
+		r_json_free (server_state.client_capabilities);
+	}
+	if (server_state.client_info) {
+		r_json_free (server_state.client_info);
+	}
 
-    server_state.client_capabilities = r_json_get(params, "capabilities");
-    server_state.client_info = r_json_get(params, "clientInfo");
+	server_state.client_capabilities = r_json_get (params, "capabilities");
+	server_state.client_info = r_json_get (params, "clientInfo");
 
-    // Create a proper initialize response
-    PJ *pj = pj_new();
-    pj_o(pj);
-    pj_ks(pj, "protocolVersion", LATEST_PROTOCOL_VERSION);
+	// Create a proper initialize response
+	PJ *pj = pj_new ();
+	pj_o (pj);
+	pj_ks (pj, "protocolVersion", LATEST_PROTOCOL_VERSION);
 
-    pj_k(pj, "serverInfo");
-    pj_o(pj);
-    pj_ks(pj, "name", server_state.info.name);
-    pj_ks(pj, "version", server_state.info.version);
-    pj_end(pj);
+	pj_k (pj, "serverInfo");
+	pj_o (pj);
+	pj_ks (pj, "name", server_state.info.name);
+	pj_ks (pj, "version", server_state.info.version);
+	pj_end (pj);
 
-    // Capabilities need to be objects with specific structure, not booleans
-    pj_k(pj, "capabilities");
-    pj_o(pj);
+	// Capabilities need to be objects with specific structure, not booleans
+	pj_k (pj, "capabilities");
+	pj_o (pj);
 
-    // Tools capability - needs to be an object
-    pj_k(pj, "tools");
-    pj_o(pj);
-    pj_kb(pj, "listChanged", false);
-    pj_end(pj);
+	// Tools capability - needs to be an object
+	pj_k (pj, "tools");
+	pj_o (pj);
+	pj_kb (pj, "listChanged", false);
+	pj_end (pj);
 
-    // For any capability we don't support, don't include it at all
-    // Don't add: prompts, roots, resources, notifications, logging, sampling
+	// For any capability we don't support, don't include it at all
+	// Don't add: prompts, roots, resources, notifications, logging, sampling
 
-    pj_end(pj); // End capabilities
+	pj_end (pj); // End capabilities
 
-    if (server_state.instructions) {
-        pj_ks(pj, "instructions", server_state.instructions);
-    }
+	if (server_state.instructions) {
+		pj_ks (pj, "instructions", server_state.instructions);
+	}
 
-    pj_end(pj);
+	pj_end (pj);
 
-    server_state.initialized = true;
-    return pj_drain(pj);
+	server_state.initialized = true;
+	return pj_drain (pj);
 }
 
 // Original get_capabilities function can also be fixed for reference
 static char *get_capabilities(void) {
-    PJ *pj = pj_new();
-    pj_o(pj);
+	PJ *pj = pj_new ();
+	pj_o (pj);
 
-    // Only include tools capability
-    pj_ko(pj, "tools");
-    pj_kb(pj, "listChanged", false);
-    pj_end(pj);
+	// Only include tools capability
+	pj_ko (pj, "tools");
+	pj_kb (pj, "listChanged", false);
+	pj_end (pj);
 
-    // Don't include capabilities we don't support
+	// Don't include capabilities we don't support
 
-    pj_end(pj);
-    return pj_drain(pj);
+	pj_end (pj);
+	return pj_drain (pj);
 }
 
 // Create a proper success response
 static char *create_success_response(const char *result, const char *id) {
-    PJ *pj = pj_new();
-    pj_o(pj);
-    pj_ks(pj, "jsonrpc", "2.0");
+	PJ *pj = pj_new ();
+	pj_o (pj);
+	pj_ks (pj, "jsonrpc", "2.0");
 
-    if (id) {
-        // If id is a number string, treat it as a number
-        char *endptr;
-        long num_id = strtol(id, &endptr, 10);
-        if (*id != '\0' && *endptr == '\0') {
-            // It's a valid number
-            pj_kn(pj, "id", num_id);
-        } else {
-            // It's a string
-            pj_ks(pj, "id", id);
-        }
-    }
+	if (id) {
+		// If id is a number string, treat it as a number
+		char *endptr;
+		long num_id = strtol (id, &endptr, 10);
+		if (*id != '\0' && *endptr == '\0') {
+			// It's a valid number
+			pj_kn (pj, "id", num_id);
+		} else {
+			// It's a string
+			pj_ks (pj, "id", id);
+		}
+	}
 
-    pj_k(pj, "result");
-    if (result) {
-        pj_raw(pj, result);
-    } else {
-        pj_null(pj);
-    }
+	pj_k (pj, "result");
+	if (result) {
+		pj_raw (pj, result);
+	} else {
+		pj_null (pj);
+	}
 
-    pj_end(pj);
-    char *s = pj_drain(pj);
-    r2mcp_log(">>>");
-    r2mcp_log(s);
-    return s;
+	pj_end (pj);
+	char *s = pj_drain (pj);
+	r2mcp_log (">>>");
+	r2mcp_log (s);
+	return s;
 }
 
 #if 0
@@ -773,7 +771,6 @@ static char *handle_mcp_request(const char *method, RJson *params, const char *i
 	free (result);
 	return response;
 }
-
 
 static char *handle_list_tools(RJson *params) {
 	// Add pagination support
@@ -1211,54 +1208,51 @@ static char *handle_call_tool(RJson *params) {
 	return create_error_response (-32602, format_string ("Unknown tool: %s", tool_name), NULL, NULL);
 }
 
-
-
 // Add a helper function to read a message with timeout
 static char *read_buffer_get_message_timeout(ReadBuffer *buf, int timeout_sec) {
-    time_t start_time = time(NULL);
+	time_t start_time = time (NULL);
 
-    while (1) {
-        // Check if we have a complete message
-        char *msg = read_buffer_get_message(buf);
-        if (msg) {
-            return msg;
-        }
+	while (1) {
+		// Check if we have a complete message
+		char *msg = read_buffer_get_message (buf);
+		if (msg) {
+			return msg;
+		}
 
-        // Check for timeout
-        if (difftime(time(NULL), start_time) > timeout_sec) {
-            r2mcp_log("Timeout waiting for complete message");
-            return NULL;
-        }
+		// Check for timeout
+		if (difftime (time (NULL), start_time) > timeout_sec) {
+			r2mcp_log ("Timeout waiting for complete message");
+			return NULL;
+		}
 
-        // Read more data
-        fd_set read_fds;
-        struct timeval tv;
-        FD_ZERO(&read_fds);
-        FD_SET(STDIN_FILENO, &read_fds);
+		// Read more data
+		fd_set read_fds;
+		struct timeval tv;
+		FD_ZERO (&read_fds);
+		FD_SET (STDIN_FILENO, &read_fds);
 
-        // Short timeout for polling
-        tv.tv_sec = 1;
-        tv.tv_usec = 0;
+		// Short timeout for polling
+		tv.tv_sec = 1;
+		tv.tv_usec = 0;
 
-        int select_result = select(STDIN_FILENO + 1, &read_fds, NULL, NULL, &tv);
+		int select_result = select (STDIN_FILENO + 1, &read_fds, NULL, NULL, &tv);
 
-        if (select_result <= 0) {
-            continue;  // Try again or timeout will eventually trigger
-        }
+		if (select_result <= 0) {
+			continue; // Try again or timeout will eventually trigger
+		}
 
-        char chunk[READ_CHUNK_SIZE];
-        ssize_t bytes_read = read(STDIN_FILENO, chunk, sizeof(chunk) - 1);
+		char chunk[READ_CHUNK_SIZE];
+		ssize_t bytes_read = read (STDIN_FILENO, chunk, sizeof (chunk) - 1);
 
-        if (bytes_read <= 0) {
-            if (bytes_read == 0 || (errno != EAGAIN && errno != EWOULDBLOCK)) {
-                // EOF or error
-                return NULL;
-            }
-            continue;
-        }
+		if (bytes_read <= 0) {
+			if (bytes_read == 0 || (errno != EAGAIN && errno != EWOULDBLOCK)) {
+				// EOF or error
+				return NULL;
+			}
+			continue;
+		}
 
-        // Append the data and try again
-        read_buffer_append(buf, chunk, bytes_read);
-    }
+		// Append the data and try again
+		read_buffer_append (buf, chunk, bytes_read);
+	}
 }
-
