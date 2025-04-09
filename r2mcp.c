@@ -18,6 +18,7 @@ static inline void r2mcp_log(const char *x) {
 #endif
 }
 
+// TODO: move into r2
 static st64 r_json_get_num(const RJson *json, const char *key) {
 	if (!json || !key) {
 		return 0;
@@ -41,6 +42,7 @@ static st64 r_json_get_num(const RJson *json, const char *key) {
 	}
 }
 
+// TODO: move into r2
 static const char *r_json_get_str(const RJson *json, const char *key) {
 	if (!json || !key) {
 		return NULL;
@@ -850,7 +852,7 @@ static char *handle_list_tools(RJson *params) {
 			"List all the references to the given address",
 			"{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the address to check for crossed references\"}},\"required\":[\"address\"]}" },
 		{ "decompileFunction",
-			"Decompile function at given address",
+			"Decompile function at given address, consider using this method instead of disassembleFunction",
 			"{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the function to decompile\"}},\"required\":[\"address\"]}" },
 		{ "disassembleFunction",
 			"Disassemble function at given address",
