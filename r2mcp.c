@@ -1068,14 +1068,16 @@ int main(int argc, char **argv) {
 	(void)argv;
 
 	struct sigaction sa = { 0 };
+	sa.sa_flags = 0;
 	sa.sa_handler = signal_handler;
 	sigemptyset (&sa.sa_mask);
-
-	sa.sa_flags = 0;
 
 	sigaction (SIGINT, &sa, NULL);
 	sigaction (SIGTERM, &sa, NULL);
 	sigaction (SIGHUP, &sa, NULL);
+
+	fsync (STDIN_FILENO);
+	fsync (STDOUT_FILENO);
 
 	signal (SIGPIPE, SIG_IGN);
 
