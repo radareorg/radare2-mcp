@@ -76,8 +76,7 @@ static bool is_direct_mode = false;
 static ServerState server_state = {
 	.info = {
 		.name = "Radare2 MCP Connector",
-		.version = "1.0.0"
-	},
+		.version = "1.0.0" },
 	.capabilities = { .logging = true, .tools = true },
 	.instructions = "Use this server to analyze binaries with radare2",
 	.initialized = false,
@@ -459,6 +458,8 @@ static char *handle_mcp_request(const char *method, RJson *params, const char *i
 
 	if (!strcmp (method, "initialize")) {
 		result = handle_initialize (params);
+	} else if (!strcmp (method, "notifications/initialized")) {
+		return NULL; // No response for notifications
 	} else if (!strcmp (method, "ping")) {
 		result = strdup ("{}");
 	} else if (!strcmp (method, "resources/templates/list")) {
@@ -516,8 +517,20 @@ static char *get_capabilities(void) {
 	PJ *pj = pj_new ();
 	pj_o (pj);
 
-	pj_k (pj, "tools");
-	pj_o (pj);
+	pj_ko (pj, "experimental");
+	pj_end (pj);
+
+	pj_ko (pj, "tools");
+	pj_kb (pj, "listChanged", false);
+	pj_end (pj);
+
+	pj_ko (pj, "prompts");
+	pj_kb (pj, "listChanged", false);
+	pj_end (pj);
+
+	pj_ko (pj, "resources");
+	pj_kb (pj, "listChanged", false);
+	pj_kb (pj, "subscribe", false);
 	pj_end (pj);
 
 	pj_end (pj);
@@ -527,7 +540,7 @@ static char *get_capabilities(void) {
 static char *handle_list_tools(RJson *params) {
 	// Add pagination support
 	const char *cursor = r_json_get_str (params, "cursor");
-	int page_size = 32; // Default page size XXX pagination doesnt work. just use > len(tools)
+	int page_size = 32; // Default page size XXX pagination doesnt work. just use > len (tools)
 	int start_index = 0;
 
 	// Parse cursor if provided
@@ -991,82 +1004,91 @@ static void process_mcp_message(const char *msg) {
 		}
 
 		char *response = handle_mcp_request (method, params, id);
+		if (response) {
+			// Add a newline at the end of the response
+			char *formatted_response = r_str_newf ("%s\n", response);
 
-		// Write directly to stdout to ensure no extra output
-		write (STDOUT_FILENO, response, strlen (response));
-		write (STDOUT_FILENO, "\n", 1);
-		fflush (stdout);
+			// Write directly to stdout and flush immediately
+			write (STDOUT_FILENO, formatted_response, strlen (formatted_response));
+			fsync (STDOUT_FILENO);
+			fflush (stdout);
 
-		free (response);
+			r2mcp_log (">>>");
+			r2mcp_log (formatted_response);
+
+			free (formatted_response);
+			free (response);
+		}
 	} else {
-		// We don't handle notifications anymore
-		R_LOG_INFO ("Ignoring notification: %s", method);
+		// Handle notification - we now properly handle notifications/initialized
+		if (!strcmp (method, "notifications/initialized")) {
+			r2mcp_log ("Received initialized notification");
+		} else {
+			r2mcp_log ("Ignoring notification");
+		}
 	}
 
 	r_json_free (request);
 }
 
+// Set buffering modes for stdin/stdout
+static void set_nonblocking_io(bool nonblocking) {
+	// Set stdin/stdout to blocking or non-blocking mode
+	int flags = fcntl (STDIN_FILENO, F_GETFL, 0);
+	if (nonblocking) {
+		fcntl (STDIN_FILENO, F_SETFL, flags | O_NONBLOCK);
+	} else {
+		fcntl (STDIN_FILENO, F_SETFL, flags & ~O_NONBLOCK);
+	}
+
+	// Set stdout to line buffered mode
+	setvbuf (stdout, NULL, _IOLBF, 0);
+}
+
 static void direct_mode_loop(void) {
-	R_LOG_INFO ("Running in MCP direct mode (stdin/stdout)");
+	r2mcp_log ("Starting MCP direct mode (stdin/stdout)");
+
+	// Set proper IO modes for mcpo
+	set_nonblocking_io (false);
+
+	// Unbuffered stdout
+	setvbuf (stdout, NULL, _IONBF, 0);
 
 	ReadBuffer *buffer = read_buffer_new ();
 	char chunk[READ_CHUNK_SIZE];
 
-	int flags = fcntl (STDIN_FILENO, F_GETFL, 0);
-	fcntl (STDIN_FILENO, F_SETFL, flags | O_NONBLOCK);
-
-	struct timeval tv;
-	fd_set readfds;
-
 	while (running) {
-		FD_ZERO (&readfds);
-		FD_SET (STDIN_FILENO, &readfds);
+		// Read from stdin one message at a time
+		ssize_t bytes_read = read (STDIN_FILENO, chunk, sizeof (chunk) - 1);
 
-		tv.tv_sec = 0;
-		tv.tv_usec = 100000;
+		if (bytes_read > 0) {
+			// Ensure null termination
+			chunk[bytes_read] = '\0';
 
-		int ret = select (STDIN_FILENO + 1, &readfds, NULL, NULL, &tv);
+			// Append to our buffer
+			read_buffer_append (buffer, chunk, bytes_read);
 
-		if (ret < 0) {
-			if (errno != EINTR) {
-				R_LOG_ERROR ("Select: %s", strerror (errno));
-				break;
+			// Process any complete messages in the buffer
+			char *msg;
+			while ((msg = read_buffer_get_message (buffer)) != NULL) {
+				process_mcp_message (msg);
+				free (msg);
 			}
-			continue;
-		}
-
-		if (ret == 0) {
-			if (write (STDOUT_FILENO, "", 0) < 0) {
-				R_LOG_WARN ("Client disconnected (stdout closed)");
+		} else if (bytes_read == 0) {
+			// EOF - stdin closed
+			r2mcp_log ("End of input stream - exiting");
+			break;
+		} else {
+			// Error
+			if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) {
+				r2mcp_log ("Read error");
 				break;
-			}
-			continue;
-		}
-
-		if (FD_ISSET (STDIN_FILENO, &readfds)) {
-			ssize_t bytes_read = read (STDIN_FILENO, chunk, READ_CHUNK_SIZE);
-
-			if (bytes_read > 0) {
-				read_buffer_append (buffer, chunk, bytes_read);
-				char *msg;
-				while ((msg = read_buffer_get_message (buffer)) != NULL) {
-					process_mcp_message (msg);
-					free (msg);
-				}
-			} else if (bytes_read == 0) {
-				R_LOG_INFO ("End of input stream");
-				break;
-			} else {
-				if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) {
-					R_LOG_ERROR ("Reading from stdin: %s", strerror (errno));
-					break;
-				}
 			}
 		}
 	}
 
 	read_buffer_free (buffer);
-	R_LOG_INFO ("Direct mode loop terminated");
+	r2mcp_log ("Direct mode loop terminated");
 }
 
 int main(int argc, char **argv) {
@@ -1077,6 +1099,15 @@ int main(int argc, char **argv) {
 	sa.sa_flags = 0;
 	sa.sa_handler = signal_handler;
 	sigemptyset (&sa.sa_mask);
+
+	if (!isatty (STDIN_FILENO)) {
+		is_direct_mode = true;
+		r2mcp_log ("Starting in direct mode");
+		direct_mode_loop ();
+		cleanup_r2 ();
+		r2mcp_log ("MCP direct mode terminated gracefully");
+		return 0;
+	}
 
 	sigaction (SIGINT, &sa, NULL);
 	sigaction (SIGTERM, &sa, NULL);
@@ -1090,14 +1121,6 @@ int main(int argc, char **argv) {
 	if (!init_r2 ()) {
 		R_LOG_ERROR ("Failed to initialize radare2");
 		return 1;
-	}
-
-	if (!isatty (STDIN_FILENO)) {
-		is_direct_mode = true;
-		direct_mode_loop ();
-		cleanup_r2 ();
-		R_LOG_INFO ("MCP direct mode terminated gracefully");
-		return 0;
 	}
 
 	cleanup_r2 ();
