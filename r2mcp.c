@@ -157,7 +157,7 @@ static char *r2_cmd_filter(const char *cmd, bool *changed) {
 
 static char *r2_cmd(const char *cmd) {
 	if (!r_core || !file_opened) {
-		return strdup ("Error: No file is open");
+		return strdup ("Use the openFile method before calling any other method");
 	}
 	bool changed = false;
 	char *filteredCommand = r2_cmd_filter (cmd, &changed);
@@ -791,7 +791,7 @@ static char *handle_list_tools(RJson *params) {
 
 	// Define our tools with their descriptions and schemas
 	// Format: {name, description, schema_definition}
-	const char *tools[20][3] = {
+	const char *tools[26][3] = {
 		{ "openFile",
 			"Open a file for analysis",
 			"{\"type\":\"object\",\"properties\":{\"filePath\":{\"type\":\"string\",\"description\":\"Path to the file to open\"}},\"required\":[\"filePath\"]}" },
@@ -809,6 +809,12 @@ static char *handle_list_tools(RJson *params) {
 			"{\"type\":\"object\",\"properties\":{}}" },
 		{ "listSections",
 			"Show program sections and segments",
+			"{\"type\":\"object\",\"properties\":{}}" },
+		{ "showFunctionDetails",
+			"Show function details",
+			"{\"type\":\"object\",\"properties\":{}}" },
+		{ "getCurrentAddress",
+			"Show function details",
 			"{\"type\":\"object\",\"properties\":{}}" },
 		{ "showHeaders",
 			"Show program headers details and information from the binary",
@@ -834,6 +840,15 @@ static char *handle_list_tools(RJson *params) {
 		{ "useDecompiler",
 			"Use given decompiler",
 			"{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"Name of the decompiler\"}},\"required\":[\"name\"]}" },
+		{ "getFunctionPrototype",
+			"Get the signature / prototype for the function in the given address",
+			"{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address to put the comment in\"},\"prototype\":{\"type\":\"string\",\"description\":\"function signature or prototype description\"}},\"required\":[\"address\"]}" },
+		{ "setFunctionPrototype",
+			"Define the function signature",
+			"{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address to put the comment in\"},\"prototype\":{\"type\":\"string\",\"description\":\"function signature or prototype description\"}},\"required\":[\"address\",\"prototype\"]}" },
+		{ "setComment",
+			"List strings in the rodata section of the binary matching the given regexp",
+			"{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address to put the comment in\"},\"message\":{\"type\":\"string\",\"description\":\"comment text to use\"}},\"required\":[\"address\",\"message\"]}" },
 		{ "listStrings",
 			"List strings in the rodata section of the binary matching the given regexp",
 			"{\"type\":\"object\",\"properties\":{\"regexpFilter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"}}}" },
@@ -1001,10 +1016,23 @@ static char *handle_call_tool(RJson *params) {
 
 	// Handle showHeaders tool
 	if (!strcmp (tool_name, "showHeaders")) {
-		if (!file_opened) {
-			return create_tool_text_response ("No file was open.");
-		}
 		char *res = r_core_cmd_str (r_core, "i;iH");
+		char *o = create_tool_text_response (res);
+		free (res);
+		return o;
+	}
+
+	// Handle showFunctionDetails tool
+	if (!strcmp (tool_name, "showFunctionDetails")) {
+		char *res = r_core_cmd_str (r_core, "afi");
+		char *o = create_tool_text_response (res);
+		free (res);
+		return o;
+	}
+
+	// Handle getCurrentAddress tool
+	if (!strcmp (tool_name, "getCurrentAddress")) {
+		char *res = r_core_cmd_str (r_core, "s;fd");
 		char *o = create_tool_text_response (res);
 		free (res);
 		return o;
@@ -1078,6 +1106,40 @@ static char *handle_call_tool(RJson *params) {
 		return response;
 	}
 #endif
+	// Handle setComment tool
+	if (!strcmp (tool_name, "setComment")) {
+		const char *address = r_json_get_str (tool_args, "address");
+		const char *message = r_json_get_str (tool_args, "message");
+		if (!address || !message) {
+			return create_error_response (-32602, "Missing required parameters: address and message", NULL, NULL);
+		}
+
+		r_core_cmdf (r_core, "'@%s'%s", address, message);
+		return strdup ("ok");
+	}
+
+	// Handle setFunctionPrototype tool
+	if (!strcmp (tool_name, "setFunctionPrototype")) {
+		const char *address = r_json_get_str (tool_args, "address");
+		const char *prototype = r_json_get_str (tool_args, "prototype");
+		if (!address || !prototype) {
+			return create_error_response (-32602, "Missing required parameters: address and prototype", NULL, NULL);
+		}
+		r_core_cmdf (r_core, "'@%s'afs %s", address, prototype);
+		return strdup ("ok");
+	}
+
+	// Handle getFunctionPrototype tool
+	if (!strcmp (tool_name, "getFunctionPrototype")) {
+		const char *address = r_json_get_str (tool_args, "address");
+		if (!address) {
+			return create_error_response (-32602, "Missing required parameters: address", NULL, NULL);
+		}
+		char *s = r_str_newf ("'@%s'afs", address);
+		char *res = r2_cmd (s);
+		free (s);
+		return res;
+	}
 
 	// Handle listStrings tool
 	if (!strcmp (tool_name, "listStrings")) {
