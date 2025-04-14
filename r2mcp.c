@@ -290,9 +290,10 @@ static bool r2_analyze(int level) {
 	}
 	const char *cmd = "aa";
 	switch (level) {
-	case 1: cmd = "aaa"; break;
-	case 2: cmd = "aaaa"; break;
-	case 3: cmd = "aaaaa"; break;
+	case 1: cmd = "aac"; break;
+	case 2: cmd = "aaa"; break;
+	case 3: cmd = "aaaa"; break;
+	case 4: cmd = "aaaaa"; break;
 	}
 	r_core_cmd0 (r_core, cmd);
 	return true;
@@ -845,7 +846,7 @@ static char *handle_list_tools(RJson *params) {
 #endif
 		{ "analyze",
 			"Run analysis on the current file",
-			"{\"type\":\"object\",\"properties\":{\"level\":{\"type\":\"number\",\"description\":\"Analysis level (0, 1, 2, 3)\"}},\"required\":[]}" },
+			"{\"type\":\"object\",\"properties\":{\"level\":{\"type\":\"number\",\"description\":\"Analysis level (0, 1, 2, 3, 4)\"}},\"required\":[]}" },
 		{ "xrefsTo",
 			"List all the references to the given address",
 			"{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the address to check for crossed references\"}},\"required\":[\"address\"]}" },
