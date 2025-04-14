@@ -454,6 +454,7 @@ static char *read_buffer_get_message(ReadBuffer *buf) {
 	// If we get here, we don't have a complete message yet
 	return NULL;
 }
+
 // Set buffering modes for stdin/stdout
 static void set_nonblocking_io(bool nonblocking) {
 	// Set stdin/stdout to blocking or non-blocking mode
@@ -837,7 +838,7 @@ static char *handle_list_tools(RJson *params) {
 			"List strings in the rodata section of the binary matching the given regexp",
 			"{\"type\":\"object\",\"properties\":{\"regexpFilter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"}}}" },
 		{ "listAllStrings",
-			"Scan the whole binary looking for hardcoded strings matching the given regexp if specified",
+			"Scan the whole binary looking for hardcoded strings matching the given regexp if specified (consider using this method when analyzing malware)",
 			"{\"type\":\"object\",\"properties\":{\"regexpFilter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"}}}" },
 #if 0
 		{ "runCommand", // TODO: optional
