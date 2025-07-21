@@ -779,7 +779,7 @@ static char *handle_list_tools(RJson *params) {
 	const char *tools[26][3] = {
 		{ "openFile",
 			"Open given file with radare2 to start the analysis",
-			"{\"type\":\"object\",\"properties\":{\"filePath\":{\"type\":\"string\",\"description\":\"Path to the file to open\"}},\"required\":[\"filePath\"]}" },
+			"{\"type\":\"object\",\"properties\":{\"filePath\":{\"type\":\"string\",\"description\":\"(required) Path to the file to open\"}},\"required\":[\"filePath\"]}" },
 		{ "closeFile",
 			"Close the currently open file",
 			"{\"type\":\"object\",\"properties\":{}}" },
@@ -966,6 +966,11 @@ static char *handle_call_tool(RJson *params) {
 	// Handle listFunctions tool
 	if (!strcmp (tool_name, "listFunctions")) {
 		char *res = r2_cmd ("afl,addr/cols/name");
+		r_str_trim (res);
+		if (R_STR_ISEMPTY (res)) {
+			free (res);
+			res = strdup ("No functions found. Run the analysis first.");
+		}
 		char *o = create_tool_text_response (res);
 		free (res);
 		return o;
