@@ -1,5 +1,6 @@
 /* r2mcp - MIT - Copyright 2025 - pancake, dnakov */
 
+#include "readbuffer.h"
 #include <r_core.h>
 #include <r_util/r_json.h>
 #include <r_util/r_print.h>
@@ -9,7 +10,6 @@
 #define R2MCP_VERSION "1.0.0"
 #define JSON_RPC_VERSION "2.0"
 #define MCP_VERSION      "2024-11-05"
-#define BUFFER_SIZE     65536
 #define READ_CHUNK_SIZE 32768
 #define LATEST_PROTOCOL_VERSION "2024-11-05"
 
@@ -40,7 +40,6 @@ typedef struct {
 } ServerState;
 
 #include "utils.inc.c"
-#include "readbuffer.inc.c"
 #include "r2api.inc.c"
 
 static volatile sig_atomic_t running = 1;

@@ -1,12 +1,15 @@
 CC?= gcc
 TARGET = r2mcp
-SRC = r2mcp.c
 CFLAGS = -Wall -Wextra -g
 PKGCONFIG = pkg-config
 INSTALL_DIR?=install -d
 INSTALL_PROGRAM?=install -m 755
 PREFIX?=/usr/local
 R2PM_BINDIR?=$(shell r2pm -H R2PM_BINDIR)
+
+SRC = r2mcp.c
+SRC += readbuffer.c
+OBJS:=$(subst .c,.o,$(SRC))
 
 # Detect OS-specific settings
 UNAME_S := $(shell uname -s)
@@ -33,9 +36,9 @@ check_deps:
 	@$(PKGCONFIG) --exists r_core || (echo "radare2 development files not found."; exit 1)
 	@echo "✓ All dependencies are satisfied."
 
-$(TARGET): $(SRC)
+$(TARGET): $(OBJS)
 	@echo "Building R2 MCP server..."
-	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+	$(CC) $(CFLAGS) -o $@ $(OBJS) $(LDFLAGS)
 	@echo "✓ Server built successfully."
 
 clean:
