@@ -13,19 +13,6 @@
 #define READ_CHUNK_SIZE 32768
 #define LATEST_PROTOCOL_VERSION "2024-11-05"
 
-
-#include "utils.inc.c"
-
-static inline void r2mcp_log(const char *x) {
-	eprintf ("RESULT %s\n", x);
-#if R2MCP_DEBUG
-	r_file_dump (R2MCP_LOGFILE, (const ut8 *)(x), -1, true);
-	r_file_dump (R2MCP_LOGFILE, (const ut8 *)"\n", -1, true);
-#else
-	// do nothing
-#endif
-}
-
 typedef struct {
 	const char *name;
 	const char *version;
@@ -52,212 +39,15 @@ typedef struct {
 	RadareState rstate;
 } ServerState;
 
+#include "utils.inc.c"
+#include "readbuffer.inc.c"
+#include "r2api.inc.c"
+
 static volatile sig_atomic_t running = 1;
-
-typedef struct {
-	char *data;
-	size_t size;
-	size_t capacity;
-} ReadBuffer;
-
-static void r2_settings(RCore *core) {
-	r_config_set_i (core->config, "scr.color", 0);
-	r_config_set_b (core->config, "scr.utf8", false);
-	r_config_set_b (core->config, "scr.interactive", false);
-	r_config_set_b (core->config, "emu.str", true);
-	r_config_set_b (core->config, "asm.bytes", false);
-	r_config_set_b (core->config, "anal.strings", true);
-	r_config_set_b (core->config, "asm.lines", false);
-	r_config_set_b (core->config, "anal.hasnext", true); // TODO: optional
-	r_config_set_b (core->config, "asm.lines.fcn", false);
-	r_config_set_b (core->config, "asm.cmt.right", false);
-	r_config_set_b (core->config, "scr.html", false);
-	r_config_set_b (core->config, "scr.prompt", false);
-	r_config_set_b (core->config, "scr.echo", false);
-	r_config_set_b (core->config, "scr.flush", true);
-	r_config_set_b (core->config, "scr.null", false);
-	r_config_set_b (core->config, "scr.pipecolor", false);
-	r_config_set_b (core->config, "scr.utf8", false);
-	r_config_set_i (core->config, "scr.limit", 16768);
-}
-
-static char *r2_cmd_filter(const char *cmd, bool *changed) {
-	char *res = r_str_trim_dup (cmd);
-	char fchars[] = "|>`";
-	*changed = false;
-	if (*res == '!') {
-		*changed = true;
-		*res = 0;
-	} else {
-		char *ch = strstr (res, "$(");
-		if (ch) {
-			*changed = true;
-			*ch = 0;
-		}
-		for (ch = fchars; *ch; ch++) {
-			char *p = strchr (res, *ch);
-			if (p) {
-				*changed = true;
-				*p = 0;
-			}
-		}
-	}
-	return res;
-}
-
-static char *r2_cmd(ServerState *ss, const char *cmd) {
-	RCore *core = ss->rstate.core;
-	if (!core || !ss->rstate.file_opened) {
-		return strdup ("Use the openFile method before calling any other method");
-	}
-	bool changed = false;
-	char *filteredCommand = r2_cmd_filter (cmd, &changed);
-	if (changed) {
-		r2mcp_log ("command injection prevented");
-	}
-	char *res = r_core_cmd_str (core, filteredCommand);
-	free (filteredCommand);
-	r2_settings (core);
-	return res;
-}
-
-ReadBuffer *read_buffer_new(void) {
-	ReadBuffer *buf = R_NEW (ReadBuffer);
-	buf->data = malloc (BUFFER_SIZE);
-	buf->size = 0;
-	buf->capacity = BUFFER_SIZE;
-	return buf;
-}
-
-static void read_buffer_append(ReadBuffer *buf, const char *data, size_t len) {
-	if (buf->size + len > buf->capacity) {
-		size_t new_capacity = buf->capacity * 2;
-		char *new_data = realloc (buf->data, new_capacity);
-		if (!new_data) {
-			R_LOG_ERROR ("Failed to resize buffer");
-			return;
-		}
-		buf->data = new_data;
-		buf->capacity = new_capacity;
-	}
-	memcpy (buf->data + buf->size, data, len);
-	buf->size += len;
-}
-
-static void read_buffer_free(ReadBuffer *buf) {
-	if (buf) {
-		free (buf->data);
-		free (buf);
-	}
-}
-
-static char *format_string(const char *format, ...);
-static char *format_string(const char *format, ...) {
-	char buffer[4096];
-	va_list args;
-	va_start (args, format);
-	vsnprintf (buffer, sizeof (buffer), format, args);
-	va_end (args);
-	return strdup (buffer);
-}
-
-static bool init_r2(ServerState *ss) {
-	RCore *core = r_core_new ();
-	if (!core) {
-		R_LOG_ERROR ("Failed to initialize radare2 core");
-		return false;
-	}
-
-	r2_settings (core);
-	ss->rstate.core = core;
-
-	R_LOG_INFO ("Radare2 core initialized");
-	return true;
-}
-
-static void cleanup_r2(ServerState *ss) {
-	RCore *core = ss->rstate.core;
-	if (core) {
-		r_core_free (core);
-		ss->rstate.core = NULL;
-		ss->rstate.file_opened = false;
-		ss->rstate.current_file = NULL;
-	}
-}
-
-static bool r2_open_file(ServerState *ss, const char *filepath) {
-	R_LOG_INFO ("Attempting to open file: %s\n", filepath);
-	RCore *core = ss->rstate.core;
-	if (!core && !init_r2 (ss)) {
-		R_LOG_ERROR ("Failed to initialize r2 core\n");
-		return false;
-	}
-
-	if (ss->rstate.file_opened) {
-		R_LOG_INFO ("Closing previously opened file: %s", ss->rstate.current_file);
-		r_core_cmd0 (core, "o-*");
-		ss->rstate.file_opened = false;
-		ss->rstate.current_file = NULL;
-	}
-
-	r_core_cmd0 (core, "e bin.relocs.apply=true");
-	r_core_cmd0 (core, "e bin.cache=true");
-
-	char *cmd = r_str_newf ("'o %s", filepath);
-	R_LOG_INFO ("Running r2 command: %s", cmd);
-	char *result = r_core_cmd_str (core, cmd);
-	free (cmd);
-	bool success = (result && strlen (result) > 0);
-	free (result);
-
-	if (!success) {
-		R_LOG_INFO ("Trying alternative method to open file");
-		RIODesc *fd = r_core_file_open (core, filepath, R_PERM_R, 0);
-		if (fd) {
-			r_core_bin_load (core, filepath, 0);
-			R_LOG_INFO ("File opened using r_core_file_open");
-			success = true;
-		} else {
-			R_LOG_ERROR ("Failed to open file: %s", filepath);
-			return false;
-		}
-	}
-
-	R_LOG_INFO ("Loading binary information");
-	r_core_cmd0 (core, "ob");
-
-	free (ss->rstate.current_file);
-	ss->rstate.current_file = strdup (filepath);
-	ss->rstate.file_opened = true;
-	R_LOG_INFO ("File opened successfully: %s", filepath);
-
-	return true;
-}
-
-static bool r2_analyze(ServerState *ss, int level) {
-	RCore *core = ss->rstate.core;
-	if (!core || !ss->rstate.file_opened) {
-		return false;
-	}
-	const char *cmd = "aa";
-#if 1
-	switch (level) {
-	case 1: cmd = "aac"; break;
-	case 2: cmd = "aaa"; break;
-	case 3: cmd = "aaaa"; break;
-	case 4: cmd = "aaaaa"; break;
-	}
-#endif
-	r_core_cmd0 (core, cmd);
-	return true;
-}
-
 static void signal_handler(int signum) {
 	const char msg[] = "\nInterrupt received, shutting down...\n";
 	write (STDERR_FILENO, msg, sizeof (msg) - 1);
-
 	running = 0;
-
 	signal (signum, SIG_DFL);
 }
 
@@ -305,12 +95,12 @@ static bool assert_request_handler_capability(ServerState *ss, const char *metho
 			*error = strdup ("Server does not support logging");
 			return false;
 		}
-	} else if (!strncmp (method, "prompts/", 8)) {
+	} else if (r_str_startswith (method, "prompts/")) {
 		if (!check_server_capability (ss, "prompts")) {
 			*error = strdup ("Server does not support prompts");
 			return false;
 		}
-	} else if (!strncmp (method, "tools/", 6)) {
+	} else if (r_str_startswith (method, "tools/")) {
 		if (!check_server_capability (ss, "tools")) {
 			*error = strdup ("Server does not support tools");
 			return false;
@@ -366,7 +156,7 @@ static char *read_buffer_get_message(ReadBuffer *buf) {
 	size_t i;
 
 	for (i = 0; i < buf->size; i++) {
-		char c = buf->data[i];
+		const char c = buf->data[i];
 
 		// Find the first opening brace if we haven't already
 		if (start_pos == -1 && c == '{') {
@@ -406,20 +196,6 @@ static char *read_buffer_get_message(ReadBuffer *buf) {
 
 	// If we get here, we don't have a complete message yet
 	return NULL;
-}
-
-// Set buffering modes for stdin/stdout
-static void set_nonblocking_io(bool nonblocking) {
-	// Set stdin/stdout to blocking or non-blocking mode
-	int flags = fcntl (STDIN_FILENO, F_GETFL, 0);
-	if (nonblocking) {
-		fcntl (STDIN_FILENO, F_SETFL, flags | O_NONBLOCK);
-	} else {
-		fcntl (STDIN_FILENO, F_SETFL, flags & ~O_NONBLOCK);
-	}
-
-	// Set stdout to line buffered mode
-	setvbuf (stdout, NULL, _IOLBF, 0);
 }
 
 static char *handle_initialize(ServerState *ss, RJson *params) {
@@ -911,7 +687,7 @@ static char *handle_call_tool(ServerState *ss, RJson *params) {
 		const int level = r_json_get_num (tool_args, "level");
 		r2_analyze (ss, level);
 		char *result = r2_cmd (ss, "aflc");
-		char *text = format_string ("Analysis completed with level %d.\n\nfound %d functions", level, atoi (result));
+		char *text = r_str_newf ("Analysis completed with level %d.\n\nfound %d functions", level, atoi (result));
 		char *response = jsonrpc_tooltext_response (text);
 		free (result);
 		free (text);
@@ -1029,7 +805,7 @@ static char *handle_call_tool(ServerState *ss, RJson *params) {
 		return response;
 	}
 
-	return jsonrpc_error_response (-32602, format_string ("Unknown tool: %s", tool_name), NULL, NULL);
+	return jsonrpc_error_response (-32602, r_str_newf ("Unknown tool: %s", tool_name), NULL, NULL);
 }
 //
 
@@ -1219,7 +995,7 @@ int main(int argc, char **argv) {
 	signal (SIGPIPE, SIG_IGN);
 
 	// Initialize r2
-	if (!init_r2 (&ss)) {
+	if (!r2state_init (&ss)) {
 		R_LOG_ERROR ("Failed to initialize radare2");
 		r2mcp_log ("Failed to initialize radare2");
 		return 1;
@@ -1227,6 +1003,6 @@ int main(int argc, char **argv) {
 
 	direct_mode_loop (&ss);
 
-	cleanup_r2 (&ss);
+	r2state_fini (&ss);
 	return 0;
 }
