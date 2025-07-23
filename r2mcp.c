@@ -5,11 +5,11 @@
 #include <r_util/r_json.h>
 #include <r_util/r_print.h>
 
-#define R2MCP_DEBUG   1
+#define R2MCP_DEBUG 1
 #define R2MCP_LOGFILE "/tmp/r2mcp.txt"
 #define R2MCP_VERSION "1.0.0"
 #define JSON_RPC_VERSION "2.0"
-#define MCP_VERSION      "2024-11-05"
+#define MCP_VERSION "2024-11-05"
 #define READ_CHUNK_SIZE 32768
 #define LATEST_PROTOCOL_VERSION "2024-11-05"
 
@@ -49,13 +49,25 @@ static void signal_handler(int signum) {
 	running = 0;
 	signal (signum, SIG_DFL);
 }
+static void setup_signals(void) {
+	// Set up signal handlers
+	struct sigaction sa = { 0 };
+	sa.sa_flags = 0;
+	sa.sa_handler = signal_handler;
+	sigemptyset (&sa.sa_mask);
+
+	sigaction (SIGINT, &sa, NULL);
+	sigaction (SIGTERM, &sa, NULL);
+	sigaction (SIGHUP, &sa, NULL);
+	signal (SIGPIPE, SIG_IGN);
+}
 
 static bool check_client_capability(ServerState *ss, const char *capability) {
-	if (!ss->client_capabilities) {
-		return false;
+	if (ss->client_capabilities) {
+		RJson *cap = (RJson *)r_json_get (ss->client_capabilities, capability);
+		return cap != NULL;
 	}
-	RJson *cap = (RJson *)r_json_get (ss->client_capabilities, capability);
-	return cap != NULL;
+	return false;
 }
 
 static bool check_server_capability(ServerState *ss, const char *capability) {
@@ -238,7 +250,7 @@ static char *handle_list_tools(RJson *params) {
 			"List libraries linked to this binary",
 			"{\"type\":\"object\",\"properties\":{}}" },
 		{ "listImports",
-			"Enumerate all the symbols imported in the binary",
+			"Enumerate imported symbols (does not contain address, use sym.imp. prefixed entries from `listSymbols`)",
 			"{\"type\":\"object\",\"properties\":{}}" },
 		{ "listSections",
 			"Show program sections and segments",
@@ -253,13 +265,13 @@ static char *handle_list_tools(RJson *params) {
 			"Show program headers details and information from the binary",
 			"{\"type\":\"object\",\"properties\":{}}" },
 		{ "listSymbols",
-			"Enumerate all the symbols exported from the binary",
+			"Enumerate all the symbols defined in the program, imports plt address and function tags",
 			"{\"type\":\"object\",\"properties\":{}}" },
 		{ "listEntrypoints",
-			"Enumerate entrypoints, constructor functions and main",
+			"Show address of program entrypoints, constructor functions and main symbol",
 			"{\"type\":\"object\",\"properties\":{}}" },
 		{ "listMethods",
-			"Enumerate methods for the given class",
+			"Enumerate address and methods for the specified classname",
 			"{\"type\":\"object\",\"properties\":{\"classname\":{\"type\":\"string\",\"description\":\"Name of the class to list its methods\"}},\"required\":[\"classname\"]}" },
 		{ "listClasses",
 			"List C++, ObjC, Swift, Java, Dalvik class names",
@@ -271,11 +283,11 @@ static char *handle_list_tools(RJson *params) {
 			"Change the name of the function located in given address",
 			"{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"Name of the decompiler\"},\"address\":{\"type\":\"string\",\"description\":\"address of the function to rename\"}},\"required\":[\"name\",\"address\"]}" },
 		{ "useDecompiler",
-			"Select a different decompiler backend",
+			"Select decompiler (`pdc` is the default)",
 			"{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"Name of the decompiler\"}},\"required\":[\"name\"]}" },
 		{ "getFunctionPrototype",
-			"Get the signature / prototype for the function in the given address",
-			"{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address to put the comment in\"},\"prototype\":{\"type\":\"string\",\"description\":\"function signature or prototype description\"}},\"required\":[\"address\"]}" },
+			"Get the function signature / prototype from the given address",
+			"{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"(required) Address of the function\"},\"prototype\":{\"type\":\"string\",\"description\":\"function signature or prototype description\"}},\"required\":[\"address\"]}" },
 		{ "setFunctionPrototype",
 			"Define the function signature (return type, symbol name and argument types and names)",
 			"{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address to put the comment in\"},\"prototype\":{\"type\":\"string\",\"description\":\"function signature or prototype description\"}},\"required\":[\"address\",\"prototype\"]}" },
@@ -848,7 +860,7 @@ static void process_mcp_message(ServerState *ss, const char *msg) {
 }
 
 // MCPO protocol-compliant direct mode loop
-static void direct_mode_loop(ServerState *ss) {
+static void r2mcp_eventloop(ServerState *ss) {
 	r2mcp_log ("Starting MCP direct mode (stdin/stdout)");
 
 	// Use consistent unbuffered mode for stdout
@@ -909,23 +921,10 @@ int main(int argc, char **argv) {
 		.client_info = NULL
 	};
 
-
-	// Print to stderr immediately to confirm we're starting
-	fprintf (stderr, "r2mcp starting\n");
-
 	// Enable logging
 	r2mcp_log ("r2mcp starting");
 
-	// Set up signal handlers
-	struct sigaction sa = { 0 };
-	sa.sa_flags = 0;
-	sa.sa_handler = signal_handler;
-	sigemptyset (&sa.sa_mask);
-
-	sigaction (SIGINT, &sa, NULL);
-	sigaction (SIGTERM, &sa, NULL);
-	sigaction (SIGHUP, &sa, NULL);
-	signal (SIGPIPE, SIG_IGN);
+	setup_signals ();
 
 	// Initialize r2
 	if (!r2state_init (&ss)) {
@@ -934,8 +933,8 @@ int main(int argc, char **argv) {
 		return 1;
 	}
 
-	direct_mode_loop (&ss);
-
+	running = 1;
+	r2mcp_eventloop (&ss);
 	r2state_fini (&ss);
 	return 0;
 }
