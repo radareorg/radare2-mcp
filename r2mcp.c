@@ -397,7 +397,7 @@ static char *handle_call_tool(ServerState *ss, RJson *params) {
 			const char *str;
 			RRegex rx;
 			int re_flags = r_regex_flags ("e");
-			bool ok = r_regex_init (&rx, filter, re_flags);
+			bool ok = r_regex_init (&rx, filter, re_flags) == 0;
 			if (ok) {
 				r_list_foreach (strings, iter, str) {
 					if (r_regex_exec (&rx, str, 0, 0, 0) == 0) {
@@ -406,7 +406,7 @@ static char *handle_call_tool(ServerState *ss, RJson *params) {
 				}
 				r_regex_fini (&rx);
 			} else {
-				R_LOG_ERROR ("Invalid regex: %s", filter);
+				r_strbuf_appendf (sb, "Invalid regex used in filter parameter, try a simpler expression");
 			}
 			free (res);
 			res = r_strbuf_drain (sb);
@@ -577,7 +577,7 @@ static char *handle_call_tool(ServerState *ss, RJson *params) {
 			const char *str;
 			RRegex rx;
 			int re_flags = r_regex_flags ("e");
-			bool ok = r_regex_init (&rx, filter, re_flags);
+			bool ok = r_regex_init (&rx, filter, re_flags) == 0;
 			if (ok) {
 				r_list_foreach (strings, iter, str) {
 					if (r_regex_exec (&rx, str, 0, 0, 0) == 0) {
@@ -586,7 +586,7 @@ static char *handle_call_tool(ServerState *ss, RJson *params) {
 				}
 				r_regex_fini (&rx);
 			} else {
-				R_LOG_ERROR ("Invalid regex: %s", filter);
+				r_strbuf_appendf (sb, "Invalid regex used in filter parameter, try a simpler expression");
 			}
 			free (result);
 			result = r_strbuf_drain (sb);
@@ -608,7 +608,7 @@ static char *handle_call_tool(ServerState *ss, RJson *params) {
 			const char *str;
 			RRegex rx;
 			int re_flags = r_regex_flags ("e");
-			bool ok = r_regex_init (&rx, filter, re_flags);
+			bool ok = r_regex_init (&rx, filter, re_flags) == 0;
 			if (ok) {
 				r_list_foreach (strings, iter, str) {
 					if (r_regex_exec (&rx, str, 0, 0, 0) == 0) {
@@ -617,10 +617,14 @@ static char *handle_call_tool(ServerState *ss, RJson *params) {
 				}
 				r_regex_fini (&rx);
 			} else {
-				R_LOG_ERROR ("Invalid regex: %s", filter);
+				r_strbuf_appendf (sb, "Invalid regex used in filter parameter, try a simpler expression");
 			}
 			free (result);
 			result = r_strbuf_drain (sb);
+		}
+		if (R_STR_ISEMPTY (result)) {
+			free (result);
+			result = r_str_newf ("Error: No strings with regex %s", filter);
 		}
 		char *response = jsonrpc_tooltext_response (result);
 		free (result);
