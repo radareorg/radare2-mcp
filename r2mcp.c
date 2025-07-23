@@ -667,9 +667,9 @@ static char *handle_call_tool(ServerState *ss, RJson *params) {
 
 	// Handle useDecompiler tool
 	if (!strcmp (tool_name, "useDecompiler")) {
-		const char *deco = r_json_get_str (tool_args, "useDecompiler");
+		const char *deco = r_json_get_str (tool_args, "name");
 		if (!deco) {
-			return jsonrpc_error_response (-32602, "Missing required parameter: address", NULL, NULL);
+			return jsonrpc_error_response (-32602, "Missing required parameter: name", NULL, NULL);
 		}
 		char *decompilersAvailable = r_core_cmd_str (core, "e cmd.pdc=?");
 		const char *response = "ok";
