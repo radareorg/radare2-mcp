@@ -14,5 +14,6 @@ typedef struct {
 ReadBuffer *read_buffer_new(void);
 void read_buffer_free(ReadBuffer *buf);
 void read_buffer_append(ReadBuffer *buf, const char *data, size_t len);
+char *read_buffer_get_message(ReadBuffer *buf);
 
 #endif
