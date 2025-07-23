@@ -6,8 +6,16 @@
 
 #define R2MCP_DEBUG   1
 #define R2MCP_LOGFILE "/tmp/r2mcp.txt"
+#define R2MCP_VERSION "1.0.0"
+#define JSON_RPC_VERSION "2.0"
+#define MCP_VERSION      "2024-11-05"
+#define BUFFER_SIZE     65536
+#define READ_CHUNK_SIZE 32768
+#define LATEST_PROTOCOL_VERSION "2024-11-05"
 
-static char *handle_mcp_request(const char *method, RJson *params, const char *id);
+
+#include "utils.inc.c"
+
 static inline void r2mcp_log(const char *x) {
 	eprintf ("RESULT %s\n", x);
 #if R2MCP_DEBUG
@@ -17,50 +25,6 @@ static inline void r2mcp_log(const char *x) {
 	// do nothing
 #endif
 }
-
-#if R2_VERSION < 50909
-static st64 r_json_get_num(const RJson *json, const char *key) {
-	if (!json || !key) {
-		return 0;
-	}
-
-	const RJson *field = r_json_get (json, key);
-	if (!field) {
-		return 0;
-	}
-	switch (field->type) {
-	case R_JSON_STRING:
-		return r_num_get (NULL, field->str_value);
-	case R_JSON_INTEGER:
-		return field->num.s_value;
-	case R_JSON_BOOLEAN:
-		return field->num.u_value;
-	case R_JSON_DOUBLE:
-		return (int)field->num.dbl_value;
-	default:
-		return 0;
-	}
-}
-
-static const char *r_json_get_str(const RJson *json, const char *key) {
-	if (!json || !key) {
-		return NULL;
-	}
-
-	const RJson *field = r_json_get (json, key);
-	if (!field || field->type != R_JSON_STRING) {
-		return NULL;
-	}
-
-	return field->str_value;
-}
-#endif
-
-#define PORT            3000
-#define BUFFER_SIZE     65536
-#define READ_CHUNK_SIZE 32768
-
-#define LATEST_PROTOCOL_VERSION "2024-11-05"
 
 typedef struct {
 	const char *name;
@@ -73,37 +37,22 @@ typedef struct {
 } ServerCapabilities;
 
 typedef struct {
+	RCore *core;
+	bool file_opened;
+	char *current_file;
+} RadareState;
+
+typedef struct {
 	ServerInfo info;
 	ServerCapabilities capabilities;
 	const char *instructions;
 	bool initialized;
 	const RJson *client_capabilities;
 	const RJson *client_info;
+	RadareState rstate;
 } ServerState;
 
-// TODO: remove globals
-static RCore *r_core = NULL;
-static bool file_opened = false;
-static char current_file[1024] = { 0 };
 static volatile sig_atomic_t running = 1;
-static bool is_direct_mode = false;
-static ServerState server_state = {
-	.info = {
-		.name = "Radare2 MCP Connector",
-		.version = "1.0.0" },
-	.capabilities = { .logging = true, .tools = true },
-	.instructions = "Use this server to analyze binaries with radare2",
-	.initialized = false,
-	.client_capabilities = NULL,
-	.client_info = NULL
-};
-
-// Forward declarations
-static void process_mcp_message(const char *msg);
-static void direct_mode_loop(void);
-
-#define JSON_RPC_VERSION "2.0"
-#define MCP_VERSION      "2024-11-05"
 
 typedef struct {
 	char *data;
@@ -156,8 +105,9 @@ static char *r2_cmd_filter(const char *cmd, bool *changed) {
 	return res;
 }
 
-static char *r2_cmd(const char *cmd) {
-	if (!r_core || !file_opened) {
+static char *r2_cmd(ServerState *ss, const char *cmd) {
+	RCore *core = ss->rstate.core;
+	if (!core || !ss->rstate.file_opened) {
 		return strdup ("Use the openFile method before calling any other method");
 	}
 	bool changed = false;
@@ -165,9 +115,9 @@ static char *r2_cmd(const char *cmd) {
 	if (changed) {
 		r2mcp_log ("command injection prevented");
 	}
-	char *res = r_core_cmd_str (r_core, filteredCommand);
+	char *res = r_core_cmd_str (core, filteredCommand);
 	free (filteredCommand);
-	r2_settings (r_core);
+	r2_settings (core);
 	return res;
 }
 
@@ -201,8 +151,6 @@ static void read_buffer_free(ReadBuffer *buf) {
 	}
 }
 
-static char *handle_list_tools(RJson *params);
-static char *handle_call_tool(RJson *params);
 static char *format_string(const char *format, ...);
 static char *format_string(const char *format, ...) {
 	char buffer[4096];
@@ -213,58 +161,60 @@ static char *format_string(const char *format, ...) {
 	return strdup (buffer);
 }
 
-static bool init_r2(void) {
-	r_core = r_core_new ();
-	if (!r_core) {
+static bool init_r2(ServerState *ss) {
+	RCore *core = r_core_new ();
+	if (!core) {
 		R_LOG_ERROR ("Failed to initialize radare2 core");
 		return false;
 	}
 
-	r2_settings (r_core);
+	r2_settings (core);
+	ss->rstate.core = core;
 
 	R_LOG_INFO ("Radare2 core initialized");
 	return true;
 }
 
-static void cleanup_r2(void) {
-	if (r_core) {
-		r_core_free (r_core);
-		r_core = NULL;
-		file_opened = false;
-		memset (current_file, 0, sizeof (current_file));
+static void cleanup_r2(ServerState *ss) {
+	RCore *core = ss->rstate.core;
+	if (core) {
+		r_core_free (core);
+		ss->rstate.core = NULL;
+		ss->rstate.file_opened = false;
+		ss->rstate.current_file = NULL;
 	}
 }
 
-static bool r2_open_file(const char *filepath) {
+static bool r2_open_file(ServerState *ss, const char *filepath) {
 	R_LOG_INFO ("Attempting to open file: %s\n", filepath);
-
-	if (!r_core && !init_r2 ()) {
+	RCore *core = ss->rstate.core;
+	if (!core && !init_r2 (ss)) {
 		R_LOG_ERROR ("Failed to initialize r2 core\n");
 		return false;
 	}
 
-	if (file_opened) {
-		R_LOG_INFO ("Closing previously opened file: %s", current_file);
-		r_core_cmd0 (r_core, "o-*");
-		file_opened = false;
-		memset (current_file, 0, sizeof (current_file));
+	if (ss->rstate.file_opened) {
+		R_LOG_INFO ("Closing previously opened file: %s", ss->rstate.current_file);
+		r_core_cmd0 (core, "o-*");
+		ss->rstate.file_opened = false;
+		ss->rstate.current_file = NULL;
 	}
 
-	r_core_cmd0 (r_core, "e bin.relocs.apply=true");
-	r_core_cmd0 (r_core, "e bin.cache=true");
+	r_core_cmd0 (core, "e bin.relocs.apply=true");
+	r_core_cmd0 (core, "e bin.cache=true");
 
 	char *cmd = r_str_newf ("'o %s", filepath);
 	R_LOG_INFO ("Running r2 command: %s", cmd);
-	char *result = r_core_cmd_str (r_core, cmd);
+	char *result = r_core_cmd_str (core, cmd);
 	free (cmd);
 	bool success = (result && strlen (result) > 0);
 	free (result);
 
 	if (!success) {
 		R_LOG_INFO ("Trying alternative method to open file");
-		RIODesc *fd = r_core_file_open (r_core, filepath, R_PERM_R, 0);
+		RIODesc *fd = r_core_file_open (core, filepath, R_PERM_R, 0);
 		if (fd) {
-			r_core_bin_load (r_core, filepath, 0);
+			r_core_bin_load (core, filepath, 0);
 			R_LOG_INFO ("File opened using r_core_file_open");
 			success = true;
 		} else {
@@ -274,21 +224,23 @@ static bool r2_open_file(const char *filepath) {
 	}
 
 	R_LOG_INFO ("Loading binary information");
-	r_core_cmd0 (r_core, "ob");
+	r_core_cmd0 (core, "ob");
 
-	strncpy (current_file, filepath, sizeof (current_file) - 1);
-	file_opened = true;
+	free (ss->rstate.current_file);
+	ss->rstate.current_file = strdup (filepath);
+	ss->rstate.file_opened = true;
 	R_LOG_INFO ("File opened successfully: %s", filepath);
 
 	return true;
 }
 
-static bool r2_analyze(int level) {
-	if (!r_core || !file_opened) {
+static bool r2_analyze(ServerState *ss, int level) {
+	RCore *core = ss->rstate.core;
+	if (!core || !ss->rstate.file_opened) {
 		return false;
 	}
 	const char *cmd = "aa";
-#if 0
+#if 1
 	switch (level) {
 	case 1: cmd = "aac"; break;
 	case 2: cmd = "aaa"; break;
@@ -296,7 +248,7 @@ static bool r2_analyze(int level) {
 	case 4: cmd = "aaaaa"; break;
 	}
 #endif
-	r_core_cmd0 (r_core, cmd);
+	r_core_cmd0 (core, cmd);
 	return true;
 }
 
@@ -309,32 +261,32 @@ static void signal_handler(int signum) {
 	signal (signum, SIG_DFL);
 }
 
-static bool check_client_capability(const char *capability) {
-	if (!server_state.client_capabilities) {
+static bool check_client_capability(ServerState *ss, const char *capability) {
+	if (!ss->client_capabilities) {
 		return false;
 	}
-	RJson *cap = (RJson *)r_json_get (server_state.client_capabilities, capability);
+	RJson *cap = (RJson *)r_json_get (ss->client_capabilities, capability);
 	return cap != NULL;
 }
 
-static bool check_server_capability(const char *capability) {
+static bool check_server_capability(ServerState *ss, const char *capability) {
 	if (!strcmp (capability, "logging")) {
-		return server_state.capabilities.logging;
+		return ss->capabilities.logging;
 	}
 	if (!strcmp (capability, "tools")) {
-		return server_state.capabilities.tools;
+		return ss->capabilities.tools;
 	}
 	return false;
 }
 
-static bool assert_capability_for_method(const char *method, char **error) {
+static bool assert_capability_for_method(ServerState *ss, const char *method, char **error) {
 	if (!strcmp (method, "sampling/createMessage")) {
-		if (!check_client_capability ("sampling")) {
+		if (!check_client_capability (ss, "sampling")) {
 			*error = strdup ("Client does not support sampling");
 			return false;
 		}
 	} else if (!strcmp (method, "roots/list")) {
-		if (!check_client_capability ("roots")) {
+		if (!check_client_capability (ss, "roots")) {
 			*error = strdup ("Client does not support listing roots");
 			return false;
 		}
@@ -342,24 +294,24 @@ static bool assert_capability_for_method(const char *method, char **error) {
 	return true;
 }
 
-static bool assert_request_handler_capability(const char *method, char **error) {
+static bool assert_request_handler_capability(ServerState *ss, const char *method, char **error) {
 	if (!strcmp (method, "sampling/createMessage")) {
-		if (!check_server_capability ("sampling")) {
+		if (!check_server_capability (ss, "sampling")) {
 			*error = strdup ("Server does not support sampling");
 			return false;
 		}
 	} else if (!strcmp (method, "logging/setLevel")) {
-		if (!check_server_capability ("logging")) {
+		if (!check_server_capability (ss, "logging")) {
 			*error = strdup ("Server does not support logging");
 			return false;
 		}
 	} else if (!strncmp (method, "prompts/", 8)) {
-		if (!check_server_capability ("prompts")) {
+		if (!check_server_capability (ss, "prompts")) {
 			*error = strdup ("Server does not support prompts");
 			return false;
 		}
 	} else if (!strncmp (method, "tools/", 6)) {
-		if (!check_server_capability ("tools")) {
+		if (!check_server_capability (ss, "tools")) {
 			*error = strdup ("Server does not support tools");
 			return false;
 		}
@@ -470,123 +422,9 @@ static void set_nonblocking_io(bool nonblocking) {
 	setvbuf (stdout, NULL, _IOLBF, 0);
 }
 
-// MCPO protocol-compliant direct mode loop
-static void direct_mode_loop(void) {
-	r2mcp_log ("Starting MCP direct mode (stdin/stdout)");
-
-	// Use consistent unbuffered mode for stdout
-	setvbuf (stdout, NULL, _IONBF, 0);
-
-	// Set to blocking I/O for simplicity
-	set_nonblocking_io (false);
-
-	ReadBuffer *buffer = read_buffer_new ();
-	char chunk[READ_CHUNK_SIZE];
-
-	while (running) {
-		// Read data from stdin
-		ssize_t bytes_read = read (STDIN_FILENO, chunk, sizeof (chunk) - 1);
-
-		if (bytes_read > 0) {
-			// Append to our buffer
-			read_buffer_append (buffer, chunk, bytes_read);
-
-			// Try to process any complete messages
-			char *msg;
-			while ((msg = read_buffer_get_message (buffer)) != NULL) {
-				r2mcp_log ("Complete message received:");
-				r2mcp_log (msg);
-				process_mcp_message (msg);
-				free (msg);
-			}
-		} else if (bytes_read == 0) {
-			// EOF - stdin closed
-			r2mcp_log ("End of input stream - exiting");
-			break;
-		} else {
-			// Error
-			if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) {
-				r2mcp_log ("Read error");
-				break;
-			}
-		}
-	}
-
-	read_buffer_free (buffer);
-	r2mcp_log ("Direct mode loop terminated");
-}
-
-// Modified process_mcp_message to handle the protocol correctly
-static void process_mcp_message(const char *msg) {
-	r2mcp_log ("<<<");
-	r2mcp_log (msg);
-
-	RJson *request = r_json_parse ((char *)msg);
-	if (!request) {
-		R_LOG_ERROR ("Invalid JSON");
-		return;
-	}
-
-	const char *method = r_json_get_str (request, "method");
-	RJson *params = (RJson *)r_json_get (request, "params");
-	RJson *id_json = (RJson *)r_json_get (request, "id");
-
-	if (!method) {
-		R_LOG_ERROR ("Invalid JSON-RPC message: missing method");
-		r_json_free (request);
-		return;
-	}
-
-	// Proper handling of notifications vs requests
-	if (id_json) {
-		// This is a request that requires a response
-		const char *id = NULL;
-		char id_buf[32] = { 0 };
-
-		if (id_json->type == R_JSON_STRING) {
-			id = id_json->str_value;
-		} else if (id_json->type == R_JSON_INTEGER) {
-			snprintf (id_buf, sizeof (id_buf), "%lld", (long long)id_json->num.u_value);
-			id = id_buf;
-		}
-
-		char *response = handle_mcp_request (method, params, id);
-		if (response) {
-			r2mcp_log (">>>");
-			r2mcp_log (response);
-
-			// Ensure the response ends with a newline
-			size_t resp_len = strlen (response);
-			bool has_newline = (resp_len > 0 && response[resp_len - 1] == '\n');
-
-			if (!has_newline) {
-				write (STDOUT_FILENO, response, resp_len);
-				write (STDOUT_FILENO, "\n", 1);
-			} else {
-				write (STDOUT_FILENO, response, resp_len);
-			}
-
-			fsync (STDOUT_FILENO);
-			free (response);
-		}
-	} else {
-		// This is a notification, don't send a response
-		// Just handle it internally
-		if (!strcmp (method, "notifications/cancelled")) {
-			r2mcp_log ("Received cancelled notification");
-		} else if (!strcmp (method, "notifications/initialized")) {
-			r2mcp_log ("Received initialized notification");
-		} else {
-			r2mcp_log ("Received unknown notification");
-		}
-	}
-
-	r_json_free (request);
-}
-
-static char *handle_initialize(RJson *params) {
-	server_state.client_capabilities = r_json_get (params, "capabilities");
-	server_state.client_info = r_json_get (params, "clientInfo");
+static char *handle_initialize(ServerState *ss, RJson *params) {
+	ss->client_capabilities = r_json_get (params, "capabilities");
+	ss->client_info = r_json_get (params, "clientInfo");
 
 	// Create a proper initialize response
 	PJ *pj = pj_new ();
@@ -595,8 +433,8 @@ static char *handle_initialize(RJson *params) {
 
 	pj_k (pj, "serverInfo");
 	pj_o (pj);
-	pj_ks (pj, "name", server_state.info.name);
-	pj_ks (pj, "version", server_state.info.version);
+	pj_ks (pj, "name", ss->info.name);
+	pj_ks (pj, "version", ss->info.version);
 	pj_end (pj);
 
 	// Capabilities need to be objects with specific structure, not booleans
@@ -614,13 +452,13 @@ static char *handle_initialize(RJson *params) {
 
 	pj_end (pj); // End capabilities
 
-	if (server_state.instructions) {
-		pj_ks (pj, "instructions", server_state.instructions);
+	if (ss->instructions) {
+		pj_ks (pj, "instructions", ss->instructions);
 	}
 
 	pj_end (pj);
 
-	server_state.initialized = true;
+	ss->initialized = true;
 	return pj_drain (pj);
 }
 
@@ -655,58 +493,6 @@ static char *jsonrpc_success_response(const char *result, const char *id) {
 	r2mcp_log (">>>");
 	r2mcp_log (s);
 	return s;
-}
-
-// Helper function to create a simple text tool result
-static char *jsonrpc_tooltext_response(const char *text) {
-	PJ *pj = pj_new ();
-	pj_o (pj);
-	pj_k (pj, "content");
-	pj_a (pj);
-	pj_o (pj);
-	pj_ks (pj, "type", "text");
-	pj_ks (pj, "text", text);
-	pj_end (pj);
-	pj_end (pj);
-	pj_end (pj);
-	return pj_drain (pj);
-}
-
-static char *handle_mcp_request(const char *method, RJson *params, const char *id) {
-	char *error = NULL;
-	char *result = NULL;
-
-	if (!assert_capability_for_method (method, &error) || !assert_request_handler_capability (method, &error)) {
-		char *response = jsonrpc_error_response (-32601, error, id, NULL);
-		free (error);
-		return response;
-	}
-
-	if (!strcmp (method, "initialize")) {
-		result = handle_initialize (params);
-	} else if (!strcmp (method, "notifications/initialized")) {
-		return NULL; // No response for notifications
-	} else if (!strcmp (method, "ping")) {
-		result = strdup ("{}");
-	} else if (!strcmp (method, "resources/templates/list")) {
-		return jsonrpc_error_response (-32601, "Method not implemented: templates are not supported", id, NULL);
-	} else if (!strcmp (method, "resources/list")) {
-		return jsonrpc_error_response (-32601, "Method not implemented: resources are not supported", id, NULL);
-	} else if (!strcmp (method, "resources/read") || !strcmp (method, "resource/read")) {
-		return jsonrpc_error_response (-32601, "Method not implemented: resources are not supported", id, NULL);
-	} else if (!strcmp (method, "resources/subscribe") || !strcmp (method, "resource/subscribe")) {
-		return jsonrpc_error_response (-32601, "Method not implemented: subscriptions are not supported", id, NULL);
-	} else if (!strcmp (method, "tools/list") || !strcmp (method, "tool/list")) {
-		result = handle_list_tools (params);
-	} else if (!strcmp (method, "tools/call") || !strcmp (method, "tool/call")) {
-		result = handle_call_tool (params);
-	} else {
-		return jsonrpc_error_response (-32601, "Unknown method", id, NULL);
-	}
-
-	char *response = jsonrpc_success_response (result, id);
-	free (result);
-	return response;
 }
 
 static char *handle_list_tools(RJson *params) {
@@ -841,7 +627,8 @@ static char *handle_list_tools(RJson *params) {
 	return r_strbuf_drain (sb);
 }
 
-static char *handle_call_tool(RJson *params) {
+static char *handle_call_tool(ServerState *ss, RJson *params) {
+	RCore *core = ss->rstate.core;
 	const char *tool_name = r_json_get_str (params, "name");
 
 	if (!tool_name) {
@@ -857,10 +644,10 @@ static char *handle_call_tool(RJson *params) {
 			return jsonrpc_error_response (-32602, "Missing required parameter: filePath", NULL, NULL);
 		}
 
-		bool success = r2_open_file (filepath);
+		bool success = r2_open_file (ss, filepath);
 		return jsonrpc_tooltext_response (success ? "File opened successfully." : "Failed to open file.");
 	}
-	if (!file_opened) {
+	if (!ss->rstate.file_opened) {
 		return jsonrpc_error_response (-32611, "Use the openFile method before calling any other method", NULL, NULL);
 		// return jsonrpc_tooltext_response ("Use the openFile method toNo file was open.");
 	}
@@ -871,7 +658,7 @@ static char *handle_call_tool(RJson *params) {
 			return jsonrpc_tooltext_response ("Missing classname parameter");
 		}
 		char *cmd = r_str_newf ("'ic %s", classname);
-		char *res = r2_cmd (cmd);
+		char *res = r2_cmd (ss, cmd);
 		free (cmd);
 		char *o = jsonrpc_tooltext_response (res);
 		free (res);
@@ -881,7 +668,7 @@ static char *handle_call_tool(RJson *params) {
 	// Handle listClasses tool
 	if (!strcmp (tool_name, "listClasses")) {
 		const char *filter = r_json_get_str (tool_args, "filter");
-		char *res = r2_cmd ("icqq");
+		char *res = r2_cmd (ss, "icqq");
 		if (R_STR_ISNOTEMPTY (filter)) {
 			RStrBuf *sb = r_strbuf_new ("");
 			RList *strings = r_str_split_list (res, "\n", 0);
@@ -910,7 +697,7 @@ static char *handle_call_tool(RJson *params) {
 
 	// Handle listDecompilers tool
 	if (!strcmp (tool_name, "listDecompilers")) {
-		char *res = r2_cmd ("e cmd.pdc=?");
+		char *res = r2_cmd (ss, "e cmd.pdc=?");
 		char *o = jsonrpc_tooltext_response (res);
 		free (res);
 		return o;
@@ -918,7 +705,7 @@ static char *handle_call_tool(RJson *params) {
 
 	// Handle listFunctions tool
 	if (!strcmp (tool_name, "listFunctions")) {
-		char *res = r2_cmd ("afl,addr/cols/name");
+		char *res = r2_cmd (ss, "afl,addr/cols/name");
 		r_str_trim (res);
 		if (R_STR_ISEMPTY (res)) {
 			free (res);
@@ -931,7 +718,7 @@ static char *handle_call_tool(RJson *params) {
 
 	// Handle listImports tool
 	if (!strcmp (tool_name, "listImports")) {
-		char *res = r2_cmd ("iiq");
+		char *res = r2_cmd (ss, "iiq");
 		char *o = jsonrpc_tooltext_response (res);
 		free (res);
 		return o;
@@ -939,7 +726,7 @@ static char *handle_call_tool(RJson *params) {
 
 	// Handle listSections tool
 	if (!strcmp (tool_name, "listSections")) {
-		char *res = r_core_cmd_str (r_core, "iS;iSS");
+		char *res = r_core_cmd_str (core, "iS;iSS");
 		char *o = jsonrpc_tooltext_response (res);
 		free (res);
 		return o;
@@ -947,7 +734,7 @@ static char *handle_call_tool(RJson *params) {
 
 	// Handle showHeaders tool
 	if (!strcmp (tool_name, "showHeaders")) {
-		char *res = r_core_cmd_str (r_core, "i;iH");
+		char *res = r_core_cmd_str (core, "i;iH");
 		char *o = jsonrpc_tooltext_response (res);
 		free (res);
 		return o;
@@ -955,7 +742,7 @@ static char *handle_call_tool(RJson *params) {
 
 	// Handle showFunctionDetails tool
 	if (!strcmp (tool_name, "showFunctionDetails")) {
-		char *res = r_core_cmd_str (r_core, "afi");
+		char *res = r_core_cmd_str (core, "afi");
 		char *o = jsonrpc_tooltext_response (res);
 		free (res);
 		return o;
@@ -963,7 +750,7 @@ static char *handle_call_tool(RJson *params) {
 
 	// Handle getCurrentAddress tool
 	if (!strcmp (tool_name, "getCurrentAddress")) {
-		char *res = r_core_cmd_str (r_core, "s;fd");
+		char *res = r_core_cmd_str (core, "s;fd");
 		char *o = jsonrpc_tooltext_response (res);
 		free (res);
 		return o;
@@ -971,7 +758,7 @@ static char *handle_call_tool(RJson *params) {
 
 	// Handle listSymbols tool
 	if (!strcmp (tool_name, "listSymbols")) {
-		char *res = r_core_cmd_str (r_core, "isq~!func.,!imp.");
+		char *res = r_core_cmd_str (core, "isq~!func.,!imp.");
 		// TODO: remove imports and func
 		char *o = jsonrpc_tooltext_response (res);
 		free (res);
@@ -980,7 +767,7 @@ static char *handle_call_tool(RJson *params) {
 
 	// Handle listEntrypoints tool
 	if (!strcmp (tool_name, "listEntrypoints")) {
-		char *res = r_core_cmd_str (r_core, "ies");
+		char *res = r_core_cmd_str (core, "ies");
 		char *o = jsonrpc_tooltext_response (res);
 		free (res);
 		return o;
@@ -988,7 +775,7 @@ static char *handle_call_tool(RJson *params) {
 
 	// Handle listLibraries tool
 	if (!strcmp (tool_name, "listLibraries")) {
-		char *res = r_core_cmd_str (r_core, "ilq");
+		char *res = r_core_cmd_str (core, "ilq");
 		char *o = jsonrpc_tooltext_response (res);
 		free (res);
 		return o;
@@ -996,12 +783,10 @@ static char *handle_call_tool(RJson *params) {
 
 	// Handle closeFile tool
 	if (!strcmp (tool_name, "closeFile")) {
-		char filepath_copy[1024];
-		strncpy (filepath_copy, current_file, sizeof (filepath_copy) - 1);
-		if (r_core) {
-			r_core_cmd0 (r_core, "o-*");
-			file_opened = false;
-			memset (current_file, 0, sizeof (current_file));
+		if (core) {
+			r_core_cmd0 (core, "o-*");
+			ss->rstate.file_opened = false;
+			ss->rstate.current_file = NULL;
 		}
 
 		return jsonrpc_tooltext_response ("File closed successfully.");
@@ -1032,7 +817,7 @@ static char *handle_call_tool(RJson *params) {
 			return jsonrpc_error_response (-32602, "Missing required parameters: address and message", NULL, NULL);
 		}
 
-		r_core_cmdf (r_core, "'@%s'%s", address, message);
+		r_core_cmdf (core, "'@%s'%s", address, message);
 		return strdup ("ok");
 	}
 
@@ -1043,7 +828,7 @@ static char *handle_call_tool(RJson *params) {
 		if (!address || !prototype) {
 			return jsonrpc_error_response (-32602, "Missing required parameters: address and prototype", NULL, NULL);
 		}
-		r_core_cmdf (r_core, "'@%s'afs %s", address, prototype);
+		r_core_cmdf (core, "'@%s'afs %s", address, prototype);
 		return strdup ("ok");
 	}
 
@@ -1054,7 +839,7 @@ static char *handle_call_tool(RJson *params) {
 			return jsonrpc_error_response (-32602, "Missing required parameters: address", NULL, NULL);
 		}
 		char *s = r_str_newf ("'@%s'afs", address);
-		char *res = r2_cmd (s);
+		char *res = r2_cmd (ss, s);
 		free (s);
 		return res;
 	}
@@ -1063,7 +848,7 @@ static char *handle_call_tool(RJson *params) {
 	if (!strcmp (tool_name, "listStrings")) {
 		const char *filter = r_json_get_str (tool_args, "filter");
 
-		char *result = r2_cmd ("izqq");
+		char *result = r2_cmd (ss, "izqq");
 		if (R_STR_ISNOTEMPTY (filter)) {
 			RStrBuf *sb = r_strbuf_new ("");
 			RList *strings = r_str_split_list (result, "\n", 0);
@@ -1094,7 +879,7 @@ static char *handle_call_tool(RJson *params) {
 	if (!strcmp (tool_name, "listAllStrings")) {
 		const char *filter = r_json_get_str (tool_args, "filter");
 
-		char *result = r2_cmd ("izzzqq");
+		char *result = r2_cmd (ss, "izzzqq");
 		if (R_STR_ISNOTEMPTY (filter)) {
 			RStrBuf *sb = r_strbuf_new ("");
 			RList *strings = r_str_split_list (result, "\n", 0);
@@ -1124,8 +909,8 @@ static char *handle_call_tool(RJson *params) {
 	// Handle analyze tool
 	if (!strcmp (tool_name, "analyze")) {
 		const int level = r_json_get_num (tool_args, "level");
-		r2_analyze (level);
-		char *result = r2_cmd ("aflc");
+		r2_analyze (ss, level);
+		char *result = r2_cmd (ss, "aflc");
 		char *text = format_string ("Analysis completed with level %d.\n\nfound %d functions", level, atoi (result));
 		char *response = jsonrpc_tooltext_response (text);
 		free (result);
@@ -1148,7 +933,7 @@ static char *handle_call_tool(RJson *params) {
 		}
 
 		char *cmd = r_str_newf ("'@%s'pd %d", address, num_instructions);
-		char *disasm = r2_cmd (cmd);
+		char *disasm = r2_cmd (ss, cmd);
 		free (cmd);
 		char *response = jsonrpc_tooltext_response (disasm);
 		free (disasm);
@@ -1161,23 +946,23 @@ static char *handle_call_tool(RJson *params) {
 		if (!deco) {
 			return jsonrpc_error_response (-32602, "Missing required parameter: address", NULL, NULL);
 		}
-		char *decompilersAvailable = r_core_cmd_str (r_core, "e cmd.pdc=?");
+		char *decompilersAvailable = r_core_cmd_str (core, "e cmd.pdc=?");
 		const char *response = "ok";
 		if (strstr (deco, "ghidra")) {
 			if (strstr (decompilersAvailable, "pdg")) {
-				r_core_cmd0 (r_core, "-e cmd.pdc=pdg");
+				r_core_cmd0 (core, "-e cmd.pdc=pdg");
 			} else {
 				response = "This decompiler is not available";
 			}
 		} else if (strstr (deco, "decai")) {
 			if (strstr (decompilersAvailable, "decai")) {
-				r_core_cmd0 (r_core, "-e cmd.pdc=decai -d");
+				r_core_cmd0 (core, "-e cmd.pdc=decai -d");
 			} else {
 				response = "This decompiler is not available";
 			}
 		} else if (strstr (deco, "r2dec")) {
 			if (strstr (decompilersAvailable, "pdd")) {
-				r_core_cmd0 (r_core, "-e cmd.pdc=pdd");
+				r_core_cmd0 (core, "-e cmd.pdc=pdd");
 			} else {
 				response = "This decompiler is not available";
 			}
@@ -1194,7 +979,7 @@ static char *handle_call_tool(RJson *params) {
 			return jsonrpc_error_response (-32602, "Missing required parameter: address", NULL, NULL);
 		}
 		char *cmd = r_str_newf ("'@%s'axt", address);
-		char *disasm = r2_cmd (cmd);
+		char *disasm = r2_cmd (ss, cmd);
 		char *response = jsonrpc_tooltext_response (disasm);
 		free (cmd);
 		free (disasm);
@@ -1208,7 +993,7 @@ static char *handle_call_tool(RJson *params) {
 			return jsonrpc_error_response (-32602, "Missing required parameter: address", NULL, NULL);
 		}
 		char *cmd = r_str_newf ("'@%s'pdf", address);
-		char *disasm = r2_cmd (cmd);
+		char *disasm = r2_cmd (ss, cmd);
 		char *response = jsonrpc_tooltext_response (disasm);
 		free (cmd);
 		free (disasm);
@@ -1226,7 +1011,7 @@ static char *handle_call_tool(RJson *params) {
 			return jsonrpc_error_response (-32602, "Missing required parameter: name", NULL, NULL);
 		}
 		char *cmd = r_str_newf ("'@%s'afn %s", address, name);
-		r_core_cmd0 (r_core, cmd);
+		r_core_cmd0 (core, cmd);
 		return jsonrpc_tooltext_response ("ok");
 	}
 
@@ -1237,7 +1022,7 @@ static char *handle_call_tool(RJson *params) {
 			return jsonrpc_error_response (-32602, "Missing required parameter: address", NULL, NULL);
 		}
 		char *cmd = r_str_newf ("'@%s'pdc", address);
-		char *disasm = r2_cmd (cmd);
+		char *disasm = r2_cmd (ss, cmd);
 		char *response = jsonrpc_tooltext_response (disasm);
 		free (cmd);
 		free (disasm);
@@ -1247,10 +1032,174 @@ static char *handle_call_tool(RJson *params) {
 	return jsonrpc_error_response (-32602, format_string ("Unknown tool: %s", tool_name), NULL, NULL);
 }
 //
+
+static char *handle_mcp_request(ServerState *ss, const char *method, RJson *params, const char *id) {
+	char *error = NULL;
+	char *result = NULL;
+
+	if (!assert_capability_for_method (ss, method, &error) || !assert_request_handler_capability (ss, method, &error)) {
+		char *response = jsonrpc_error_response (-32601, error, id, NULL);
+		free (error);
+		return response;
+	}
+
+	if (!strcmp (method, "initialize")) {
+		result = handle_initialize (ss, params);
+	} else if (!strcmp (method, "notifications/initialized")) {
+		return NULL; // No response for notifications
+	} else if (!strcmp (method, "ping")) {
+		result = strdup ("{}");
+	} else if (!strcmp (method, "resources/templates/list")) {
+		return jsonrpc_error_response (-32601, "Method not implemented: templates are not supported", id, NULL);
+	} else if (!strcmp (method, "resources/list")) {
+		return jsonrpc_error_response (-32601, "Method not implemented: resources are not supported", id, NULL);
+	} else if (!strcmp (method, "resources/read") || !strcmp (method, "resource/read")) {
+		return jsonrpc_error_response (-32601, "Method not implemented: resources are not supported", id, NULL);
+	} else if (!strcmp (method, "resources/subscribe") || !strcmp (method, "resource/subscribe")) {
+		return jsonrpc_error_response (-32601, "Method not implemented: subscriptions are not supported", id, NULL);
+	} else if (!strcmp (method, "tools/list") || !strcmp (method, "tool/list")) {
+		result = handle_list_tools (params);
+	} else if (!strcmp (method, "tools/call") || !strcmp (method, "tool/call")) {
+		result = handle_call_tool (ss, params);
+	} else {
+		return jsonrpc_error_response (-32601, "Unknown method", id, NULL);
+	}
+
+	char *response = jsonrpc_success_response (result, id);
+	free (result);
+	return response;
+}
+
+// Modified process_mcp_message to handle the protocol correctly
+static void process_mcp_message(ServerState *ss, const char *msg) {
+	r2mcp_log ("<<<");
+	r2mcp_log (msg);
+
+	RJson *request = r_json_parse ((char *)msg);
+	if (!request) {
+		R_LOG_ERROR ("Invalid JSON");
+		return;
+	}
+
+	const char *method = r_json_get_str (request, "method");
+	RJson *params = (RJson *)r_json_get (request, "params");
+	RJson *id_json = (RJson *)r_json_get (request, "id");
+
+	if (!method) {
+		R_LOG_ERROR ("Invalid JSON-RPC message: missing method");
+		r_json_free (request);
+		return;
+	}
+
+	// Proper handling of notifications vs requests
+	if (id_json) {
+		// This is a request that requires a response
+		const char *id = NULL;
+		char id_buf[32] = { 0 };
+
+		if (id_json->type == R_JSON_STRING) {
+			id = id_json->str_value;
+		} else if (id_json->type == R_JSON_INTEGER) {
+			snprintf (id_buf, sizeof (id_buf), "%lld", (long long)id_json->num.u_value);
+			id = id_buf;
+		}
+
+		char *response = handle_mcp_request (ss, method, params, id);
+		if (response) {
+			r2mcp_log (">>>");
+			r2mcp_log (response);
+
+			// Ensure the response ends with a newline
+			size_t resp_len = strlen (response);
+			bool has_newline = (resp_len > 0 && response[resp_len - 1] == '\n');
+
+			if (!has_newline) {
+				write (STDOUT_FILENO, response, resp_len);
+				write (STDOUT_FILENO, "\n", 1);
+			} else {
+				write (STDOUT_FILENO, response, resp_len);
+			}
+
+			fsync (STDOUT_FILENO);
+			free (response);
+		}
+	} else {
+		// This is a notification, don't send a response
+		// Just handle it internally
+		if (!strcmp (method, "notifications/cancelled")) {
+			r2mcp_log ("Received cancelled notification");
+		} else if (!strcmp (method, "notifications/initialized")) {
+			r2mcp_log ("Received initialized notification");
+		} else {
+			r2mcp_log ("Received unknown notification");
+		}
+	}
+
+	r_json_free (request);
+}
+
+// MCPO protocol-compliant direct mode loop
+static void direct_mode_loop(ServerState *ss) {
+	r2mcp_log ("Starting MCP direct mode (stdin/stdout)");
+
+	// Use consistent unbuffered mode for stdout
+	setvbuf (stdout, NULL, _IONBF, 0);
+
+	// Set to blocking I/O for simplicity
+	set_nonblocking_io (false);
+
+	ReadBuffer *buffer = read_buffer_new ();
+	char chunk[READ_CHUNK_SIZE];
+
+	while (running) {
+		// Read data from stdin
+		ssize_t bytes_read = read (STDIN_FILENO, chunk, sizeof (chunk) - 1);
+
+		if (bytes_read > 0) {
+			// Append to our buffer
+			read_buffer_append (buffer, chunk, bytes_read);
+
+			// Try to process any complete messages
+			char *msg;
+			while ((msg = read_buffer_get_message (buffer)) != NULL) {
+				r2mcp_log ("Complete message received:");
+				r2mcp_log (msg);
+				process_mcp_message (ss, msg);
+				free (msg);
+			}
+		} else if (bytes_read == 0) {
+			// EOF - stdin closed
+			r2mcp_log ("End of input stream - exiting");
+			break;
+		} else {
+			// Error
+			if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) {
+				r2mcp_log ("Read error");
+				break;
+			}
+		}
+	}
+
+	read_buffer_free (buffer);
+	r2mcp_log ("Direct mode loop terminated");
+}
+
 // Main function with proper initialization
 int main(int argc, char **argv) {
 	(void)argc;
 	(void)argv;
+
+	ServerState ss = {
+		.info = {
+			.name = "Radare2 MCP Connector",
+			.version = R2MCP_VERSION },
+		.capabilities = { .logging = true, .tools = true },
+		.instructions = "Use this server to analyze binaries with radare2",
+		.initialized = false,
+		.client_capabilities = NULL,
+		.client_info = NULL
+	};
+
 
 	// Print to stderr immediately to confirm we're starting
 	fprintf (stderr, "r2mcp starting\n");
@@ -1270,16 +1219,14 @@ int main(int argc, char **argv) {
 	signal (SIGPIPE, SIG_IGN);
 
 	// Initialize r2
-	if (!init_r2 ()) {
+	if (!init_r2 (&ss)) {
 		R_LOG_ERROR ("Failed to initialize radare2");
 		r2mcp_log ("Failed to initialize radare2");
 		return 1;
 	}
 
-	// Always use direct mode with mcpo
-	is_direct_mode = true;
-	direct_mode_loop ();
+	direct_mode_loop (&ss);
 
-	cleanup_r2 ();
+	cleanup_r2 (&ss);
 	return 0;
 }
