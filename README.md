@@ -17,6 +17,8 @@ This implementation provides a simple MCP server that:
 
 ## Installation
 
+### Using r2pm
+
 The simplest way to install the package is by using `r2pm`:
 
 ```bash
@@ -24,6 +26,19 @@ $ r2pm -Uci r2mcp
 ```
 
 The `r2mcp` executable will be copied into r2pm's bindir in your home directory. However, this binary is not supposed to be executed directly from the shell; it will only work when launched by the MCP service handler of your language model of choice.
+
+### Using Docker
+
+Alternatively, you can build the Docker image:
+
+```bash
+docker build -t r2mcp .
+```
+
+Update your MCP client configuration file (see below) to use the Docker image to use:
+
+- `"command": "docker"`
+- `"args": ["run", "--rm", "-i", "-v", "/tmp/data:/data", "r2mcp"]`.
 
 ## Configuration
 
@@ -50,23 +65,64 @@ In the Claude Desktop app, press `CMD + ,` to open the Developer settings. Edit 
 }
 ```
 
-## Docker
+## VS Code Integration
 
-Alternatively, you can use Docker to run `r2mcp`.
+To use r2mcp with GitHub Copilot Chat in Visual Studio Code by [adding it to your user configuration](https://code.visualstudio.com/docs/copilot/chat/mcp-servers#_add-an-mcp-server-to-your-user-configuration) (see other options [here](https://code.visualstudio.com/docs/copilot/chat/mcp-servers#_add-an-mcp-server)):
 
-```bash
-docker build -t r2mcp .
-```
-
-Then, update your Claude Desktop configuration file to use the Docker image:
+1. Open the Command Palette with `CMD + Shift + P` (macOS) or `Ctrl + Shift + P` (Windows/Linux).
+2. Search for and select `Copilot: Open User Configuration` (typically found in `~/Library/Application Support/Code/User/mcp.json` in macOS).
+3. Add the following to your configuration file:
 
 ```json
 {
-  "mcpServers": {
+  "servers": {
     "radare2": {
-      "command": "docker",
-      "args": ["run", "--rm", "-i", "-v", "/tmp/data:/data", "r2mcp"]
+      "type": "stdio",
+      "command": "r2pm",
+      "args": ["-r", "r2mcp"]
     }
-  }
+  },
+  "inputs": []
 }
 ```
+
+## For Developers
+
+### Build from Source
+
+To test the server locally, you can build and install it with make:
+
+```bash
+make install
+```
+
+This will compile the server and place the `r2mcp` binary in `/usr/local/bin` on macOS.
+
+You can now add the following configuration to your VS Code `mcp.json` as explained above:
+
+```json
+{
+  "servers": {
+    "radare2-dev": {
+      "type": "stdio",
+      "command": "r2mcp",
+      "args": []
+    }
+  },
+  "inputs": []
+}
+
+```json
+{
+  "servers": {
+    "radare2-dev": {
+      "type": "stdio",
+      "command": "r2mcp",
+      "args": []
+    }
+  },
+  "inputs": []
+}
+```
+
+**Tip:** So that the client doesn't get confused, it's best to enable one server at a time. You can do this by commenting out the other server in the configuration file.
