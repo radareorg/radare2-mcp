@@ -26,7 +26,6 @@ static bool logcb(void *user, int type, const char *origin, const char *msg) {
 	if (!msg || R_STR_ISEMPTY (origin)) {
 		return true;
 	}
-	eprintf ("LOGCB %s\n", msg);
 	ServerState *ss = (ServerState *)user;
 	if (ss->sb) {
 		const char *typestr = r_log_level_tostring (type);
@@ -142,12 +141,10 @@ static bool r2_open_file(ServerState *ss, const char *filepath) {
 	R_LOG_INFO ("Attempting to open file: %s\n", filepath);
 	RCore *core = ss->rstate.core;
 	if (!core && !r2state_init (ss)) {
-		eprintf ("FAIL\n");
 		R_LOG_ERROR ("Failed to initialize r2 core\n");
 		return false;
 	}
 
-	eprintf ("OPRE\n");
 	if (ss->rstate.file_opened) {
 		R_LOG_INFO ("Closing previously opened file: %s", ss->rstate.current_file);
 		r_core_cmd0 (core, "o-*");
@@ -155,10 +152,8 @@ static bool r2_open_file(ServerState *ss, const char *filepath) {
 		ss->rstate.current_file = NULL;
 	}
 
-		eprintf ("pre\n");
 	r_core_cmd0 (core, "e bin.relocs.apply=true");
 	r_core_cmd0 (core, "e bin.cache=true");
-	eprintf ("posPENE\n");
 
 	char *cmd = r_str_newf ("'o %s", filepath);
 	R_LOG_INFO ("Running r2 command: %s", cmd);
@@ -166,7 +161,6 @@ static bool r2_open_file(ServerState *ss, const char *filepath) {
 	free (cmd);
 	bool success = (result && strlen (result) > 0);
 	free (result);
-		eprintf ("succo\n");
 
 	if (!success) {
 		R_LOG_INFO ("Trying alternative method to open file");

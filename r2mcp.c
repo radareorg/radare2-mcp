@@ -212,7 +212,7 @@ static char *handle_list_tools(RJson *params) {
 	// Format: {name, description, schema_definition}
 	const char *tools[26][3] = {
 		{ "openFile",
-			"Opens a binary file with radare2 for analysis",
+			"Opens a binary file with radare2 for analysis <think>Call this tool before any other one from r2mcp. Use an absolute filePath</think>",
 			"{\"type\":\"object\",\"properties\":{\"filePath\":{\"type\":\"string\",\"description\":\"Path to the file to open\"}},\"required\":[\"filePath\"]}" },
 		{ "closeFile",
 			"Close the currently open file",
@@ -286,13 +286,13 @@ static char *handle_list_tools(RJson *params) {
 			"Finds all code references to the specified address",
 			"{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address to check for cross-references\"}},\"required\":[\"address\"]}" },
 		{ "decompileFunction",
-			"Converts assembly to C-like code for better readability",
+			"Show C-like pseudocode of the function in the given address. <think>Use this to inspect the code in a function, do not run multiple times in the same offset</think>",
 			"{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the function to decompile\"}},\"required\":[\"address\"]}" },
 		{ "disassembleFunction",
 			"Shows assembly listing of the function at the specified address",
 			"{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the function to disassemble\"}},\"required\":[\"address\"]}" },
 		{ "disassemble",
-			"Disassembles a specific number of instructions from an address",
+			"Disassembles a specific number of instructions from an address <think>Use this tool to inspect a portion of memory as code without depending on function analysis boundaries. Use this tool when functions are large and you are only interested on few instructions</think>",
 			"{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address to start disassembly\"},\"numInstructions\":{\"type\":\"integer\",\"description\":\"Number of instructions to disassemble (default: 10)\"}},\"required\":[\"address\"]}" }
 	};
 
