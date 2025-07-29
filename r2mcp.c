@@ -1,9 +1,9 @@
 /* r2mcp - MIT - Copyright 2025 - pancake, dnakov */
 
-#include "readbuffer.h"
 #include <r_core.h>
 #include <r_util/r_json.h>
 #include <r_util/r_print.h>
+#include "r2mcp.h"
 
 #define R2MCP_DEBUG 1
 #define R2MCP_LOGFILE "/tmp/r2mcp.txt"
@@ -12,32 +12,6 @@
 #define MCP_VERSION "2024-11-05"
 #define READ_CHUNK_SIZE 32768
 #define LATEST_PROTOCOL_VERSION "2024-11-05"
-
-typedef struct {
-	const char *name;
-	const char *version;
-} ServerInfo;
-
-typedef struct {
-	bool logging;
-	bool tools;
-} ServerCapabilities;
-
-typedef struct {
-	RCore *core;
-	bool file_opened;
-	char *current_file;
-} RadareState;
-
-typedef struct {
-	ServerInfo info;
-	ServerCapabilities capabilities;
-	const char *instructions;
-	bool initialized;
-	const RJson *client_capabilities;
-	const RJson *client_info;
-	RadareState rstate;
-} ServerState;
 
 #include "utils.inc.c"
 #include "r2api.inc.c"
@@ -450,7 +424,7 @@ static char *handle_call_tool(ServerState *ss, RJson *params) {
 
 	// Handle listSections tool
 	if (!strcmp (tool_name, "listSections")) {
-		char *res = r_core_cmd_str (core, "iS;iSS");
+		char *res = r2_cmd (ss, "iS;iSS");
 		char *o = jsonrpc_tooltext_response (res);
 		free (res);
 		return o;
@@ -458,7 +432,7 @@ static char *handle_call_tool(ServerState *ss, RJson *params) {
 
 	// Handle showHeaders tool
 	if (!strcmp (tool_name, "showHeaders")) {
-		char *res = r_core_cmd_str (core, "i;iH");
+		char *res = r2_cmd (ss, "i;iH");
 		char *o = jsonrpc_tooltext_response (res);
 		free (res);
 		return o;
@@ -466,7 +440,7 @@ static char *handle_call_tool(ServerState *ss, RJson *params) {
 
 	// Handle showFunctionDetails tool
 	if (!strcmp (tool_name, "showFunctionDetails")) {
-		char *res = r_core_cmd_str (core, "afi");
+		char *res = r2_cmd (ss, "afi");
 		char *o = jsonrpc_tooltext_response (res);
 		free (res);
 		return o;
@@ -474,7 +448,7 @@ static char *handle_call_tool(ServerState *ss, RJson *params) {
 
 	// Handle getCurrentAddress tool
 	if (!strcmp (tool_name, "getCurrentAddress")) {
-		char *res = r_core_cmd_str (core, "s;fd");
+		char *res = r2_cmd (ss, "s;fd");
 		char *o = jsonrpc_tooltext_response (res);
 		free (res);
 		return o;
@@ -482,7 +456,7 @@ static char *handle_call_tool(ServerState *ss, RJson *params) {
 
 	// Handle listSymbols tool
 	if (!strcmp (tool_name, "listSymbols")) {
-		char *res = r_core_cmd_str (core, "isq~!func.,!imp.");
+		char *res = r2_cmd (ss, "isq~!func.,!imp.");
 		// TODO: remove imports and func
 		char *o = jsonrpc_tooltext_response (res);
 		free (res);
@@ -491,7 +465,7 @@ static char *handle_call_tool(ServerState *ss, RJson *params) {
 
 	// Handle listEntrypoints tool
 	if (!strcmp (tool_name, "listEntrypoints")) {
-		char *res = r_core_cmd_str (core, "ies");
+		char *res = r2_cmd (ss, "ies");
 		char *o = jsonrpc_tooltext_response (res);
 		free (res);
 		return o;
@@ -499,7 +473,7 @@ static char *handle_call_tool(ServerState *ss, RJson *params) {
 
 	// Handle listLibraries tool
 	if (!strcmp (tool_name, "listLibraries")) {
-		char *res = r_core_cmd_str (core, "ilq");
+		char *res = r2_cmd (ss, "ilq");
 		char *o = jsonrpc_tooltext_response (res);
 		free (res);
 		return o;
@@ -637,10 +611,18 @@ static char *handle_call_tool(ServerState *ss, RJson *params) {
 	// Handle analyze tool
 	if (!strcmp (tool_name, "analyze")) {
 		const int level = r_json_get_num (tool_args, "level");
-		r2_analyze (ss, level);
+		char *err = r2_analyze (ss, level);
 		char *result = r2_cmd (ss, "aflc");
-		char *text = r_str_newf ("Analysis completed with level %d.\n\nfound %d functions", level, atoi (result));
+		char *errstr;
+		if (R_STR_ISNOTEMPTY (err)) {
+			errstr = r_str_newf ("\n\n<log>\n%s\n</log>\n", err);
+		} else {
+			errstr = strdup ("");
+		}
+		char *text = r_str_newf ("Analysis completed with level %d.\nFound %d functions.%s", level, atoi (result), errstr);
 		char *response = jsonrpc_tooltext_response (text);
+		free (err);
+		free (errstr);
 		free (result);
 		free (text);
 		return response;
@@ -674,7 +656,7 @@ static char *handle_call_tool(ServerState *ss, RJson *params) {
 		if (!deco) {
 			return jsonrpc_error_response (-32602, "Missing required parameter: name", NULL, NULL);
 		}
-		char *decompilersAvailable = r_core_cmd_str (core, "e cmd.pdc=?");
+		char *decompilersAvailable = r2_cmd (ss, "e cmd.pdc=?");
 		const char *response = "ok";
 		if (strstr (deco, "ghidra")) {
 			if (strstr (decompilersAvailable, "pdg")) {

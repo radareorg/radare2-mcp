@@ -42,7 +42,8 @@ $(TARGET): $(OBJS)
 	@echo "✓ Server built successfully."
 
 clean:
-	rm -f $(TARGET)
+	rm -f $(TARGET) $(OBJS)
+	-rm -rf r2mcp.dSYM
 
 install: all
 	$(INSTALL_DIR) $(DESTDIR)/$(PREFIX)/bin
