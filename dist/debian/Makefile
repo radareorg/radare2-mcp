@@ -32,6 +32,7 @@ root:
 
 purge: clean
 	rm -rf root
+	docker rmi dockcross/linux-x64
 
 summary:
 	echo $(VERSION)

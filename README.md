@@ -29,6 +29,10 @@ $ r2pm -Uci r2mcp
 
 The `r2mcp` executable will be copied into r2pm's bindir in your home directory. However, this binary is not supposed to be executed directly from the shell; it will only work when launched by the MCP service handler of your language model of choice.
 
+```bash
+$ r2pm -r mcp
+```
+
 ### Using Docker
 
 Alternatively, you can build the Docker image:
@@ -105,19 +109,7 @@ You can now add the following configuration to your VS Code `mcp.json` as explai
 ```json
 {
   "servers": {
-    "radare2-dev": {
-      "type": "stdio",
-      "command": "r2mcp",
-      "args": []
-    }
-  },
-  "inputs": []
-}
-
-```json
-{
-  "servers": {
-    "radare2-dev": {
+    "r2mcp": {
       "type": "stdio",
       "command": "r2mcp",
       "args": []
