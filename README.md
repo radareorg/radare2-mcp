@@ -92,6 +92,26 @@ To use r2mcp with GitHub Copilot Chat in Visual Studio Code by [adding it to you
 }
 ```
 
+## Zed Integration
+
+You can use r2mcp with Zed as well by [adding it to your configuration](https://zed.dev/docs/ai/mcp):
+
+1. Open the command palette: `CMD + Shift + P` (macOS) or `Ctrl + Shift + P` (Windows/Linux). 
+2. Search of `agent: open configuration` or search of `settings`.
+3. Add your server as such:
+
+```json
+  "context_servers": {
+    "r2-mcp-server": {
+      "source": "custom",
+      "command": "r2pm",
+      "args": ["-r", "r2mcp"],
+      "env": {}
+    }
+  }
+```
+Note: you will need another LLM agent, such as Claude, Gemini or else to be able to use it.
+
 ## For Developers
 
 ### Build from Source
