@@ -1,0 +1,37 @@
+#!/bin/sh
+
+type fakeroot > /dev/null 2>&1
+if [ $? = 0 ]; then
+FAKEROOT=fakeroot
+else
+FAKEROOT=sudo
+fi
+
+r2 -qv
+if [ $? != 0 ]; then
+	echo "Cannot find radare2, building with sys/debian.sh from git.."
+	# git clone --depth=1 git@github.com:radareorg/radare2 r2 || exit 1
+	wget -c https://github.com/radareorg/radare2/archive/master.zip
+	sudo apt-get update
+	sudo apt-get -y install git g++ make pkg-config flex bison unzip patch || exit 1
+	unzip -l master.zip
+	unzip master.zip || exit 1
+	mv radare2-master r2
+	( cd r2 && sys/debian.sh ) # make -C r2/dist/debian
+	sudo dpkg -i r2/dist/debian/*/*.deb || exit 1
+fi
+[ -z "${DESTDIR}" ] && DESTDIR="/work/dist/debian/root"
+
+RV=`r2 -qv`
+[ -z "${RV}" ] && RV=`r2/configure -qV`
+
+R2_LIBR_PLUGINS="`r2 -H R2_LIBR_PLUGINS`"
+[ -z "${R2_LIBR_PLUGINS}" ] && R2_LIBR_PLUGINS=/usr/lib/radare2
+
+export CFLAGS=-O2
+make R2_PLUGDIR=${R2_LIBR_PLUGINS} DESTDIR=${DESTDIR}
+
+./configure --prefix=/usr || exit 1
+make -j4 || exit 1
+strip --strip-unneeded r2mcp
+${FAKEROOT} make install DESTDIR="${DESTDIR}"

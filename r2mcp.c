@@ -4,10 +4,16 @@
 #include <r_util/r_json.h>
 #include <r_util/r_print.h>
 #include "r2mcp.h"
+#include "config.h"
 
 #define R2MCP_DEBUG 1
 #define R2MCP_LOGFILE "/tmp/r2mcp.txt"
+
+#ifndef R2MCP_VERSION
+#warning R2MCP_VERSION is not defined
 #define R2MCP_VERSION "1.0.0"
+#endif
+
 #define JSON_RPC_VERSION "2.0"
 #define MCP_VERSION "2024-11-05"
 #define READ_CHUNK_SIZE 32768

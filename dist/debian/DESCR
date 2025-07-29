@@ -1,0 +1,2 @@
+Model Context Protocol server for radare2
+AI Agents with MCP support can start the r2mcp to open binaries with radare2, analyze, solve crackmes, generate security reports, find vulnerabilities and anything you can express with human language without the need to know how to use radare2

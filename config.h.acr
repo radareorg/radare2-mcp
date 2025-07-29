@@ -1,0 +1,6 @@
+#ifndef R2MCP_CONFIG_H
+#define R2MCP_CONFIG_H 1
+
+#define R2MCP_VERSION "@R2MCP_VERSION@"
+
+#endif

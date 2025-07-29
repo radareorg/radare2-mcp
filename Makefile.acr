@@ -9,6 +9,8 @@ R2PM_BINDIR?=$(shell r2pm -H R2PM_BINDIR)
 
 SRC = r2mcp.c
 SRC += readbuffer.c
+INC += utils.inc.c
+INC += r2api.inc.c
 OBJS:=$(subst .c,.o,$(SRC))
 
 # Detect OS-specific settings
@@ -36,7 +38,7 @@ check_deps:
 	@$(PKGCONFIG) --exists r_core || (echo "radare2 development files not found."; exit 1)
 	@echo "✓ All dependencies are satisfied."
 
-$(TARGET): $(OBJS)
+$(TARGET): $(OBJS) $(INC)
 	@echo "Building R2 MCP server..."
 	$(CC) $(CFLAGS) -o $@ $(OBJS) $(LDFLAGS)
 	@echo "✓ Server built successfully."
@@ -64,7 +66,7 @@ user-uninstall:
 
 indent fmt:
 	python indent.py
-# clang-format -i r2mcp.c
+	# clang-format -i r2mcp.c
 
 help:
 	@echo "Available targets:"
