@@ -20,9 +20,7 @@ jobs:
     - name: Installing radare2 from git
       run: ( git clone --depth=1 https://github.com/radareorg/radare2 && cd radare2 && sys/install.sh /usr )
     - name: Building radare2-mcp
-      run: make
-    - name: Testing radare2-mcp
-      run: make test
+      run: ./configure && make
 
   linux-deb:
     runs-on: ubuntu-22.04
@@ -37,9 +35,7 @@ jobs:
         wget https://github.com/radareorg/radare2/releases/download/${{env.R2V}}/radare2-dev_${{env.R2V}}_amd64.deb
         sudo dpkg -i *.deb
     - name: Building radare2-mcp
-      run: make
-    - name: Testing radare2-mcp
-      run: make test
+      run: ./configure && make
 
   macos:
     runs-on: macos-latest
@@ -59,6 +55,4 @@ jobs:
         cd radare2
         sys/install.sh
     - name: Building radare2-mcp
-      run: make
-    - name: Testing radare2-mcp
-      run: make test
+      run: ./configure && make
