@@ -788,7 +788,7 @@ static char *handle_call_tool(ServerState *ss, RJson *params) {
 		if (!address) {
 			return jsonrpc_error_response (-32602, "Missing required parameter: address", NULL, NULL);
 		}
-		char *cmd = r_str_newf ("'@%s'pdc", address);
+		char *cmd = r_str_newf ("'@%s'decai -d", address);
 		char *disasm = r2_cmd (ss, cmd);
 		char *response = jsonrpc_tooltext_response (disasm);
 		free (cmd);
@@ -957,6 +957,7 @@ static void r2mcp_help(void) {
 	printf (" -h         show this help\n");
 	printf (" -d [pdc]   select a different decompiler (pdc by default)\n");
 	printf (" -m         expose minimum amount of tools\n");
+	printf (" -n         do not load any plugin or radare2rc\n");
 }
 
 static void r2mcp_version(void) {
@@ -965,9 +966,10 @@ static void r2mcp_version(void) {
 
 int main(int argc, const char **argv) {
 	bool minimode = false;
+	bool loadplugins = true;
 	const char *deco = NULL;
 	RGetopt opt;
-	r_getopt_init (&opt, argc, argv, "hmvd:");
+	r_getopt_init (&opt, argc, argv, "hmvd:n");
 	int c;
 	while ((c = r_getopt_next (&opt)) != -1) {
 		switch (c) {
@@ -979,6 +981,9 @@ int main(int argc, const char **argv) {
 			return 0;
 		case 'd':
 			deco = opt.arg;
+			break;
+		case 'n':
+			loadplugins = true;
 			break;
 		case 'm':
 			minimode = true;
@@ -1009,6 +1014,10 @@ int main(int argc, const char **argv) {
 		R_LOG_ERROR ("Failed to initialize radare2");
 		r2mcp_log ("Failed to initialize radare2");
 		return 1;
+	}
+	if (loadplugins) {
+		r_core_loadlibs (ss.rstate.core, R_CORE_LOADLIBS_ALL, NULL);
+		r_core_parse_radare2rc (ss.rstate.core);
 	}
 	if (deco) {
 		char *pdc = r_str_newf ("e cmd.pdc=%s", deco);
