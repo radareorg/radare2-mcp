@@ -953,9 +953,10 @@ static void r2mcp_eventloop(ServerState *ss) {
 
 static void r2mcp_help(void) {
 	printf ("Usage: r2mcp [-flags]\n");
-	printf (" -v    show version\n");
-	printf (" -h    show this help\n");
-	printf (" -m    expose minimum amount of tools\n");
+	printf (" -v         show version\n");
+	printf (" -h         show this help\n");
+	printf (" -d [pdc]   select a different decompiler (pdc by default)\n");
+	printf (" -m         expose minimum amount of tools\n");
 }
 
 static void r2mcp_version(void) {
@@ -964,8 +965,9 @@ static void r2mcp_version(void) {
 
 int main(int argc, const char **argv) {
 	bool minimode = false;
+	const char *deco = NULL;
 	RGetopt opt;
-	r_getopt_init (&opt, argc, argv, "hmv");
+	r_getopt_init (&opt, argc, argv, "hmvd:");
 	int c;
 	while ((c = r_getopt_next (&opt)) != -1) {
 		switch (c) {
@@ -975,6 +977,9 @@ int main(int argc, const char **argv) {
 		case 'v':
 			r2mcp_version ();
 			return 0;
+		case 'd':
+			deco = opt.arg;
+			break;
 		case 'm':
 			minimode = true;
 			break;
@@ -1004,6 +1009,11 @@ int main(int argc, const char **argv) {
 		R_LOG_ERROR ("Failed to initialize radare2");
 		r2mcp_log ("Failed to initialize radare2");
 		return 1;
+	}
+	if (deco) {
+		char *pdc = r_str_newf ("e cmd.pdc=%s", deco);
+		r2_cmd (&ss, pdc);
+		free (pdc);
 	}
 
 	running = 1;
