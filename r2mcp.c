@@ -29,6 +29,7 @@ static void signal_handler(int signum) {
 	running = 0;
 	signal (signum, SIG_DFL);
 }
+
 static void setup_signals(void) {
 	// Set up signal handlers
 	struct sigaction sa = { 0 };
@@ -196,7 +197,7 @@ static char *jsonrpc_success_response(const char *result, const char *id) {
 	return s;
 }
 
-static char *handle_list_tools(RJson *params) {
+static char *handle_list_tools(ServerState *ss, RJson *params) {
 	// Add pagination support
 	const char *cursor = r_json_get_str (params, "cursor");
 	int page_size = 32; // Default page size XXX pagination doesnt work. just use > len (tools)
@@ -214,9 +215,44 @@ static char *handle_list_tools(RJson *params) {
 	RStrBuf *sb = r_strbuf_new ("");
 	r_strbuf_append (sb, "{\"tools\":[");
 
+	const char *minitools[11][3] = {
+		{ "openFile",
+			"Opens a binary file with radare2 for analysis <think>Call this tool before any other one from r2mcp. Use an absolute filePath</think>",
+			"{\"type\":\"object\",\"properties\":{\"filePath\":{\"type\":\"string\",\"description\":\"Path to the file to open\"}},\"required\":[\"filePath\"]}" },
+		{ "listFunctions",
+			"Lists all functions discovered during analysis",
+			"{\"type\":\"object\",\"properties\":{}}" },
+		{ "listLibraries",
+			"Lists all shared libraries linked to the binary",
+			"{\"type\":\"object\",\"properties\":{}}" },
+		{ "listImports",
+			"Lists imported symbols (note: use listSymbols for addresses with sym.imp. prefix)",
+			"{\"type\":\"object\",\"properties\":{}}" },
+		{ "showHeaders",
+			"Displays binary headers and file information",
+			"{\"type\":\"object\",\"properties\":{}}" },
+		{ "listSymbols",
+			"Shows all symbols (functions, variables, imports) with addresses",
+			"{\"type\":\"object\",\"properties\":{}}" },
+		{ "listEntrypoints",
+			"Displays program entrypoints, constructors and main function",
+			"{\"type\":\"object\",\"properties\":{}}" },
+		{ "listStrings",
+			"Lists strings from data sections with optional regex filter",
+			"{\"type\":\"object\",\"properties\":{\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"}}}" },
+		{ "analyze",
+			"Runs binary analysis with optional depth level",
+			"{\"type\":\"object\",\"properties\":{\"level\":{\"type\":\"number\",\"description\":\"Analysis level (0-4, higher is more thorough)\"}},\"required\":[]}" },
+		{ "xrefsTo",
+			"Finds all code references to the specified address",
+			"{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address to check for cross-references\"}},\"required\":[\"address\"]}" },
+		{ "decompileFunction",
+			"Show C-like pseudocode of the function in the given address. <think>Use this to inspect the code in a function, do not run multiple times in the same offset</think>",
+			"{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the function to decompile\"}},\"required\":[\"address\"]}" },
+	};
 	// Define our tools with their descriptions and schemas
 	// Format: {name, description, schema_definition}
-	const char *tools[26][3] = {
+	const char *alltools[26][3] = {
 		{ "openFile",
 			"Opens a binary file with radare2 for analysis <think>Call this tool before any other one from r2mcp. Use an absolute filePath</think>",
 			"{\"type\":\"object\",\"properties\":{\"filePath\":{\"type\":\"string\",\"description\":\"Path to the file to open\"}},\"required\":[\"filePath\"]}" },
@@ -302,19 +338,34 @@ static char *handle_list_tools(RJson *params) {
 			"{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address to start disassembly\"},\"numInstructions\":{\"type\":\"integer\",\"description\":\"Number of instructions to disassemble (default: 10)\"}},\"required\":[\"address\"]}" }
 	};
 
-	int total_tools = sizeof (tools) / sizeof (tools[0]);
 	int end_index = start_index + page_size;
-	if (end_index > total_tools) {
-		end_index = total_tools;
-	}
-
-	// Add tools for this page
-	for (int i = start_index; i < end_index; i++) {
-		if (i > start_index) {
-			r_strbuf_appendf (sb, ",");
+	int total_tools;
+	if (ss->minimode) {
+		total_tools = sizeof (minitools) / sizeof (minitools[0]);
+		if (end_index > total_tools) {
+			end_index = total_tools;
 		}
-		r_strbuf_appendf (sb, "{\"name\":\"%s\",\"description\":\"%s\",\"inputSchema\":%s}",
-			tools[i][0], tools[i][1], tools[i][2]);
+		// Add tools for this page
+		for (int i = start_index; i < end_index; i++) {
+			if (i > start_index) {
+				r_strbuf_appendf (sb, ",");
+			}
+			r_strbuf_appendf (sb, "{\"name\":\"%s\",\"description\":\"%s\",\"inputSchema\":%s}",
+				minitools[i][0], minitools[i][1], minitools[i][2]);
+		}
+	} else {
+		total_tools = sizeof (alltools) / sizeof (alltools[0]);
+		if (end_index > total_tools) {
+			end_index = total_tools;
+		}
+		// Add tools for this page
+		for (int i = start_index; i < end_index; i++) {
+			if (i > start_index) {
+				r_strbuf_appendf (sb, ",");
+			}
+			r_strbuf_appendf (sb, "{\"name\":\"%s\",\"description\":\"%s\",\"inputSchema\":%s}",
+				alltools[i][0], alltools[i][1], alltools[i][2]);
+		}
 	}
 
 	r_strbuf_append (sb, "]");
@@ -774,7 +825,7 @@ static char *handle_mcp_request(ServerState *ss, const char *method, RJson *para
 	} else if (!strcmp (method, "resources/subscribe") || !strcmp (method, "resource/subscribe")) {
 		return jsonrpc_error_response (-32601, "Method not implemented: subscriptions are not supported", id, NULL);
 	} else if (!strcmp (method, "tools/list") || !strcmp (method, "tool/list")) {
-		result = handle_list_tools (params);
+		result = handle_list_tools (ss, params);
 	} else if (!strcmp (method, "tools/call") || !strcmp (method, "tool/call")) {
 		result = handle_call_tool (ss, params);
 	} else {
@@ -900,10 +951,36 @@ static void r2mcp_eventloop(ServerState *ss) {
 	r2mcp_log ("Direct mode loop terminated");
 }
 
-// Main function with proper initialization
-int main(int argc, char **argv) {
-	(void)argc;
-	(void)argv;
+static void r2mcp_help(void) {
+	printf ("Usage: r2mcp [-flags]\n");
+	printf (" -v    show version\n");
+	printf (" -h    show this help\n");
+	printf (" -m    expose minimum amount of tools\n");
+}
+
+static void r2mcp_version(void) {
+	printf ("%s\n", R2MCP_VERSION);
+}
+
+int main(int argc, const char **argv) {
+	bool minimode = false;
+	RGetopt opt;
+	r_getopt_init (&opt, argc, argv, "hmv");
+	int c;
+	while ((c = r_getopt_next (&opt)) != -1) {
+		switch (c) {
+		case 'h':
+			r2mcp_help ();
+			return 0;
+		case 'v':
+			r2mcp_version ();
+			return 0;
+		case 'm':
+			minimode = true;
+			break;
+		}
+	}
+
 
 	ServerState ss = {
 		.info = {
@@ -912,6 +989,7 @@ int main(int argc, char **argv) {
 		.capabilities = { .logging = true, .tools = true },
 		.instructions = "Use this server to analyze binaries with radare2",
 		.initialized = false,
+		.minimode = minimode,
 		.client_capabilities = NULL,
 		.client_info = NULL
 	};

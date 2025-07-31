@@ -21,6 +21,7 @@ typedef struct {
 	ServerCapabilities capabilities;
 	const char *instructions;
 	bool initialized;
+	bool minimode;
 	const RJson *client_capabilities;
 	const RJson *client_info;
 	RadareState rstate;
