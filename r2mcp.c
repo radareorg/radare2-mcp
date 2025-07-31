@@ -953,11 +953,12 @@ static void r2mcp_eventloop(ServerState *ss) {
 
 static void r2mcp_help(void) {
 	printf ("Usage: r2mcp [-flags]\n");
-	printf (" -v         show version\n");
-	printf (" -h         show this help\n");
+	printf (" -c [cmd]   run those commands before entering the mcp loop\n");
 	printf (" -d [pdc]   select a different decompiler (pdc by default)\n");
+	printf (" -h         show this help\n");
 	printf (" -m         expose minimum amount of tools\n");
 	printf (" -n         do not load any plugin or radare2rc\n");
+	printf (" -v         show version\n");
 }
 
 static void r2mcp_version(void) {
@@ -966,16 +967,20 @@ static void r2mcp_version(void) {
 
 int main(int argc, const char **argv) {
 	bool minimode = false;
+	RList *cmds = r_list_new ();
 	bool loadplugins = true;
 	const char *deco = NULL;
 	RGetopt opt;
-	r_getopt_init (&opt, argc, argv, "hmvd:n");
+	r_getopt_init (&opt, argc, argv, "hmvd:nc:");
 	int c;
 	while ((c = r_getopt_next (&opt)) != -1) {
 		switch (c) {
 		case 'h':
 			r2mcp_help ();
 			return 0;
+		case 'c':
+			r_list_append (cmds, (char*)opt.arg);
+			break;
 		case 'v':
 			r2mcp_version ();
 			return 0;
@@ -988,9 +993,11 @@ int main(int argc, const char **argv) {
 		case 'm':
 			minimode = true;
 			break;
+		default:
+			eprintf ("Invalid flag -%c\n", c);
+			return 1;
 		}
 	}
-
 
 	ServerState ss = {
 		.info = {
@@ -1028,6 +1035,12 @@ int main(int argc, const char **argv) {
 		r2_cmd (&ss, pdc);
 		free (pdc);
 	}
+	RListIter *iter;
+	const char *cmd;
+	r_list_foreach (cmds, iter, cmd) {
+		r2_cmd (&ss, cmd);
+	}
+	r_list_free (cmds);
 
 	running = 1;
 	r2mcp_eventloop (&ss);
