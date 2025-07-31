@@ -788,7 +788,7 @@ static char *handle_call_tool(ServerState *ss, RJson *params) {
 		if (!address) {
 			return jsonrpc_error_response (-32602, "Missing required parameter: address", NULL, NULL);
 		}
-		char *cmd = r_str_newf ("'@%s'decai -d", address);
+		char *cmd = r_str_newf ("'@%s'pdc", address);
 		char *disasm = r2_cmd (ss, cmd);
 		char *response = jsonrpc_tooltext_response (disasm);
 		free (cmd);
@@ -1020,7 +1020,11 @@ int main(int argc, const char **argv) {
 		r_core_parse_radare2rc (ss.rstate.core);
 	}
 	if (deco) {
+		if (!strcmp (deco, "decai")) {
+			deco = "decai -d";
+		}
 		char *pdc = r_str_newf ("e cmd.pdc=%s", deco);
+		eprintf ("[R2MCP] Using Decompiler: %s\n", pdc);
 		r2_cmd (&ss, pdc);
 		free (pdc);
 	}
