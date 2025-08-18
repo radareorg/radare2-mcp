@@ -6,7 +6,7 @@
 #include "r2mcp.h"
 #include "config.h"
 
-#define R2MCP_DEBUG 1
+#define R2MCP_DEBUG   1
 #define R2MCP_LOGFILE "/tmp/r2mcp.txt"
 
 #ifndef R2MCP_VERSION
@@ -14,9 +14,9 @@
 #define R2MCP_VERSION "1.0.0"
 #endif
 
-#define JSON_RPC_VERSION "2.0"
-#define MCP_VERSION "2024-11-05"
-#define READ_CHUNK_SIZE 32768
+#define JSON_RPC_VERSION        "2.0"
+#define MCP_VERSION             "2024-11-05"
+#define READ_CHUNK_SIZE         32768
 #define LATEST_PROTOCOL_VERSION "2024-11-05"
 
 #include "utils.inc.c"
@@ -391,6 +391,14 @@ static char *handle_call_tool(ServerState *ss, RJson *params) {
 
 	// Handle openFile tool
 	if (!strcmp (tool_name, "openFile")) {
+		if (ss->http_mode) {
+			char *res = r2_cmd (ss, "i");
+			char *foo = r_str_newf ("File was already opened, this are the details:\n%s", res);
+			char *out = jsonrpc_tooltext_response (foo);
+			free (res);
+			free (foo);
+			return out;
+		}
 		const char *filepath = r_json_get_str (tool_args, "filePath");
 		if (!filepath) {
 			return jsonrpc_error_response (-32602, "Missing required parameter: filePath", NULL, NULL);
@@ -402,9 +410,11 @@ static char *handle_call_tool(ServerState *ss, RJson *params) {
 		free (filteredpath);
 		return jsonrpc_tooltext_response (success ? "File opened successfully." : "Failed to open file.");
 	}
-	if (!ss->rstate.file_opened) {
-		return jsonrpc_error_response (-32611, "Use the openFile method before calling any other method", NULL, NULL);
-		// return jsonrpc_tooltext_response ("Use the openFile method toNo file was open.");
+	if (!ss->http_mode) {
+		if (!ss->rstate.file_opened) {
+			return jsonrpc_error_response (-32611, "Use the openFile method before calling any other method", NULL, NULL);
+			// return jsonrpc_tooltext_response ("Use the openFile method toNo file was open.");
+		}
 	}
 	// Handle listMethods tool
 	if (!strcmp (tool_name, "listMethods")) {
@@ -538,8 +548,12 @@ static char *handle_call_tool(ServerState *ss, RJson *params) {
 
 	// Handle closeFile tool
 	if (!strcmp (tool_name, "closeFile")) {
+		if (ss->http_mode) {
+			// do not close
+			return jsonrpc_tooltext_response ("In r2pipe mode we won't close the file.");
+		}
 		if (core) {
-			r_core_cmd0 (core, "o-*");
+			r2_run_cmd (ss, "o-*");
 			ss->rstate.file_opened = false;
 			ss->rstate.current_file = NULL;
 		}
@@ -572,7 +586,7 @@ static char *handle_call_tool(ServerState *ss, RJson *params) {
 			return jsonrpc_error_response (-32602, "Missing required parameters: address and message", NULL, NULL);
 		}
 
-		r_core_cmdf (core, "'@%s'%s", address, message);
+		r2_run_cmdf (ss, "'@%s'%s", address, message);
 		return strdup ("ok");
 	}
 
@@ -583,7 +597,7 @@ static char *handle_call_tool(ServerState *ss, RJson *params) {
 		if (!address || !prototype) {
 			return jsonrpc_error_response (-32602, "Missing required parameters: address and prototype", NULL, NULL);
 		}
-		r_core_cmdf (core, "'@%s'afs %s", address, prototype);
+		r2_run_cmdf (ss, "'@%s'afs %s", address, prototype);
 		return strdup ("ok");
 	}
 
@@ -717,19 +731,19 @@ static char *handle_call_tool(ServerState *ss, RJson *params) {
 		const char *response = "ok";
 		if (strstr (deco, "ghidra")) {
 			if (strstr (decompilersAvailable, "pdg")) {
-				r_core_cmd0 (core, "-e cmd.pdc=pdg");
+				r2_run_cmd (ss, "-e cmd.pdc=pdg");
 			} else {
 				response = "This decompiler is not available";
 			}
 		} else if (strstr (deco, "decai")) {
 			if (strstr (decompilersAvailable, "decai")) {
-				r_core_cmd0 (core, "-e cmd.pdc=decai -d");
+				r2_run_cmd (ss, "-e cmd.pdc=decai -d");
 			} else {
 				response = "This decompiler is not available";
 			}
 		} else if (strstr (deco, "r2dec")) {
 			if (strstr (decompilersAvailable, "pdd")) {
-				r_core_cmd0 (core, "-e cmd.pdc=pdd");
+				r2_run_cmd (ss, "-e cmd.pdc=pdd");
 			} else {
 				response = "This decompiler is not available";
 			}
@@ -778,7 +792,7 @@ static char *handle_call_tool(ServerState *ss, RJson *params) {
 			return jsonrpc_error_response (-32602, "Missing required parameter: name", NULL, NULL);
 		}
 		char *cmd = r_str_newf ("'@%s'afn %s", address, name);
-		r_core_cmd0 (core, cmd);
+		r2_run_cmd (ss, cmd);
 		return jsonrpc_tooltext_response ("ok");
 	}
 
@@ -842,7 +856,7 @@ static void process_mcp_message(ServerState *ss, const char *msg) {
 	r2mcp_log ("<<<");
 	r2mcp_log (msg);
 
-	RJson *request = r_json_parse ((char *)msg);
+	RJson *request = r_json_parse ( (char *)msg);
 	if (!request) {
 		R_LOG_ERROR ("Invalid JSON");
 		return;
@@ -928,7 +942,7 @@ static void r2mcp_eventloop(ServerState *ss) {
 
 			// Try to process any complete messages
 			char *msg;
-			while ((msg = read_buffer_get_message (buffer)) != NULL) {
+			while ( (msg = read_buffer_get_message (buffer)) != NULL) {
 				r2mcp_log ("Complete message received:");
 				r2mcp_log (msg);
 				process_mcp_message (ss, msg);
@@ -955,6 +969,7 @@ static void r2mcp_help(void) {
 	printf ("Usage: r2mcp [-flags]\n");
 	printf (" -c [cmd]   run those commands before entering the mcp loop\n");
 	printf (" -d [pdc]   select a different decompiler (pdc by default)\n");
+	printf (" -u [url]   use remote r2 webserver base URL (HTTP r2pipe client mode)\n");
 	printf (" -h         show this help\n");
 	printf (" -m         expose minimum amount of tools\n");
 	printf (" -n         do not load any plugin or radare2rc\n");
@@ -970,22 +985,29 @@ int main(int argc, const char **argv) {
 	RList *cmds = r_list_new ();
 	bool loadplugins = true;
 	const char *deco = NULL;
+	bool http_mode = false;
+	char *baseurl = NULL;
 	RGetopt opt;
-	r_getopt_init (&opt, argc, argv, "hmvd:nc:");
+	r_getopt_init (&opt, argc, argv, "hmvd:nc:u:");
 	int c;
-	while ((c = r_getopt_next (&opt)) != -1) {
+	while ( (c = r_getopt_next (&opt)) != -1) {
 		switch (c) {
 		case 'h':
 			r2mcp_help ();
 			return 0;
 		case 'c':
-			r_list_append (cmds, (char*)opt.arg);
+			r_list_append (cmds, (char *)opt.arg);
 			break;
 		case 'v':
 			r2mcp_version ();
 			return 0;
 		case 'd':
 			deco = opt.arg;
+			break;
+		case 'u':
+			http_mode = true;
+			baseurl = strdup (opt.arg);
+			eprintf ("[R2MCP] HTTP r2pipe client mode enabled, baseurl=%s\n", baseurl);
 			break;
 		case 'n':
 			loadplugins = true;
@@ -1007,6 +1029,8 @@ int main(int argc, const char **argv) {
 		.instructions = "Use this server to analyze binaries with radare2",
 		.initialized = false,
 		.minimode = minimode,
+		.http_mode = http_mode,
+		.baseurl = baseurl,
 		.client_capabilities = NULL,
 		.client_info = NULL
 	};
@@ -1016,24 +1040,28 @@ int main(int argc, const char **argv) {
 
 	setup_signals ();
 
-	// Initialize r2
-	if (!r2state_init (&ss)) {
-		R_LOG_ERROR ("Failed to initialize radare2");
-		r2mcp_log ("Failed to initialize radare2");
-		return 1;
-	}
-	if (loadplugins) {
-		r_core_loadlibs (ss.rstate.core, R_CORE_LOADLIBS_ALL, NULL);
-		r_core_parse_radare2rc (ss.rstate.core);
-	}
-	if (deco) {
-		if (!strcmp (deco, "decai")) {
-			deco = "decai -d";
+	// Initialize r2 (unless running in HTTP client mode)
+	if (!ss.http_mode) {
+		if (!r2state_init (&ss)) {
+			R_LOG_ERROR ("Failed to initialize radare2");
+			r2mcp_log ("Failed to initialize radare2");
+			return 1;
 		}
-		char *pdc = r_str_newf ("e cmd.pdc=%s", deco);
-		eprintf ("[R2MCP] Using Decompiler: %s\n", pdc);
-		r2_cmd (&ss, pdc);
-		free (pdc);
+		if (loadplugins) {
+			r_core_loadlibs (ss.rstate.core, R_CORE_LOADLIBS_ALL, NULL);
+			r_core_parse_radare2rc (ss.rstate.core);
+		}
+		if (deco) {
+			if (!strcmp (deco, "decai")) {
+				deco = "decai -d";
+			}
+			char *pdc = r_str_newf ("e cmd.pdc=%s", deco);
+			eprintf ("[R2MCP] Using Decompiler: %s\n", pdc);
+			r2_cmd (&ss, pdc);
+			free (pdc);
+		}
+	} else {
+		r2mcp_log ("HTTP r2pipe client mode active - skipping local r2 initialization");
 	}
 	RListIter *iter;
 	const char *cmd;

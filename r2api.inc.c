@@ -82,13 +82,12 @@ static void r2state_fini(ServerState *ss) {
 static inline void r2mcp_log(const char *x) {
 	eprintf ("[R2MCP] %s\n", x);
 #if R2MCP_DEBUG
-	r_file_dump (R2MCP_LOGFILE, (const ut8 *)(x), -1, true);
+	r_file_dump (R2MCP_LOGFILE, (const ut8 *) (x), -1, true);
 	r_file_dump (R2MCP_LOGFILE, (const ut8 *)"\n", -1, true);
 #else
 	// do nothing
 #endif
 }
-
 
 static char *r2_cmd_filter(const char *cmd, bool *changed) {
 	char *res = r_str_trim_dup (cmd);
@@ -98,7 +97,7 @@ static char *r2_cmd_filter(const char *cmd, bool *changed) {
 		*changed = true;
 		*res = 0;
 	} else {
-		char *ch = strstr (res, "$(");
+		char *ch = strstr (res, "$ (");
 		if (ch) {
 			*changed = true;
 			*ch = 0;
@@ -114,7 +113,67 @@ static char *r2_cmd_filter(const char *cmd, bool *changed) {
 	return res;
 }
 
+#include "curl.inc.c"
+
+static char *r2cmd_over_http(ServerState *ss, const char *cmd) {
+	int rc = 0;
+	char *res = curl_post_capture (ss->baseurl, cmd, &rc);
+	if (rc != 0) {
+		R_LOG_ERROR ("curl %d", rc);
+		free (res);
+		return NULL;
+	}
+	return res;
+}
+
+/* Forward declaration so helpers above can call r2_cmd */
+static char *r2_cmd(ServerState *ss, const char *cmd);
+
+/* Portable helper to format a string with a va_list. Uses vsnprintf. */
+static char *vformat(const char *fmt, va_list ap) {
+	va_list ap2;
+	va_copy (ap2, ap);
+	int needed = vsnprintf (NULL, 0, fmt, ap2);
+	va_end (ap2);
+	if (needed < 0) {
+		return NULL;
+	}
+	char *buf = malloc ( (size_t)needed + 1);
+	if (!buf) {
+		return NULL;
+	}
+	vsnprintf (buf, (size_t)needed + 1, fmt, ap);
+	return buf;
+}
+
+/* Run a command and discard the output. Useful for commands that don't
+	* need their output but should be executed. */
+static void r2_run_cmd(ServerState *ss, const char *cmd) {
+	char *res = r2_cmd (ss, cmd);
+	if (res) {
+		free (res);
+	}
+}
+
+static void r2_run_cmdf(ServerState *ss, const char *fmt, ...) {
+	va_list ap;
+	va_start (ap, fmt);
+	char *cmd = vformat (fmt, ap);
+	va_end (ap);
+	if (cmd) {
+		r2_run_cmd (ss, cmd);
+		free (cmd);
+	}
+}
+
 static char *r2_cmd(ServerState *ss, const char *cmd) {
+	if (ss && ss->http_mode) {
+		/* In HTTP mode we do not use any r2 C APIs. Delegate to the
+		 * dummy function (user will implement HTTP requests later).
+		 */
+		return r2cmd_over_http (ss, cmd);
+	}
+
 	RCore *core = ss->rstate.core;
 	if (!core || !ss->rstate.file_opened) {
 		return strdup ("Use the openFile method before calling any other method");
@@ -139,6 +198,17 @@ static char *r2_cmd(ServerState *ss, const char *cmd) {
 
 static bool r2_open_file(ServerState *ss, const char *filepath) {
 	R_LOG_INFO ("Attempting to open file: %s\n", filepath);
+	/* In HTTP mode we do not touch the local r2 core. Just set the state
+	 * so subsequent calls to r2_cmd will be allowed (they will be handled
+	 * by the dummy function).
+	 */
+	if (ss && ss->http_mode) {
+		free (ss->rstate.current_file);
+		ss->rstate.current_file = strdup (filepath);
+		ss->rstate.file_opened = true;
+		return true;
+	}
+
 	RCore *core = ss->rstate.core;
 	if (!core && !r2state_init (ss)) {
 		R_LOG_ERROR ("Failed to initialize r2 core\n");
@@ -187,6 +257,10 @@ static bool r2_open_file(ServerState *ss, const char *filepath) {
 }
 
 static char *r2_analyze(ServerState *ss, int level) {
+	if (ss && ss->http_mode) {
+		/* In HTTP mode we won't run local analysis; return empty string. */
+		return strdup ("");
+	}
 	RCore *core = ss->rstate.core;
 	if (!core || !ss->rstate.file_opened) {
 		return false;
@@ -204,4 +278,3 @@ static char *r2_analyze(ServerState *ss, int level) {
 	r_core_cmd0 (core, cmd);
 	return r2mcp_log_drain (ss);
 }
-
