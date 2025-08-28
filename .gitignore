@@ -1,0 +1,5 @@
+Makefile
+.DS_Store
+config.h
+r2mcp
+*.o
