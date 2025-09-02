@@ -215,6 +215,41 @@ static char *handle_list_tools(ServerState *ss, RJson *params) {
 	RStrBuf *sb = r_strbuf_new ("");
 	r_strbuf_append (sb, "{\"tools\":[");
 
+	const char *pipetools[11][3] = {
+		{ "setComment",
+			"Adds a comment at the specified address",
+			"{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address to put the comment in\"},\"message\":{\"type\":\"string\",\"description\":\"Comment text to use\"}},\"required\":[\"address\",\"message\"]}" },
+		{ "listFunctions",
+			"Lists all functions discovered during analysis",
+			"{\"type\":\"object\",\"properties\":{}}" },
+		{ "listLibraries",
+			"Lists all shared libraries linked to the binary",
+			"{\"type\":\"object\",\"properties\":{}}" },
+		{ "listImports",
+			"Lists imported symbols (note: use listSymbols for addresses with sym.imp. prefix)",
+			"{\"type\":\"object\",\"properties\":{}}" },
+		{ "showHeaders",
+			"Displays binary headers and file information",
+			"{\"type\":\"object\",\"properties\":{}}" },
+		{ "listSymbols",
+			"Shows all symbols (functions, variables, imports) with addresses",
+			"{\"type\":\"object\",\"properties\":{}}" },
+		{ "listEntrypoints",
+			"Displays program entrypoints, constructors and main function",
+			"{\"type\":\"object\",\"properties\":{}}" },
+		{ "listStrings",
+			"Lists strings from data sections with optional regex filter",
+			"{\"type\":\"object\",\"properties\":{\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"}}}" },
+		{ "analyze",
+			"Runs binary analysis with optional depth level",
+			"{\"type\":\"object\",\"properties\":{\"level\":{\"type\":\"number\",\"description\":\"Analysis level (0-4, higher is more thorough)\"}},\"required\":[]}" },
+		{ "xrefsTo",
+			"Finds all code references to the specified address",
+			"{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address to check for cross-references\"}},\"required\":[\"address\"]}" },
+		{ "decompileFunction",
+			"Show C-like pseudocode of the function in the given address. <think>Use this to inspect the code in a function, do not run multiple times in the same offset</think>",
+			"{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the function to decompile\"}},\"required\":[\"address\"]}" },
+	};
 	const char *minitools[11][3] = {
 		{ "openFile",
 			"Opens a binary file with radare2 for analysis <think>Call this tool before any other one from r2mcp. Use an absolute filePath</think>",
@@ -340,7 +375,20 @@ static char *handle_list_tools(ServerState *ss, RJson *params) {
 
 	int end_index = start_index + page_size;
 	int total_tools;
-	if (ss->minimode) {
+	if (ss->baseurl != NULL) {
+		total_tools = sizeof (pipetools) / sizeof (pipetools[0]);
+		if (end_index > total_tools) {
+			end_index = total_tools;
+		}
+		// Add tools for this page
+		for (int i = start_index; i < end_index; i++) {
+			if (i > start_index) {
+				r_strbuf_appendf (sb, ",");
+			}
+			r_strbuf_appendf (sb, "{\"name\":\"%s\",\"description\":\"%s\",\"inputSchema\":%s}",
+				pipetools[i][0], pipetools[i][1], pipetools[i][2]);
+		}
+	} else if (ss->minimode) {
 		total_tools = sizeof (minitools) / sizeof (minitools[0]);
 		if (end_index > total_tools) {
 			end_index = total_tools;
@@ -470,10 +518,16 @@ static char *handle_call_tool(ServerState *ss, RJson *params) {
 
 	// Handle listFunctions tool
 	if (!strcmp (tool_name, "listFunctions")) {
-		char *res = r2_cmd (ss, "afl,addr/cols/name");
+		char *res = r2_cmd (ss, "aflm"); // "afl,addr/cols/name");
 		r_str_trim (res);
 		if (R_STR_ISEMPTY (res)) {
 			free (res);
+#if 1
+			free (r2_cmd (ss, "aaa"));
+			// res = r2_cmd (ss, "afl,addr/cols/name");
+			res = r2_cmd (ss, "aflm");
+			r_str_trim (res);
+#endif
 			res = strdup ("No functions found. Run the analysis first.");
 		}
 		char *o = jsonrpc_tooltext_response (res);
@@ -586,7 +640,7 @@ static char *handle_call_tool(ServerState *ss, RJson *params) {
 			return jsonrpc_error_response (-32602, "Missing required parameters: address and message", NULL, NULL);
 		}
 
-		r2_run_cmdf (ss, "'@%s'%s", address, message);
+		r2_run_cmdf (ss, "'@%s'CC %s", address, message);
 		return strdup ("ok");
 	}
 
