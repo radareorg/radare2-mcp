@@ -32,6 +32,8 @@ typedef struct {
     bool http_mode;
     /* Base URL of the remote r2 webserver (if http_mode is true) */
     char *baseurl;
+    /* Optional path to append debug logs when set via -l */
+    char *logfile;
     const RJson *client_capabilities;
     const RJson *client_info;
     RadareState rstate;
@@ -53,7 +55,7 @@ void r2mcp_running_set(int value);
 bool r2mcp_state_init(ServerState *ss);
 void r2mcp_state_fini(ServerState *ss);
 char *r2mcp_cmd(ServerState *ss, const char *cmd);
-void r2mcp_log_pub(const char *msg);
+void r2mcp_log_pub(ServerState *ss, const char *msg);
 
 /* Version fallback if not provided by build */
 #ifndef R2MCP_VERSION

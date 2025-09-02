@@ -79,13 +79,13 @@ static void r2state_fini(ServerState *ss) {
 	}
 }
 
-static inline void r2mcp_log(const char *x) {
+static inline void r2mcp_log(ServerState *ss, const char *x) {
 	eprintf ("[R2MCP] %s\n", x);
 #if R2MCP_DEBUG
-	r_file_dump (R2MCP_LOGFILE, (const ut8 *) (x), -1, true);
-	r_file_dump (R2MCP_LOGFILE, (const ut8 *)"\n", -1, true);
-#else
-	// do nothing
+	if (ss && ss->logfile && *ss->logfile) {
+		r_file_dump (ss->logfile, (const ut8 *) (x), -1, true);
+		r_file_dump (ss->logfile, (const ut8 *)"\n", -1, true);
+	}
 #endif
 }
 
@@ -147,7 +147,7 @@ static char *vformat(const char *fmt, va_list ap) {
 }
 
 /* Run a command and discard the output. Useful for commands that don't
-	* need their output but should be executed. */
+ * need their output but should be executed. */
 static void r2_run_cmd(ServerState *ss, const char *cmd) {
 	free (r2_cmd (ss, cmd));
 }
@@ -178,7 +178,7 @@ static char *r2_cmd(ServerState *ss, const char *cmd) {
 	bool changed = false;
 	char *filteredCommand = r2_cmd_filter (cmd, &changed);
 	if (changed) {
-		r2mcp_log ("command injection prevented");
+		r2mcp_log (ss, "command injection prevented");
 	}
 	r2mcp_log_reset (ss);
 	char *res = r_core_cmd_str (core, filteredCommand);

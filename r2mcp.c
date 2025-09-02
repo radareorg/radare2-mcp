@@ -7,8 +7,7 @@
 #include "r2mcp.h"
 #include "tools.h"
 
-#define R2MCP_DEBUG   1
-#define R2MCP_LOGFILE "/tmp/r2mcp.txt"
+#define R2MCP_DEBUG 1
 
 #ifndef R2MCP_VERSION
 #warning R2MCP_VERSION is not defined
@@ -38,8 +37,8 @@ void r2mcp_state_fini(ServerState *ss) {
 char *r2mcp_cmd(ServerState *ss, const char *cmd) {
 	return r2_cmd (ss, cmd);
 }
-void r2mcp_log_pub(const char *msg) {
-	r2mcp_log (msg);
+void r2mcp_log_pub(ServerState *ss, const char *msg) {
+	r2mcp_log (ss, msg);
 }
 
 static bool check_client_capability(ServerState *ss, const char *capability) {
@@ -164,7 +163,7 @@ static char *handle_initialize(ServerState *ss, RJson *params) {
 }
 
 // Create a proper success response
-static char *jsonrpc_success_response(const char *result, const char *id) {
+static char *jsonrpc_success_response(ServerState *ss, const char *result, const char *id) {
 	PJ *pj = pj_new ();
 	pj_o (pj);
 	pj_ks (pj, "jsonrpc", "2.0");
@@ -191,8 +190,8 @@ static char *jsonrpc_success_response(const char *result, const char *id) {
 
 	pj_end (pj);
 	char *s = pj_drain (pj);
-	r2mcp_log (">>>");
-	r2mcp_log (s);
+	r2mcp_log (ss, ">>>");
+	r2mcp_log (ss, s);
 	return s;
 }
 
@@ -682,15 +681,15 @@ static char *handle_mcp_request(ServerState *ss, const char *method, RJson *para
 		return jsonrpc_error_response (-32601, "Unknown method", id, NULL);
 	}
 
-	char *response = jsonrpc_success_response (result, id);
+	char *response = jsonrpc_success_response (ss, result, id);
 	free (result);
 	return response;
 }
 
 // Modified process_mcp_message to handle the protocol correctly
 static void process_mcp_message(ServerState *ss, const char *msg) {
-	r2mcp_log ("<<<");
-	r2mcp_log (msg);
+	r2mcp_log (ss, "<<<");
+	r2mcp_log (ss, msg);
 
 	RJson *request = r_json_parse ( (char *)msg);
 	if (!request) {
@@ -723,8 +722,8 @@ static void process_mcp_message(ServerState *ss, const char *msg) {
 
 		char *response = handle_mcp_request (ss, method, params, id);
 		if (response) {
-			r2mcp_log (">>>");
-			r2mcp_log (response);
+			r2mcp_log (ss, ">>>");
+			r2mcp_log (ss, response);
 
 			// Ensure the response ends with a newline
 			size_t resp_len = strlen (response);
@@ -744,11 +743,11 @@ static void process_mcp_message(ServerState *ss, const char *msg) {
 		// This is a notification, don't send a response
 		// Just handle it internally
 		if (!strcmp (method, "notifications/cancelled")) {
-			r2mcp_log ("Received cancelled notification");
+			r2mcp_log (ss, "Received cancelled notification");
 		} else if (!strcmp (method, "notifications/initialized")) {
-			r2mcp_log ("Received initialized notification");
+			r2mcp_log (ss, "Received initialized notification");
 		} else {
-			r2mcp_log ("Received unknown notification");
+			r2mcp_log (ss, "Received unknown notification");
 		}
 	}
 
@@ -757,7 +756,7 @@ static void process_mcp_message(ServerState *ss, const char *msg) {
 
 // MCPO protocol-compliant direct mode loop
 void r2mcp_eventloop(ServerState *ss) {
-	r2mcp_log ("Starting MCP direct mode (stdin/stdout)");
+	r2mcp_log (ss, "Starting MCP direct mode (stdin/stdout)");
 
 	// Use consistent unbuffered mode for stdout
 	setvbuf (stdout, NULL, _IONBF, 0);
@@ -779,24 +778,24 @@ void r2mcp_eventloop(ServerState *ss) {
 			// Try to process any complete messages
 			char *msg;
 			while ( (msg = read_buffer_get_message (buffer)) != NULL) {
-				r2mcp_log ("Complete message received:");
-				r2mcp_log (msg);
+				r2mcp_log (ss, "Complete message received:");
+				r2mcp_log (ss, msg);
 				process_mcp_message (ss, msg);
 				free (msg);
 			}
 		} else if (bytes_read == 0) {
 			// EOF - stdin closed
-			r2mcp_log ("End of input stream - exiting");
+			r2mcp_log (ss, "End of input stream - exiting");
 			break;
 		} else {
 			// Error
 			if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) {
-				r2mcp_log ("Read error");
+				r2mcp_log (ss, "Read error");
 				break;
 			}
 		}
 	}
 
 	read_buffer_free (buffer);
-	r2mcp_log ("Direct mode loop terminated");
+	r2mcp_log (ss, "Direct mode loop terminated");
 }
