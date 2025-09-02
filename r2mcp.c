@@ -344,6 +344,15 @@ static char *handle_call_tool(ServerState *ss, RJson *params) {
 		free (res);
 		return o;
 	}
+	//
+	// Handle listFunctionsTree tool
+	if (!strcmp (tool_name, "listFunctionsTree")) {
+		char *res = r2_cmd (ss, "aflmu");
+		r_str_trim (res);
+		char *o = jsonrpc_tooltext_response (res);
+		free (res);
+		return o;
+	}
 
 	// Handle listImports tool
 	if (!strcmp (tool_name, "listImports")) {

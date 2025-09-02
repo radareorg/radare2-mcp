@@ -53,6 +53,10 @@ void tools_registry_init(ServerState *ss) {
 				"Lists all functions discovered during analysis",
 				"{\"type\":\"object\",\"properties\":{}}",
 				TOOL_MODE_NORMAL | M_MINI | M_HTTP));
+	r_list_append ( (RList *)ss->tools, tool ("listFunctionsTree",
+				"Lists functions and successors (aflmu)",
+				"{\"type\":\"object\",\"properties\":{}}",
+				TOOL_MODE_NORMAL | M_MINI | M_HTTP));
 
 	r_list_append ( (RList *)ss->tools, tool ("listLibraries",
 				"Lists all shared libraries linked to the binary",

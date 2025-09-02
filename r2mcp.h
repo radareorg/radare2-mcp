@@ -5,6 +5,11 @@
 #include <r_util/r_strbuf.h>
 #include "readbuffer.h"
 
+/* Version fallback if not provided by build */
+#ifndef R2MCP_VERSION
+#define R2MCP_VERSION "1.1.0"
+#endif
+
 typedef struct {
 	const char *name;
 	const char *version;
@@ -58,8 +63,3 @@ bool r2mcp_state_init(ServerState *ss);
 void r2mcp_state_fini(ServerState *ss);
 char *r2mcp_cmd(ServerState *ss, const char *cmd);
 void r2mcp_log_pub(ServerState *ss, const char *msg);
-
-/* Version fallback if not provided by build */
-#ifndef R2MCP_VERSION
-#define R2MCP_VERSION "1.1.0"
-#endif
