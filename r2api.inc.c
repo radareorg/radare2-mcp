@@ -52,33 +52,6 @@ static char *r2mcp_log_drain(ServerState *ss) {
 	return NULL;
 }
 
-static bool r2state_init(ServerState *ss) {
-	RCore *core = r_core_new ();
-	if (!core) {
-		R_LOG_ERROR ("Failed to initialize radare2 core");
-		return false;
-	}
-
-	r2state_settings (core);
-	ss->rstate.core = core;
-
-	R_LOG_INFO ("Radare2 core initialized");
-	r_log_add_callback (logcb, ss);
-	return true;
-}
-
-static void r2state_fini(ServerState *ss) {
-	RCore *core = ss->rstate.core;
-	if (core) {
-		r_core_free (core);
-		r_strbuf_free (ss->sb);
-		ss->sb = NULL;
-		ss->rstate.core = NULL;
-		ss->rstate.file_opened = false;
-		ss->rstate.current_file = NULL;
-	}
-}
-
 static inline void r2mcp_log(ServerState *ss, const char *x) {
 	eprintf ("[R2MCP] %s\n", x);
 #if R2MCP_DEBUG
@@ -126,46 +99,38 @@ static char *r2cmd_over_http(ServerState *ss, const char *cmd) {
 	return res;
 }
 
-/* Forward declaration so helpers above can call r2_cmd */
-static char *r2_cmd(ServerState *ss, const char *cmd);
-
-/* Removed unused vformat/r2_run_cmd/r2_run_cmdf helpers to silence warnings */
-
-static char *r2_cmd(ServerState *ss, const char *cmd) {
-	if (ss && ss->http_mode) {
-		/* In HTTP mode we do not use any r2 C APIs. Delegate to the
-		 * dummy function (user will implement HTTP requests later).
-		 */
-		return r2cmd_over_http (ss, cmd);
+/* printf-like wrapper for r2mcp_cmd to avoid boilerplate */
+char *r2mcp_cmdf(ServerState *ss, const char *fmt, ...) {
+	if (!fmt) {
+		return r2mcp_cmd (ss, "");
 	}
-
-	RCore *core = ss->rstate.core;
-	if (!core || !ss->rstate.file_opened) {
-		return strdup ("Use the openFile method before calling any other method");
+	va_list ap;
+	va_start(ap, fmt);
+	va_list ap2;
+	va_copy(ap2, ap);
+	int n = vsnprintf(NULL, 0, fmt, ap2);
+	va_end(ap2);
+	if (n < 0) {
+		va_end(ap);
+		return NULL;
 	}
-	bool changed = false;
-	char *filteredCommand = r2_cmd_filter (cmd, &changed);
-	if (changed) {
-		r2mcp_log (ss, "command injection prevented");
+	char *cmd = (char *)malloc((size_t)n + 1);
+	if (!cmd) {
+		va_end(ap);
+		return NULL;
 	}
-	r2mcp_log_reset (ss);
-	char *res = r_core_cmd_str (core, filteredCommand);
-	char *err = r2mcp_log_drain (ss);
-	free (filteredCommand);
-	r2state_settings (core);
-	if (err) {
-		char *newres = r_str_newf ("%s<log>\n%s\n</log>\n", res, err);
-		free (res);
-		res = newres;
-	}
+	vsnprintf(cmd, (size_t)n + 1, fmt, ap);
+	va_end(ap);
+	char *res = r2mcp_cmd (ss, cmd);
+	free(cmd);
 	return res;
 }
 
 static bool r2_open_file(ServerState *ss, const char *filepath) {
 	R_LOG_INFO ("Attempting to open file: %s\n", filepath);
 	/* In HTTP mode we do not touch the local r2 core. Just set the state
-	 * so subsequent calls to r2_cmd will be allowed (they will be handled
-	 * by the dummy function).
+	 * so subsequent calls to r2mcp_cmd will be allowed (they will be handled
+	 * by the HTTP helper).
 	 */
 	if (ss && ss->http_mode) {
 		free (ss->rstate.current_file);
@@ -175,7 +140,7 @@ static bool r2_open_file(ServerState *ss, const char *filepath) {
 	}
 
 	RCore *core = ss->rstate.core;
-	if (!core && !r2state_init (ss)) {
+	if (!core && !r2mcp_state_init (ss)) {
 		R_LOG_ERROR ("Failed to initialize r2 core\n");
 		return false;
 	}

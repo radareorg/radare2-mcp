@@ -1,5 +1,5 @@
 // Helper function to create a simple text tool result
-static __attribute__((unused)) char *jsonrpc_tooltext_response(const char *text) {
+static inline char *jsonrpc_tooltext_response(const char *text) {
 	PJ *pj = pj_new ();
 	pj_o (pj);
 	pj_k (pj, "content");

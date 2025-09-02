@@ -6,6 +6,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <stdio.h>
+#include <stdarg.h>
 #include <errno.h>
 #include "config.h"
 #include "r2mcp.h"
@@ -45,14 +46,58 @@ static void set_nonblocking_io(bool nonblocking) {
 
 /* Public wrappers to expose internal static helpers from r2api.inc.c */
 bool r2mcp_state_init(ServerState *ss) {
-	return r2state_init (ss);
+	RCore *core = r_core_new ();
+	if (!core) {
+		R_LOG_ERROR ("Failed to initialize radare2 core");
+		return false;
+	}
+
+	r2state_settings (core);
+	ss->rstate.core = core;
+
+	R_LOG_INFO ("Radare2 core initialized");
+	r_log_add_callback (logcb, ss);
+	return true;
 }
+
 void r2mcp_state_fini(ServerState *ss) {
-	r2state_fini (ss);
+	RCore *core = ss->rstate.core;
+	if (core) {
+		r_core_free (core);
+		r_strbuf_free (ss->sb);
+		ss->sb = NULL;
+		ss->rstate.core = NULL;
+		ss->rstate.file_opened = false;
+		ss->rstate.current_file = NULL;
+	}
 }
+
 char *r2mcp_cmd(ServerState *ss, const char *cmd) {
-	return r2_cmd (ss, cmd);
+	if (ss && ss->http_mode) {
+		return r2cmd_over_http (ss, cmd);
+	}
+	RCore *core = ss->rstate.core;
+	if (!core || !ss->rstate.file_opened) {
+		return strdup ("Use the openFile method before calling any other method");
+	}
+	bool changed = false;
+	char *filteredCommand = r2_cmd_filter (cmd, &changed);
+	if (changed) {
+		r2mcp_log (ss, "command injection prevented");
+	}
+	r2mcp_log_reset (ss);
+	char *res = r_core_cmd_str (core, filteredCommand);
+	char *err = r2mcp_log_drain (ss);
+	free (filteredCommand);
+	r2state_settings (core);
+	if (err) {
+		char *newres = r_str_newf ("%s<log>\n%s\n</log>\n", res, err);
+		free (res);
+		res = newres;
+	}
+	return res;
 }
+
 void r2mcp_log_pub(ServerState *ss, const char *msg) {
 	r2mcp_log (ss, msg);
 }

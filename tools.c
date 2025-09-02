@@ -279,9 +279,7 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 		if (!classname) {
 			return jsonrpc_tooltext_response ("Missing classname parameter");
 		}
-		char *cmd = r_str_newf ("'ic %s", classname);
-		char *res = r2mcp_cmd (ss, cmd);
-		free (cmd);
+		char *res = r2mcp_cmdf (ss, "'ic %s", classname);
 		char *o = jsonrpc_tooltext_response (res);
 		free (res);
 		return o;
@@ -381,8 +379,7 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 			return jsonrpc_tooltext_response ("In r2pipe mode we won't close the file.");
 		}
 		if (ss->rstate.core) {
-			char *tmp = r2mcp_cmd (ss, "o-*");
-			free (tmp);
+			free (r2mcp_cmd (ss, "o-*"));
 			ss->rstate.file_opened = false;
 			free (ss->rstate.current_file);
 			ss->rstate.current_file = NULL;
@@ -477,9 +474,7 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 			num_instructions = (int)num_instr_json->num.u_value;
 		}
 
-		char *cmd = r_str_newf ("'@%s'pd %d", address, num_instructions);
-		char *disasm = r2mcp_cmd (ss, cmd);
-		free (cmd);
+		char *disasm = r2mcp_cmdf (ss, "'@%s'pd %d", address, num_instructions);
 		char *response = jsonrpc_tooltext_response (disasm);
 		free (disasm);
 		return response;
@@ -494,19 +489,19 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 		const char *response = "ok";
 		if (strstr (deco, "ghidra")) {
 			if (strstr (decompilersAvailable, "pdg")) {
-				r2mcp_cmd (ss, "-e cmd.pdc=pdg");
+				free (r2mcp_cmd (ss, "-e cmd.pdc=pdg"));
 			} else {
 				response = "This decompiler is not available";
 			}
 		} else if (strstr (deco, "decai")) {
 			if (strstr (decompilersAvailable, "decai")) {
-				r2mcp_cmd (ss, "-e cmd.pdc=decai -d");
+				free (r2mcp_cmd (ss, "-e cmd.pdc=decai -d"));
 			} else {
 				response = "This decompiler is not available";
 			}
 		} else if (strstr (deco, "r2dec")) {
 			if (strstr (decompilersAvailable, "pdd")) {
-				r2mcp_cmd (ss, "-e cmd.pdc=pdd");
+				free (r2mcp_cmd (ss, "-e cmd.pdc=pdd"));
 			} else {
 				response = "This decompiler is not available";
 			}
@@ -522,10 +517,8 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 		if (!address) {
 			return jsonrpc_error_response (-32602, "Missing required parameter: address", NULL, NULL);
 		}
-		char *cmd = r_str_newf ("'@%s'axt", address);
-		char *disasm = r2mcp_cmd (ss, cmd);
+		char *disasm = r2mcp_cmdf (ss, "'@%s'axt", address);
 		char *response = jsonrpc_tooltext_response (disasm);
-		free (cmd);
 		free (disasm);
 		return response;
 	}
@@ -535,10 +528,8 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 		if (!address) {
 			return jsonrpc_error_response (-32602, "Missing required parameter: address", NULL, NULL);
 		}
-		char *cmd = r_str_newf ("'@%s'pdf", address);
-		char *disasm = r2mcp_cmd (ss, cmd);
+		char *disasm = r2mcp_cmdf (ss, "'@%s'pdf", address);
 		char *response = jsonrpc_tooltext_response (disasm);
-		free (cmd);
 		free (disasm);
 		return response;
 	}
@@ -552,9 +543,7 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 		if (!name) {
 			return jsonrpc_error_response (-32602, "Missing required parameter: name", NULL, NULL);
 		}
-		char *cmd = r_str_newf ("'@%s'afn %s", address, name);
-		r2mcp_cmd (ss, cmd);
-		free (cmd);
+		free (r2mcp_cmdf (ss, "'@%s'afn %s", address, name));
 		return jsonrpc_tooltext_response ("ok");
 	}
 
@@ -563,10 +552,8 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 		if (!address) {
 			return jsonrpc_error_response (-32602, "Missing required parameter: address", NULL, NULL);
 		}
-		char *cmd = r_str_newf ("'@%s'pdc", address);
-		char *disasm = r2mcp_cmd (ss, cmd);
+		char *disasm = r2mcp_cmdf (ss, "'@%s'pdc", address);
 		char *response = jsonrpc_tooltext_response (disasm);
-		free (cmd);
 		free (disasm);
 		return response;
 	}
