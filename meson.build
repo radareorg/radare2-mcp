@@ -17,6 +17,7 @@ if cc.get_id() == 'gcc' or cc.get_id() == 'clang'
 endif
 
 srcs = [
+  'main.c',
   'r2mcp.c',
   'readbuffer.c',
   'tools.c',

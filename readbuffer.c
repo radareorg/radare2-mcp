@@ -1,4 +1,3 @@
-// --- readbuffer ---
 #include <r_types.h>
 #include "readbuffer.h"
 
@@ -97,4 +96,3 @@ char *read_buffer_get_message(ReadBuffer *buf) {
 	// If we get here, we don't have a complete message yet
 	return NULL;
 }
-
