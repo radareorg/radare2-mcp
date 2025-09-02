@@ -518,14 +518,16 @@ static char *handle_call_tool(ServerState *ss, RJson *params) {
 
 	// Handle listFunctions tool
 	if (!strcmp (tool_name, "listFunctions")) {
-		char *res = r2_cmd (ss, "aflm"); // "afl,addr/cols/name");
+		// char *res = r2_cmd (ss, "aflm"); // "afl,addr/cols/name");
+		char *res = r2_cmd (ss, "afl,addr/cols/name");
 		r_str_trim (res);
 		if (R_STR_ISEMPTY (res)) {
 			free (res);
 #if 1
 			free (r2_cmd (ss, "aaa"));
 			// res = r2_cmd (ss, "afl,addr/cols/name");
-			res = r2_cmd (ss, "aflm");
+			res = r2_cmd (ss, "afl,addr/cols/name");
+		//	res = r2_cmd (ss, "aflm");
 			r_str_trim (res);
 #endif
 			res = strdup ("No functions found. Run the analysis first.");

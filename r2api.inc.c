@@ -149,10 +149,7 @@ static char *vformat(const char *fmt, va_list ap) {
 /* Run a command and discard the output. Useful for commands that don't
 	* need their output but should be executed. */
 static void r2_run_cmd(ServerState *ss, const char *cmd) {
-	char *res = r2_cmd (ss, cmd);
-	if (res) {
-		free (res);
-	}
+	free (r2_cmd (ss, cmd));
 }
 
 static void r2_run_cmdf(ServerState *ss, const char *fmt, ...) {
