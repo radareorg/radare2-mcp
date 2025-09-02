@@ -19,6 +19,7 @@ endif
 srcs = [
   'r2mcp.c',
   'readbuffer.c',
+  'tools.c',
 ]
 
 executable(
@@ -28,4 +29,3 @@ executable(
   c_args: c_args,
   install: true,
 )
-

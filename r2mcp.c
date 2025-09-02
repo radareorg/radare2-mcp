@@ -5,6 +5,7 @@
 #include <r_util/r_print.h>
 #include "r2mcp.h"
 #include "config.h"
+#include "tools.h"
 
 #define R2MCP_DEBUG   1
 #define R2MCP_LOGFILE "/tmp/r2mcp.txt"
@@ -198,233 +199,9 @@ static char *jsonrpc_success_response(const char *result, const char *id) {
 }
 
 static char *handle_list_tools(ServerState *ss, RJson *params) {
-	// Add pagination support
 	const char *cursor = r_json_get_str (params, "cursor");
-	int page_size = 32; // Default page size XXX pagination doesnt work. just use > len (tools)
-	int start_index = 0;
-
-	// Parse cursor if provided
-	if (cursor) {
-		start_index = atoi (cursor);
-		if (start_index < 0) {
-			start_index = 0;
-		}
-	}
-
-	// Use more straightforward JSON construction for tools list
-	RStrBuf *sb = r_strbuf_new ("");
-	r_strbuf_append (sb, "{\"tools\":[");
-
-	const char *pipetools[11][3] = {
-		{ "setComment",
-			"Adds a comment at the specified address",
-			"{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address to put the comment in\"},\"message\":{\"type\":\"string\",\"description\":\"Comment text to use\"}},\"required\":[\"address\",\"message\"]}" },
-		{ "listFunctions",
-			"Lists all functions discovered during analysis",
-			"{\"type\":\"object\",\"properties\":{}}" },
-		{ "listLibraries",
-			"Lists all shared libraries linked to the binary",
-			"{\"type\":\"object\",\"properties\":{}}" },
-		{ "listImports",
-			"Lists imported symbols (note: use listSymbols for addresses with sym.imp. prefix)",
-			"{\"type\":\"object\",\"properties\":{}}" },
-		{ "showHeaders",
-			"Displays binary headers and file information",
-			"{\"type\":\"object\",\"properties\":{}}" },
-		{ "listSymbols",
-			"Shows all symbols (functions, variables, imports) with addresses",
-			"{\"type\":\"object\",\"properties\":{}}" },
-		{ "listEntrypoints",
-			"Displays program entrypoints, constructors and main function",
-			"{\"type\":\"object\",\"properties\":{}}" },
-		{ "listStrings",
-			"Lists strings from data sections with optional regex filter",
-			"{\"type\":\"object\",\"properties\":{\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"}}}" },
-		{ "analyze",
-			"Runs binary analysis with optional depth level",
-			"{\"type\":\"object\",\"properties\":{\"level\":{\"type\":\"number\",\"description\":\"Analysis level (0-4, higher is more thorough)\"}},\"required\":[]}" },
-		{ "xrefsTo",
-			"Finds all code references to the specified address",
-			"{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address to check for cross-references\"}},\"required\":[\"address\"]}" },
-		{ "decompileFunction",
-			"Show C-like pseudocode of the function in the given address. <think>Use this to inspect the code in a function, do not run multiple times in the same offset</think>",
-			"{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the function to decompile\"}},\"required\":[\"address\"]}" },
-	};
-	const char *minitools[11][3] = {
-		{ "openFile",
-			"Opens a binary file with radare2 for analysis <think>Call this tool before any other one from r2mcp. Use an absolute filePath</think>",
-			"{\"type\":\"object\",\"properties\":{\"filePath\":{\"type\":\"string\",\"description\":\"Path to the file to open\"}},\"required\":[\"filePath\"]}" },
-		{ "listFunctions",
-			"Lists all functions discovered during analysis",
-			"{\"type\":\"object\",\"properties\":{}}" },
-		{ "listLibraries",
-			"Lists all shared libraries linked to the binary",
-			"{\"type\":\"object\",\"properties\":{}}" },
-		{ "listImports",
-			"Lists imported symbols (note: use listSymbols for addresses with sym.imp. prefix)",
-			"{\"type\":\"object\",\"properties\":{}}" },
-		{ "showHeaders",
-			"Displays binary headers and file information",
-			"{\"type\":\"object\",\"properties\":{}}" },
-		{ "listSymbols",
-			"Shows all symbols (functions, variables, imports) with addresses",
-			"{\"type\":\"object\",\"properties\":{}}" },
-		{ "listEntrypoints",
-			"Displays program entrypoints, constructors and main function",
-			"{\"type\":\"object\",\"properties\":{}}" },
-		{ "listStrings",
-			"Lists strings from data sections with optional regex filter",
-			"{\"type\":\"object\",\"properties\":{\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"}}}" },
-		{ "analyze",
-			"Runs binary analysis with optional depth level",
-			"{\"type\":\"object\",\"properties\":{\"level\":{\"type\":\"number\",\"description\":\"Analysis level (0-4, higher is more thorough)\"}},\"required\":[]}" },
-		{ "xrefsTo",
-			"Finds all code references to the specified address",
-			"{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address to check for cross-references\"}},\"required\":[\"address\"]}" },
-		{ "decompileFunction",
-			"Show C-like pseudocode of the function in the given address. <think>Use this to inspect the code in a function, do not run multiple times in the same offset</think>",
-			"{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the function to decompile\"}},\"required\":[\"address\"]}" },
-	};
-	// Define our tools with their descriptions and schemas
-	// Format: {name, description, schema_definition}
-	const char *alltools[26][3] = {
-		{ "openFile",
-			"Opens a binary file with radare2 for analysis <think>Call this tool before any other one from r2mcp. Use an absolute filePath</think>",
-			"{\"type\":\"object\",\"properties\":{\"filePath\":{\"type\":\"string\",\"description\":\"Path to the file to open\"}},\"required\":[\"filePath\"]}" },
-		{ "closeFile",
-			"Close the currently open file",
-			"{\"type\":\"object\",\"properties\":{}}" },
-		{ "listFunctions",
-			"Lists all functions discovered during analysis",
-			"{\"type\":\"object\",\"properties\":{}}" },
-		{ "listLibraries",
-			"Lists all shared libraries linked to the binary",
-			"{\"type\":\"object\",\"properties\":{}}" },
-		{ "listImports",
-			"Lists imported symbols (note: use listSymbols for addresses with sym.imp. prefix)",
-			"{\"type\":\"object\",\"properties\":{}}" },
-		{ "listSections",
-			"Displays memory sections and segments from the binary",
-			"{\"type\":\"object\",\"properties\":{}}" },
-		{ "showFunctionDetails",
-			"Displays detailed information about the current function",
-			"{\"type\":\"object\",\"properties\":{}}" },
-		{ "getCurrentAddress",
-			"Shows the current position and function name",
-			"{\"type\":\"object\",\"properties\":{}}" },
-		{ "showHeaders",
-			"Displays binary headers and file information",
-			"{\"type\":\"object\",\"properties\":{}}" },
-		{ "listSymbols",
-			"Shows all symbols (functions, variables, imports) with addresses",
-			"{\"type\":\"object\",\"properties\":{}}" },
-		{ "listEntrypoints",
-			"Displays program entrypoints, constructors and main function",
-			"{\"type\":\"object\",\"properties\":{}}" },
-		{ "listMethods",
-			"Lists all methods belonging to the specified class",
-			"{\"type\":\"object\",\"properties\":{\"classname\":{\"type\":\"string\",\"description\":\"Name of the class to list methods for\"}},\"required\":[\"classname\"]}" },
-		{ "listClasses",
-			"Lists class names from various languages (C++, ObjC, Swift, Java, Dalvik)",
-			"{\"type\":\"object\",\"properties\":{\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"}}}" },
-		{ "listDecompilers",
-			"Shows all available decompiler backends",
-			"{\"type\":\"object\",\"properties\":{}}" },
-		{ "renameFunction",
-			"Renames the function at the specified address",
-			"{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"New function name\"},\"address\":{\"type\":\"string\",\"description\":\"Address of the function to rename\"}},\"required\":[\"name\",\"address\"]}" },
-		{ "useDecompiler",
-			"Selects which decompiler backend to use (default: pdc)",
-			"{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"Name of the decompiler\"}},\"required\":[\"name\"]}" },
-		{ "getFunctionPrototype",
-			"Retrieves the function signature at the specified address",
-			"{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the function\"}},\"required\":[\"address\"]}" },
-		{ "setFunctionPrototype",
-			"Sets the function signature (return type, name, arguments)",
-			"{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the function\"},\"prototype\":{\"type\":\"string\",\"description\":\"Function signature in C-like syntax\"}},\"required\":[\"address\",\"prototype\"]}" },
-		{ "setComment",
-			"Adds a comment at the specified address",
-			"{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address to put the comment in\"},\"message\":{\"type\":\"string\",\"description\":\"Comment text to use\"}},\"required\":[\"address\",\"message\"]}" },
-		{ "listStrings",
-			"Lists strings from data sections with optional regex filter",
-			"{\"type\":\"object\",\"properties\":{\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"}}}" },
-		{ "listAllStrings",
-			"Scans the entire binary for strings with optional regex filter",
-			"{\"type\":\"object\",\"properties\":{\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"}}}" },
-#if 0
-		{ "runCommand", // TODO: optional
-			"Run a radare2 command and get the output",
-			"{\"type\":\"object\",\"properties\":{\"command\":{\"type\":\"string\",\"description\":\"Command to execute\"}},\"required\":[\"command\"]}" },
-#endif
-		{ "analyze",
-			"Runs binary analysis with optional depth level",
-			"{\"type\":\"object\",\"properties\":{\"level\":{\"type\":\"number\",\"description\":\"Analysis level (0-4, higher is more thorough)\"}},\"required\":[]}" },
-		{ "xrefsTo",
-			"Finds all code references to the specified address",
-			"{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address to check for cross-references\"}},\"required\":[\"address\"]}" },
-		{ "decompileFunction",
-			"Show C-like pseudocode of the function in the given address. <think>Use this to inspect the code in a function, do not run multiple times in the same offset</think>",
-			"{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the function to decompile\"}},\"required\":[\"address\"]}" },
-		{ "disassembleFunction",
-			"Shows assembly listing of the function at the specified address",
-			"{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the function to disassemble\"}},\"required\":[\"address\"]}" },
-		{ "disassemble",
-			"Disassembles a specific number of instructions from an address <think>Use this tool to inspect a portion of memory as code without depending on function analysis boundaries. Use this tool when functions are large and you are only interested on few instructions</think>",
-			"{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address to start disassembly\"},\"numInstructions\":{\"type\":\"integer\",\"description\":\"Number of instructions to disassemble (default: 10)\"}},\"required\":[\"address\"]}" }
-	};
-
-	int end_index = start_index + page_size;
-	int total_tools;
-	if (ss->baseurl != NULL) {
-		total_tools = sizeof (pipetools) / sizeof (pipetools[0]);
-		if (end_index > total_tools) {
-			end_index = total_tools;
-		}
-		// Add tools for this page
-		for (int i = start_index; i < end_index; i++) {
-			if (i > start_index) {
-				r_strbuf_appendf (sb, ",");
-			}
-			r_strbuf_appendf (sb, "{\"name\":\"%s\",\"description\":\"%s\",\"inputSchema\":%s}",
-				pipetools[i][0], pipetools[i][1], pipetools[i][2]);
-		}
-	} else if (ss->minimode) {
-		total_tools = sizeof (minitools) / sizeof (minitools[0]);
-		if (end_index > total_tools) {
-			end_index = total_tools;
-		}
-		// Add tools for this page
-		for (int i = start_index; i < end_index; i++) {
-			if (i > start_index) {
-				r_strbuf_appendf (sb, ",");
-			}
-			r_strbuf_appendf (sb, "{\"name\":\"%s\",\"description\":\"%s\",\"inputSchema\":%s}",
-				minitools[i][0], minitools[i][1], minitools[i][2]);
-		}
-	} else {
-		total_tools = sizeof (alltools) / sizeof (alltools[0]);
-		if (end_index > total_tools) {
-			end_index = total_tools;
-		}
-		// Add tools for this page
-		for (int i = start_index; i < end_index; i++) {
-			if (i > start_index) {
-				r_strbuf_appendf (sb, ",");
-			}
-			r_strbuf_appendf (sb, "{\"name\":\"%s\",\"description\":\"%s\",\"inputSchema\":%s}",
-				alltools[i][0], alltools[i][1], alltools[i][2]);
-		}
-	}
-
-	r_strbuf_append (sb, "]");
-
-	// Add nextCursor if there are more tools
-	if (end_index < total_tools) {
-		r_strbuf_appendf (sb, ",\"nextCursor\":\"%d\"", end_index);
-	}
-
-	r_strbuf_appendf (sb, "}");
-	return r_strbuf_drain (sb);
+	int page_size = 32;
+	return tools_build_catalog_json (ss, cursor, page_size);
 }
 
 static char *handle_call_tool(ServerState *ss, RJson *params) {
@@ -433,6 +210,11 @@ static char *handle_call_tool(ServerState *ss, RJson *params) {
 
 	if (!tool_name) {
 		return jsonrpc_error_response (-32602, "Missing required parameter: name", NULL, NULL);
+	}
+
+	// Enforce tool availability per mode unless permissive is enabled
+	if (!tools_is_tool_allowed (ss, tool_name)) {
+		return jsonrpc_error_response (-32611, "Tool not available in current mode (use -p for permissive)", NULL, NULL);
 	}
 
 	RJson *tool_args = (RJson *)r_json_get (params, "arguments");
@@ -1022,14 +804,17 @@ static void r2mcp_eventloop(ServerState *ss) {
 }
 
 static void r2mcp_help(void) {
-	printf ("Usage: r2mcp [-flags]\n");
-	printf (" -c [cmd]   run those commands before entering the mcp loop\n");
-	printf (" -d [pdc]   select a different decompiler (pdc by default)\n");
-	printf (" -u [url]   use remote r2 webserver base URL (HTTP r2pipe client mode)\n");
-	printf (" -h         show this help\n");
-	printf (" -m         expose minimum amount of tools\n");
-	printf (" -n         do not load any plugin or radare2rc\n");
-	printf (" -v         show version\n");
+	const char help_text[] =
+		"Usage: r2mcp [-flags]\n"
+		" -c [cmd]   run those commands before entering the mcp loop\n"
+		" -d [pdc]   select a different decompiler (pdc by default)\n"
+		" -u [url]   use remote r2 webserver base URL (HTTP r2pipe client mode)\n"
+		" -h         show this help\n"
+		" -m         expose minimum amount of tools\n"
+		" -p         permissive tools: allow calling non-listed tools\n"
+		" -n         do not load any plugin or radare2rc\n"
+		" -v         show version\n";
+	printf("%s", help_text);
 }
 
 static void r2mcp_version(void) {
@@ -1042,9 +827,10 @@ int main(int argc, const char **argv) {
 	bool loadplugins = true;
 	const char *deco = NULL;
 	bool http_mode = false;
+	bool permissive = false;
 	char *baseurl = NULL;
 	RGetopt opt;
-	r_getopt_init (&opt, argc, argv, "hmvd:nc:u:");
+	r_getopt_init (&opt, argc, argv, "hmvpd:nc:u:");
 	int c;
 	while ( (c = r_getopt_next (&opt)) != -1) {
 		switch (c) {
@@ -1071,6 +857,9 @@ int main(int argc, const char **argv) {
 		case 'm':
 			minimode = true;
 			break;
+		case 'p':
+			permissive = true;
+			break;
 		default:
 			eprintf ("Invalid flag -%c\n", c);
 			return 1;
@@ -1085,6 +874,7 @@ int main(int argc, const char **argv) {
 		.instructions = "Use this server to analyze binaries with radare2",
 		.initialized = false,
 		.minimode = minimode,
+		.permissive_tools = permissive,
 		.http_mode = http_mode,
 		.baseurl = baseurl,
 		.client_capabilities = NULL,
@@ -1095,6 +885,9 @@ int main(int argc, const char **argv) {
 	r2mcp_log ("r2mcp starting");
 
 	setup_signals ();
+
+	// Initialize tools registry
+	tools_registry_init (&ss);
 
 	// Initialize r2 (unless running in HTTP client mode)
 	if (!ss.http_mode) {
@@ -1128,6 +921,7 @@ int main(int argc, const char **argv) {
 
 	running = 1;
 	r2mcp_eventloop (&ss);
+	tools_registry_fini (&ss);
 	r2state_fini (&ss);
 	return 0;
 }
