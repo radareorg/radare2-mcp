@@ -3,16 +3,16 @@
 #include <stdbool.h>
 
 typedef enum {
-    TOOL_MODE_MINI   = 1 << 0,
-    TOOL_MODE_HTTP   = 1 << 1,
-    TOOL_MODE_NORMAL = 1 << 2,
+	TOOL_MODE_MINI   = 1 << 0,
+	TOOL_MODE_HTTP   = 1 << 1,
+	TOOL_MODE_NORMAL = 1 << 2,
 } ToolMode;
 
 typedef struct {
-    const char *name;
-    const char *description;
-    const char *schema_json;
-    int modes; // bitmask of ToolMode
+	const char *name;
+	const char *description;
+	const char *schema_json;
+	int modes; // bitmask of ToolMode
 } ToolSpec;
 
 // Initialize and shutdown the tools registry stored in ServerState

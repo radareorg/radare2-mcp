@@ -1,6 +1,7 @@
 #include "config.h"
 #include "r2mcp.h"
 #include "tools.h"
+#include "prompts.h"
 
 #include <signal.h>
 #include <unistd.h>
@@ -105,7 +106,7 @@ int r2mcp_main(int argc, const char **argv) {
 		.info = {
 			.name = "Radare2 MCP Connector",
 			.version = R2MCP_VERSION },
-		.capabilities = { .logging = true, .tools = true },
+		.capabilities = { .logging = true, .tools = true, .prompts = true },
 		.instructions = "Use this server to analyze binaries with radare2",
 		.initialized = false,
 		.minimode = minimode,
@@ -122,8 +123,9 @@ int r2mcp_main(int argc, const char **argv) {
 
 	setup_signals ();
 
-	/* Initialize tools registry */
+	/* Initialize registries */
 	tools_registry_init (&ss);
+	prompts_registry_init (&ss);
 
 	/* Initialize r2 (unless running in HTTP client mode) */
 	if (!ss.http_mode) {
@@ -159,6 +161,7 @@ int r2mcp_main(int argc, const char **argv) {
 	r2mcp_running_set (1);
 	r2mcp_eventloop (&ss);
 	tools_registry_fini (&ss);
+	prompts_registry_fini (&ss);
 	r2mcp_state_fini (&ss);
 	/* Cleanup */
 	free (ss.baseurl);

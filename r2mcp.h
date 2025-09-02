@@ -13,6 +13,7 @@ typedef struct {
 typedef struct {
 	bool logging;
 	bool tools;
+	bool prompts;
 } ServerCapabilities;
 
 typedef struct {
@@ -22,23 +23,24 @@ typedef struct {
 } RadareState;
 
 typedef struct {
-    ServerInfo info;
-    ServerCapabilities capabilities;
-    const char *instructions;
-    bool initialized;
-    bool minimode;
-    bool permissive_tools; // allow calling tools not exposed for current mode
-    /* When true, operate in HTTP r2pipe client mode and do NOT use r2 C APIs */
-    bool http_mode;
-    /* Base URL of the remote r2 webserver (if http_mode is true) */
-    char *baseurl;
-    /* Optional path to append debug logs when set via -l */
-    char *logfile;
-    const RJson *client_capabilities;
-    const RJson *client_info;
-    RadareState rstate;
-    RStrBuf *sb;
-    void *tools; // registry of ToolSpec* (RList*), opaque here
+	ServerInfo info;
+	ServerCapabilities capabilities;
+	const char *instructions;
+	bool initialized;
+	bool minimode;
+	bool permissive_tools; // allow calling tools not exposed for current mode
+	/* When true, operate in HTTP r2pipe client mode and do NOT use r2 C APIs */
+	bool http_mode;
+	/* Base URL of the remote r2 webserver (if http_mode is true) */
+	char *baseurl;
+	/* Optional path to append debug logs when set via -l */
+	char *logfile;
+	const RJson *client_capabilities;
+	const RJson *client_info;
+	RadareState rstate;
+	RStrBuf *sb;
+	void *tools; // registry of ToolSpec* (RList*), opaque here
+	void *prompts; // registry of PromptSpec* (RList*), opaque here
 } ServerState;
 
 /* Entry point wrapper implemented in r2mcp.c */

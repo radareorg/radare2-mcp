@@ -6,6 +6,7 @@
 #include "config.h"
 #include "r2mcp.h"
 #include "tools.h"
+#include "prompts.h"
 
 #define R2MCP_DEBUG 1
 
@@ -55,6 +56,9 @@ static bool check_server_capability(ServerState *ss, const char *capability) {
 	}
 	if (!strcmp (capability, "tools")) {
 		return ss->capabilities.tools;
+	}
+	if (!strcmp (capability, "prompts")) {
+		return ss->capabilities.prompts;
 	}
 	return false;
 }
@@ -147,6 +151,12 @@ static char *handle_initialize(ServerState *ss, RJson *params) {
 	pj_kb (pj, "listChanged", false);
 	pj_end (pj);
 
+	// Prompts capability - object with listChanged
+	pj_k (pj, "prompts");
+	pj_o (pj);
+	pj_kb (pj, "listChanged", false);
+	pj_end (pj);
+
 	// For any capability we don't support, don't include it at all
 	// Don't add: prompts, roots, resources, notifications, logging, sampling
 
@@ -199,6 +209,25 @@ static char *handle_list_tools(ServerState *ss, RJson *params) {
 	const char *cursor = r_json_get_str (params, "cursor");
 	int page_size = 32;
 	return tools_build_catalog_json (ss, cursor, page_size);
+}
+
+static char *handle_list_prompts(ServerState *ss, RJson *params) {
+	const char *cursor = r_json_get_str (params, "cursor");
+	int page_size = 32;
+	return prompts_build_list_json (ss, cursor, page_size);
+}
+
+static char *handle_get_prompt(ServerState *ss, RJson *params) {
+	const char *name = r_json_get_str (params, "name");
+	if (!name) {
+		return jsonrpc_error_response (-32602, "Missing required parameter: name", NULL, NULL);
+	}
+	RJson *args = (RJson *)r_json_get (params, "arguments");
+	char *prompt = prompts_get_json (ss, name, args);
+	if (!prompt) {
+		return jsonrpc_error_response (-32602, "Unknown prompt name", NULL, NULL);
+	}
+	return prompt;
 }
 
 static char *handle_call_tool(ServerState *ss, RJson *params) {
@@ -677,6 +706,10 @@ static char *handle_mcp_request(ServerState *ss, const char *method, RJson *para
 		result = handle_list_tools (ss, params);
 	} else if (!strcmp (method, "tools/call") || !strcmp (method, "tool/call")) {
 		result = handle_call_tool (ss, params);
+	} else if (!strcmp (method, "prompts/list") || !strcmp (method, "prompt/list")) {
+		result = handle_list_prompts (ss, params);
+	} else if (!strcmp (method, "prompts/get") || !strcmp (method, "prompt/get")) {
+		result = handle_get_prompt (ss, params);
 	} else {
 		return jsonrpc_error_response (-32601, "Unknown method", id, NULL);
 	}
