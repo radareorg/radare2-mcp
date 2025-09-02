@@ -63,3 +63,9 @@ bool r2mcp_state_init(ServerState *ss);
 void r2mcp_state_fini(ServerState *ss);
 char *r2mcp_cmd(ServerState *ss, const char *cmd);
 void r2mcp_log_pub(ServerState *ss, const char *msg);
+
+// Additional public wrappers exposed so other modules (eg. tools.c) can use
+// functionality implemented in r2api.inc.c. These simply forward to the
+// internal static helpers so we keep the original separation.
+bool r2mcp_open_file(ServerState *ss, const char *filepath);
+char *r2mcp_analyze(ServerState *ss, int level);

@@ -1,18 +1,5 @@
-// Set buffering modes for stdin/stdout
-static void set_nonblocking_io(bool nonblocking) {
-	// Set stdin/stdout to blocking or non-blocking mode
-	int flags = fcntl (STDIN_FILENO, F_GETFL, 0);
-	if (nonblocking) {
-		fcntl (STDIN_FILENO, F_SETFL, flags | O_NONBLOCK);
-	} else {
-		fcntl (STDIN_FILENO, F_SETFL, flags & ~O_NONBLOCK);
-	}
-
-	// Set stdout to line buffered mode
-	setvbuf (stdout, NULL, _IOLBF, 0);
-}
 // Helper function to create a simple text tool result
-static char *jsonrpc_tooltext_response(const char *text) {
+static __attribute__((unused)) char *jsonrpc_tooltext_response(const char *text) {
 	PJ *pj = pj_new ();
 	pj_o (pj);
 	pj_k (pj, "content");
@@ -26,7 +13,7 @@ static char *jsonrpc_tooltext_response(const char *text) {
 	return pj_drain (pj);
 }
 
-#if R2_VERSION_NUMBER  < 50909
+#if R2_VERSION_NUMBER < 50909
 static st64 r_json_get_num(const RJson *json, const char *key) {
 	if (!json || !key) {
 		return 0;
@@ -64,3 +51,27 @@ static const char *r_json_get_str(const RJson *json, const char *key) {
 }
 #endif
 
+// JSON-RPC error response builder. Returns heap-allocated JSON string (caller frees).
+static char *jsonrpc_error_response(int code, const char *message, const char *id, const char *uri) {
+	PJ *pj = pj_new ();
+	pj_o (pj);
+	pj_ks (pj, "jsonrpc", "2.0");
+	if (id) {
+		pj_ks (pj, "id", id);
+	}
+	pj_k (pj, "error");
+	pj_o (pj);
+	pj_ki (pj, "code", code);
+	pj_ks (pj, "message", message);
+	if (uri) {
+		pj_k (pj, "data");
+		pj_o (pj);
+		pj_ks (pj, "uri", uri);
+		pj_end (pj);
+	}
+	pj_end (pj);
+	pj_end (pj);
+	return pj_drain (pj);
+}
+
+// Intentionally no generic require_str_param helper; callers validate params inline

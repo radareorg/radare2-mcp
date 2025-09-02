@@ -129,39 +129,7 @@ static char *r2cmd_over_http(ServerState *ss, const char *cmd) {
 /* Forward declaration so helpers above can call r2_cmd */
 static char *r2_cmd(ServerState *ss, const char *cmd);
 
-/* Portable helper to format a string with a va_list. Uses vsnprintf. */
-static char *vformat(const char *fmt, va_list ap) {
-	va_list ap2;
-	va_copy (ap2, ap);
-	int needed = vsnprintf (NULL, 0, fmt, ap2);
-	va_end (ap2);
-	if (needed < 0) {
-		return NULL;
-	}
-	char *buf = malloc ( (size_t)needed + 1);
-	if (!buf) {
-		return NULL;
-	}
-	vsnprintf (buf, (size_t)needed + 1, fmt, ap);
-	return buf;
-}
-
-/* Run a command and discard the output. Useful for commands that don't
- * need their output but should be executed. */
-static void r2_run_cmd(ServerState *ss, const char *cmd) {
-	free (r2_cmd (ss, cmd));
-}
-
-static void r2_run_cmdf(ServerState *ss, const char *fmt, ...) {
-	va_list ap;
-	va_start (ap, fmt);
-	char *cmd = vformat (fmt, ap);
-	va_end (ap);
-	if (cmd) {
-		r2_run_cmd (ss, cmd);
-		free (cmd);
-	}
-}
+/* Removed unused vformat/r2_run_cmd/r2_run_cmdf helpers to silence warnings */
 
 static char *r2_cmd(ServerState *ss, const char *cmd) {
 	if (ss && ss->http_mode) {

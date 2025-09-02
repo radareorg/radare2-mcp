@@ -3,6 +3,10 @@
 #include <r_core.h>
 #include <r_util/r_json.h>
 #include <r_util/r_print.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <errno.h>
 #include "config.h"
 #include "r2mcp.h"
 #include "tools.h"
@@ -28,6 +32,17 @@ void r2mcp_running_set(int value) {
 	running = value ? 1 : 0;
 }
 
+// Local I/O mode helper (moved from utils.inc.c to avoid unused warnings in other TUs)
+static void set_nonblocking_io(bool nonblocking) {
+	int flags = fcntl (STDIN_FILENO, F_GETFL, 0);
+	if (nonblocking) {
+		fcntl (STDIN_FILENO, F_SETFL, flags | O_NONBLOCK);
+	} else {
+		fcntl (STDIN_FILENO, F_SETFL, flags & ~O_NONBLOCK);
+	}
+	setvbuf (stdout, NULL, _IOLBF, 0);
+}
+
 /* Public wrappers to expose internal static helpers from r2api.inc.c */
 bool r2mcp_state_init(ServerState *ss) {
 	return r2state_init (ss);
@@ -40,6 +55,14 @@ char *r2mcp_cmd(ServerState *ss, const char *cmd) {
 }
 void r2mcp_log_pub(ServerState *ss, const char *msg) {
 	r2mcp_log (ss, msg);
+}
+
+// New wrappers to expose functionality from r2api.inc.c to other modules
+bool r2mcp_open_file(ServerState *ss, const char *filepath) {
+	return r2_open_file (ss, filepath);
+}
+char *r2mcp_analyze(ServerState *ss, int level) {
+	return r2_analyze (ss, level);
 }
 
 static bool check_client_capability(ServerState *ss, const char *capability) {
@@ -104,27 +127,8 @@ static bool assert_request_handler_capability(ServerState *ss, const char *metho
 }
 
 // Helper function to create JSON-RPC error responses
-static char *jsonrpc_error_response(int code, const char *message, const char *id, const char *uri) {
-	PJ *pj = pj_new ();
-	pj_o (pj);
-	pj_ks (pj, "jsonrpc", "2.0");
-	if (id) {
-		pj_ks (pj, "id", id);
-	}
-	pj_k (pj, "error");
-	pj_o (pj);
-	pj_ki (pj, "code", code);
-	pj_ks (pj, "message", message);
-	if (uri) {
-		pj_k (pj, "data");
-		pj_o (pj);
-		pj_ks (pj, "uri", uri);
-		pj_end (pj);
-	}
-	pj_end (pj);
-	pj_end (pj);
-	return pj_drain (pj);
-}
+// (moved to utils.inc.c earlier, keep this for compatibility if needed)
+// static char *jsonrpc_error_response (int code, const char *message, const char *id, const char *uri) { ... }
 
 static char *handle_initialize(ServerState *ss, RJson *params) {
 	ss->client_capabilities = r_json_get (params, "capabilities");
@@ -230,462 +234,19 @@ static char *handle_get_prompt(ServerState *ss, RJson *params) {
 	return prompt;
 }
 
+// Thin wrapper that delegates to the tools module. This keeps r2mcp.c small
+// and moves the tool-specific logic into tools.c where it belongs.
 static char *handle_call_tool(ServerState *ss, RJson *params) {
-	RCore *core = ss->rstate.core;
 	const char *tool_name = r_json_get_str (params, "name");
-
 	if (!tool_name) {
-		return jsonrpc_error_response (-32602, "Missing required parameter: name", NULL, NULL);
+		tool_name = r_json_get_str (params, "tool");
 	}
-
-	// Enforce tool availability per mode unless permissive is enabled
-	if (!tools_is_tool_allowed (ss, tool_name)) {
-		return jsonrpc_error_response (-32611, "Tool not available in current mode (use -p for permissive)", NULL, NULL);
-	}
-
 	RJson *tool_args = (RJson *)r_json_get (params, "arguments");
-
-	// Handle openFile tool
-	if (!strcmp (tool_name, "openFile")) {
-		if (ss->http_mode) {
-			char *res = r2_cmd (ss, "i");
-			char *foo = r_str_newf ("File was already opened, this are the details:\n%s", res);
-			char *out = jsonrpc_tooltext_response (foo);
-			free (res);
-			free (foo);
-			return out;
-		}
-		const char *filepath = r_json_get_str (tool_args, "filePath");
-		if (!filepath) {
-			return jsonrpc_error_response (-32602, "Missing required parameter: filePath", NULL, NULL);
-		}
-
-		char *filteredpath = strdup (filepath);
-		r_str_replace_ch (filteredpath, '`', 0, true);
-		bool success = r2_open_file (ss, filteredpath);
-		free (filteredpath);
-		return jsonrpc_tooltext_response (success ? "File opened successfully." : "Failed to open file.");
+	if (!tool_args) {
+		tool_args = (RJson *)r_json_get (params, "args");
 	}
-	if (!ss->http_mode) {
-		if (!ss->rstate.file_opened) {
-			return jsonrpc_error_response (-32611, "Use the openFile method before calling any other method", NULL, NULL);
-			// return jsonrpc_tooltext_response ("Use the openFile method toNo file was open.");
-		}
-	}
-	// Handle listMethods tool
-	if (!strcmp (tool_name, "listMethods")) {
-		const char *classname = r_json_get_str (tool_args, "classname");
-		if (!classname) {
-			return jsonrpc_tooltext_response ("Missing classname parameter");
-		}
-		char *cmd = r_str_newf ("'ic %s", classname);
-		char *res = r2_cmd (ss, cmd);
-		free (cmd);
-		char *o = jsonrpc_tooltext_response (res);
-		free (res);
-		return o;
-	}
-
-	// Handle listClasses tool
-	if (!strcmp (tool_name, "listClasses")) {
-		const char *filter = r_json_get_str (tool_args, "filter");
-		char *res = r2_cmd (ss, "icqq");
-		if (R_STR_ISNOTEMPTY (filter)) {
-			RStrBuf *sb = r_strbuf_new ("");
-			RList *strings = r_str_split_list (res, "\n", 0);
-			RListIter *iter;
-			const char *str;
-			RRegex rx;
-			int re_flags = r_regex_flags ("e");
-			bool ok = r_regex_init (&rx, filter, re_flags) == 0;
-			if (ok) {
-				r_list_foreach (strings, iter, str) {
-					if (r_regex_exec (&rx, str, 0, 0, 0) == 0) {
-						r_strbuf_appendf (sb, "%s\n", str);
-					}
-				}
-				r_regex_fini (&rx);
-			} else {
-				r_strbuf_appendf (sb, "Invalid regex used in filter parameter, try a simpler expression");
-			}
-			free (res);
-			res = r_strbuf_drain (sb);
-		}
-		char *o = jsonrpc_tooltext_response (res);
-		free (res);
-		return o;
-	}
-
-	// Handle listDecompilers tool
-	if (!strcmp (tool_name, "listDecompilers")) {
-		char *res = r2_cmd (ss, "e cmd.pdc=?");
-		char *o = jsonrpc_tooltext_response (res);
-		free (res);
-		return o;
-	}
-
-	// Handle listFunctions tool
-	if (!strcmp (tool_name, "listFunctions")) {
-		// char *res = r2_cmd (ss, "aflm"); // "afl,addr/cols/name");
-		char *res = r2_cmd (ss, "afl,addr/cols/name");
-		r_str_trim (res);
-		if (R_STR_ISEMPTY (res)) {
-			free (res);
-#if 1
-			free (r2_cmd (ss, "aaa"));
-			// res = r2_cmd (ss, "afl,addr/cols/name");
-			res = r2_cmd (ss, "afl,addr/cols/name");
-			//	res = r2_cmd (ss, "aflm");
-			r_str_trim (res);
-#endif
-			res = strdup ("No functions found. Run the analysis first.");
-		}
-		char *o = jsonrpc_tooltext_response (res);
-		free (res);
-		return o;
-	}
-	//
-	// Handle listFunctionsTree tool
-	if (!strcmp (tool_name, "listFunctionsTree")) {
-		char *res = r2_cmd (ss, "aflmu");
-		r_str_trim (res);
-		char *o = jsonrpc_tooltext_response (res);
-		free (res);
-		return o;
-	}
-
-	// Handle listImports tool
-	if (!strcmp (tool_name, "listImports")) {
-		char *res = r2_cmd (ss, "iiq");
-		char *o = jsonrpc_tooltext_response (res);
-		free (res);
-		return o;
-	}
-
-	// Handle listSections tool
-	if (!strcmp (tool_name, "listSections")) {
-		char *res = r2_cmd (ss, "iS;iSS");
-		char *o = jsonrpc_tooltext_response (res);
-		free (res);
-		return o;
-	}
-
-	// Handle showHeaders tool
-	if (!strcmp (tool_name, "showHeaders")) {
-		char *res = r2_cmd (ss, "i;iH");
-		char *o = jsonrpc_tooltext_response (res);
-		free (res);
-		return o;
-	}
-
-	// Handle showFunctionDetails tool
-	if (!strcmp (tool_name, "showFunctionDetails")) {
-		char *res = r2_cmd (ss, "afi");
-		char *o = jsonrpc_tooltext_response (res);
-		free (res);
-		return o;
-	}
-
-	// Handle getCurrentAddress tool
-	if (!strcmp (tool_name, "getCurrentAddress")) {
-		char *res = r2_cmd (ss, "s;fd");
-		char *o = jsonrpc_tooltext_response (res);
-		free (res);
-		return o;
-	}
-
-	// Handle listSymbols tool
-	if (!strcmp (tool_name, "listSymbols")) {
-		char *res = r2_cmd (ss, "isq~!func.,!imp.");
-		// TODO: remove imports and func
-		char *o = jsonrpc_tooltext_response (res);
-		free (res);
-		return o;
-	}
-
-	// Handle listEntrypoints tool
-	if (!strcmp (tool_name, "listEntrypoints")) {
-		char *res = r2_cmd (ss, "ies");
-		char *o = jsonrpc_tooltext_response (res);
-		free (res);
-		return o;
-	}
-
-	// Handle listLibraries tool
-	if (!strcmp (tool_name, "listLibraries")) {
-		char *res = r2_cmd (ss, "ilq");
-		char *o = jsonrpc_tooltext_response (res);
-		free (res);
-		return o;
-	}
-
-	// Handle closeFile tool
-	if (!strcmp (tool_name, "closeFile")) {
-		if (ss->http_mode) {
-			// do not close
-			return jsonrpc_tooltext_response ("In r2pipe mode we won't close the file.");
-		}
-		if (core) {
-			r2_run_cmd (ss, "o-*");
-			ss->rstate.file_opened = false;
-			ss->rstate.current_file = NULL;
-		}
-
-		return jsonrpc_tooltext_response ("File closed successfully.");
-	}
-
-#if 0
-	// Handle runCommand tool
-	if (!strcmp (tool_name, "runCommand")) {
-		if (!r_core || !file_opened) {
-			return strdup ("Error: No file is open");
-		}
-		const char *command = r_json_get_str (tool_args, "command");
-		if (!command) {
-			return jsonrpc_error_response (-32602, "Missing required parameter: command", NULL, NULL);
-		}
-
-		char *result = r2_cmd (command);
-		char *response = jsonrpc_tooltext_response (result);
-		free (result);
-		return response;
-	}
-#endif
-	// Handle setComment tool
-	if (!strcmp (tool_name, "setComment")) {
-		const char *address = r_json_get_str (tool_args, "address");
-		const char *message = r_json_get_str (tool_args, "message");
-		if (!address || !message) {
-			return jsonrpc_error_response (-32602, "Missing required parameters: address and message", NULL, NULL);
-		}
-
-		r2_run_cmdf (ss, "'@%s'CC %s", address, message);
-		return strdup ("ok");
-	}
-
-	// Handle setFunctionPrototype tool
-	if (!strcmp (tool_name, "setFunctionPrototype")) {
-		const char *address = r_json_get_str (tool_args, "address");
-		const char *prototype = r_json_get_str (tool_args, "prototype");
-		if (!address || !prototype) {
-			return jsonrpc_error_response (-32602, "Missing required parameters: address and prototype", NULL, NULL);
-		}
-		r2_run_cmdf (ss, "'@%s'afs %s", address, prototype);
-		return strdup ("ok");
-	}
-
-	// Handle getFunctionPrototype tool
-	if (!strcmp (tool_name, "getFunctionPrototype")) {
-		const char *address = r_json_get_str (tool_args, "address");
-		if (!address) {
-			return jsonrpc_error_response (-32602, "Missing required parameters: address", NULL, NULL);
-		}
-		char *s = r_str_newf ("'@%s'afs", address);
-		char *res = r2_cmd (ss, s);
-		free (s);
-		return res;
-	}
-
-	// Handle listStrings tool
-	if (!strcmp (tool_name, "listStrings")) {
-		const char *filter = r_json_get_str (tool_args, "filter");
-
-		char *result = r2_cmd (ss, "izqq");
-		if (R_STR_ISNOTEMPTY (filter)) {
-			RStrBuf *sb = r_strbuf_new ("");
-			RList *strings = r_str_split_list (result, "\n", 0);
-			RListIter *iter;
-			const char *str;
-			RRegex rx;
-			int re_flags = r_regex_flags ("e");
-			bool ok = r_regex_init (&rx, filter, re_flags) == 0;
-			if (ok) {
-				r_list_foreach (strings, iter, str) {
-					if (r_regex_exec (&rx, str, 0, 0, 0) == 0) {
-						r_strbuf_appendf (sb, "%s\n", str);
-					}
-				}
-				r_regex_fini (&rx);
-			} else {
-				r_strbuf_appendf (sb, "Invalid regex used in filter parameter, try a simpler expression");
-			}
-			free (result);
-			result = r_strbuf_drain (sb);
-		}
-		char *response = jsonrpc_tooltext_response (result);
-		free (result);
-		return response;
-	}
-
-	// Handle listAllStrings tool
-	if (!strcmp (tool_name, "listAllStrings")) {
-		const char *filter = r_json_get_str (tool_args, "filter");
-
-		char *result = r2_cmd (ss, "izzzqq");
-		if (R_STR_ISNOTEMPTY (filter)) {
-			RStrBuf *sb = r_strbuf_new ("");
-			RList *strings = r_str_split_list (result, "\n", 0);
-			RListIter *iter;
-			const char *str;
-			RRegex rx;
-			int re_flags = r_regex_flags ("e");
-			bool ok = r_regex_init (&rx, filter, re_flags) == 0;
-			if (ok) {
-				r_list_foreach (strings, iter, str) {
-					if (r_regex_exec (&rx, str, 0, 0, 0) == 0) {
-						r_strbuf_appendf (sb, "%s\n", str);
-					}
-				}
-				r_regex_fini (&rx);
-			} else {
-				r_strbuf_appendf (sb, "Invalid regex used in filter parameter, try a simpler expression");
-			}
-			free (result);
-			result = r_strbuf_drain (sb);
-		}
-		if (R_STR_ISEMPTY (result)) {
-			free (result);
-			result = r_str_newf ("Error: No strings with regex %s", filter);
-		}
-		char *response = jsonrpc_tooltext_response (result);
-		free (result);
-		return response;
-	}
-
-	// Handle analyze tool
-	if (!strcmp (tool_name, "analyze")) {
-		const int level = r_json_get_num (tool_args, "level");
-		char *err = r2_analyze (ss, level);
-		char *result = r2_cmd (ss, "aflc");
-		char *errstr;
-		if (R_STR_ISNOTEMPTY (err)) {
-			errstr = r_str_newf ("\n\n<log>\n%s\n</log>\n", err);
-		} else {
-			errstr = strdup ("");
-		}
-		char *text = r_str_newf ("Analysis completed with level %d.\nFound %d functions.%s", level, atoi (result), errstr);
-		char *response = jsonrpc_tooltext_response (text);
-		free (err);
-		free (errstr);
-		free (result);
-		free (text);
-		return response;
-	}
-
-	// Handle disassemble tool
-	if (!strcmp (tool_name, "disassemble")) {
-		const char *address = r_json_get_str (tool_args, "address");
-		if (!address) {
-			return jsonrpc_error_response (-32602, "Missing required parameter: address", NULL, NULL);
-		}
-
-		// Use const_cast pattern
-		RJson *num_instr_json = (RJson *)r_json_get (tool_args, "numInstructions");
-		int num_instructions = 10;
-		if (num_instr_json && num_instr_json->type == R_JSON_INTEGER) {
-			num_instructions = (int)num_instr_json->num.u_value;
-		}
-
-		char *cmd = r_str_newf ("'@%s'pd %d", address, num_instructions);
-		char *disasm = r2_cmd (ss, cmd);
-		free (cmd);
-		char *response = jsonrpc_tooltext_response (disasm);
-		free (disasm);
-		return response;
-	}
-
-	// Handle useDecompiler tool
-	if (!strcmp (tool_name, "useDecompiler")) {
-		const char *deco = r_json_get_str (tool_args, "name");
-		if (!deco) {
-			return jsonrpc_error_response (-32602, "Missing required parameter: name", NULL, NULL);
-		}
-		char *decompilersAvailable = r2_cmd (ss, "e cmd.pdc=?");
-		const char *response = "ok";
-		if (strstr (deco, "ghidra")) {
-			if (strstr (decompilersAvailable, "pdg")) {
-				r2_run_cmd (ss, "-e cmd.pdc=pdg");
-			} else {
-				response = "This decompiler is not available";
-			}
-		} else if (strstr (deco, "decai")) {
-			if (strstr (decompilersAvailable, "decai")) {
-				r2_run_cmd (ss, "-e cmd.pdc=decai -d");
-			} else {
-				response = "This decompiler is not available";
-			}
-		} else if (strstr (deco, "r2dec")) {
-			if (strstr (decompilersAvailable, "pdd")) {
-				r2_run_cmd (ss, "-e cmd.pdc=pdd");
-			} else {
-				response = "This decompiler is not available";
-			}
-		} else {
-			response = "Unknown decompiler";
-		}
-		return jsonrpc_tooltext_response (response);
-	}
-
-	// Handle xrefsTo tool
-	if (!strcmp (tool_name, "xrefsTo")) {
-		const char *address = r_json_get_str (tool_args, "address");
-		if (!address) {
-			return jsonrpc_error_response (-32602, "Missing required parameter: address", NULL, NULL);
-		}
-		char *cmd = r_str_newf ("'@%s'axt", address);
-		char *disasm = r2_cmd (ss, cmd);
-		char *response = jsonrpc_tooltext_response (disasm);
-		free (cmd);
-		free (disasm);
-		return response;
-	}
-
-	// Handle disassembleFunction tool
-	if (!strcmp (tool_name, "disassembleFunction")) {
-		const char *address = r_json_get_str (tool_args, "address");
-		if (!address) {
-			return jsonrpc_error_response (-32602, "Missing required parameter: address", NULL, NULL);
-		}
-		char *cmd = r_str_newf ("'@%s'pdf", address);
-		char *disasm = r2_cmd (ss, cmd);
-		char *response = jsonrpc_tooltext_response (disasm);
-		free (cmd);
-		free (disasm);
-		return response;
-	}
-
-	// Handle renameFunction tool
-	if (!strcmp (tool_name, "renameFunction")) {
-		const char *address = r_json_get_str (tool_args, "address");
-		if (!address) {
-			return jsonrpc_error_response (-32602, "Missing required parameter: address", NULL, NULL);
-		}
-		const char *name = r_json_get_str (tool_args, "name");
-		if (!name) {
-			return jsonrpc_error_response (-32602, "Missing required parameter: name", NULL, NULL);
-		}
-		char *cmd = r_str_newf ("'@%s'afn %s", address, name);
-		r2_run_cmd (ss, cmd);
-		return jsonrpc_tooltext_response ("ok");
-	}
-
-	// Handle decompileFunction tool
-	if (!strcmp (tool_name, "decompileFunction")) {
-		const char *address = r_json_get_str (tool_args, "address");
-		if (!address) {
-			return jsonrpc_error_response (-32602, "Missing required parameter: address", NULL, NULL);
-		}
-		char *cmd = r_str_newf ("'@%s'pdc", address);
-		char *disasm = r2_cmd (ss, cmd);
-		char *response = jsonrpc_tooltext_response (disasm);
-		free (cmd);
-		free (disasm);
-		return response;
-	}
-
-	return jsonrpc_error_response (-32602, r_str_newf ("Unknown tool: %s", tool_name), NULL, NULL);
+	return tools_call (ss, tool_name, tool_args);
 }
-//
 
 static char *handle_mcp_request(ServerState *ss, const char *method, RJson *params, const char *id) {
 	char *error = NULL;
