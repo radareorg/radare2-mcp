@@ -36,6 +36,7 @@ void r2mcp_help(void) {
 		" -u [url]   use remote r2 webserver base URL (HTTP r2pipe client mode)\n"
 		" -l [file]  append debug logs to this file\n"
 		" -h         show this help\n"
+		" -r         enable the dangerous runCommand tool\n"
 		" -m         expose minimum amount of tools\n"
 		" -p         permissive tools: allow calling non-listed tools\n"
 		" -n         do not load any plugin or radare2rc\n"
@@ -55,6 +56,7 @@ int main(int argc, const char **argv) {
 /* Moved from r2mcp.c to isolate main concerns here */
 int r2mcp_main(int argc, const char **argv) {
 	bool minimode = false;
+	bool enable_run_command_tool = false;
 	RList *cmds = r_list_new ();
 	bool loadplugins = true;
 	const char *deco = NULL;
@@ -63,7 +65,7 @@ int r2mcp_main(int argc, const char **argv) {
 	char *baseurl = NULL;
 	char *logfile = NULL;
 	RGetopt opt;
-	r_getopt_init (&opt, argc, argv, "hmvpd:nc:u:l:");
+	r_getopt_init(&opt, argc, argv, "hmvpd:nc:u:l:r");
 	int c;
 	while ( (c = r_getopt_next (&opt)) != -1) {
 		switch (c) {
@@ -96,6 +98,9 @@ int r2mcp_main(int argc, const char **argv) {
 		case 'p':
 			permissive = true;
 			break;
+		case 'r':
+			enable_run_command_tool = true;
+			break;
 		default:
 			eprintf ("Invalid flag -%c\n", c);
 			return 1;
@@ -111,6 +116,7 @@ int r2mcp_main(int argc, const char **argv) {
 		.initialized = false,
 		.minimode = minimode,
 		.permissive_tools = permissive,
+		.enable_run_command_tool = enable_run_command_tool,
 		.http_mode = http_mode,
 		.baseurl = baseurl,
 		.logfile = logfile,

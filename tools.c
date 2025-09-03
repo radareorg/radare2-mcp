@@ -42,6 +42,10 @@ void tools_registry_init(ServerState *ss) {
 	// Normal mode: full set
 	r_list_append ( (RList *)ss->tools, tool ("openFile", "Opens a binary file with radare2 for analysis <think>Call this tool before any other one from r2mcp. Use an absolute filePath</think>", "{\"type\":\"object\",\"properties\":{\"filePath\":{\"type\":\"string\",\"description\":\"Path to the file to open\"}},\"required\":[\"filePath\"]}", TOOL_MODE_NORMAL | M_MINI));
 
+	if (ss->enable_run_command_tool) {
+		r_list_append((RList *)ss->tools, tool("runCommand", "Executes a raw radare2 command directly", "{\"type\":\"object\",\"properties\":{\"command\":{\"type\":\"string\",\"description\":\"The radare2 command to execute\"}},\"required\":[\"command\"]}", TOOL_MODE_NORMAL | M_MINI | M_HTTP));
+	}
+
 	r_list_append ( (RList *)ss->tools, tool ("closeFile", "Close the currently open file", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL));
 
 	r_list_append ( (RList *)ss->tools, tool ("listFunctions", "Lists all functions discovered during analysis", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | M_MINI | M_HTTP));
@@ -556,6 +560,17 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 		char *response = jsonrpc_tooltext_response (disasm);
 		free (disasm);
 		return response;
+	}
+
+	if (!strcmp(tool_name, "runCommand")) {
+		const char *command = r_json_get_str(tool_args, "command");
+		if (!command) {
+			return jsonrpc_error_response(-32602, "Missing required parameter: command", NULL, NULL);
+		}
+		char *res = r2mcp_cmd(ss, command);
+		char *o = jsonrpc_tooltext_response(res);
+		free(res);
+		return o;
 	}
 
 	{
