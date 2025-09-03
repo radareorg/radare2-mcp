@@ -21,6 +21,7 @@ srcs = [
   'r2mcp.c',
   'readbuffer.c',
   'tools.c',
+  'prompts.c',
 ]
 
 executable(
