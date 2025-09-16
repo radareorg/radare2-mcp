@@ -92,6 +92,8 @@ void tools_registry_init(ServerState *ss) {
 
 	r_list_append ( (RList *)ss->tools, tool ("decompileFunction", "Show C-like pseudocode of the function in the given address. <think>Use this to inspect the code in a function, do not run multiple times in the same offset</think>", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the function to decompile\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | M_MINI | M_HTTP));
 
+	r_list_append ((RList *)ss->tools, tool ("listFiles", "Lists files in the specified path using radare2's ls -q command. Files ending with / are directories, otherwise they are files.", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"Path to list files from\"}},\"required\":[\"path\"]}", TOOL_MODE_NORMAL | M_MINI | M_HTTP));
+
 	r_list_append ( (RList *)ss->tools, tool ("disassembleFunction", "Shows assembly listing of the function at the specified address", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the function to disassemble\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL));
 
 	r_list_append ( (RList *)ss->tools, tool ("disassemble", "Disassembles a specific number of instructions from an address <think>Use this tool to inspect a portion of memory as code without depending on function analysis boundaries. Use this tool when functions are large and you are only interested on few instructions</think>", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address to start disassembly\"},\"numInstructions\":{\"type\":\"integer\",\"description\":\"Number of instructions to disassemble (default: 10)\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL));
@@ -283,6 +285,35 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 			return jsonrpc_tooltext_response ("Missing classname parameter");
 		}
 		char *res = r2mcp_cmdf (ss, "'ic %s", classname);
+		char *o = jsonrpc_tooltext_response (res);
+		free (res);
+		return o;
+	}
+	if (!strcmp (tool_name, "listFiles")) {
+		const char *path = r_json_get_str (tool_args, "path");
+		if (!path) {
+			return jsonrpc_error_response (-32602, "Missing required parameter: path", NULL, NULL);
+		}
+
+		// Security checks
+		if (!path || path[0] != '/') {
+			return jsonrpc_error_response (-32603, "Relative paths are not allowed. Use an absolute path", NULL, NULL);
+		}
+		if (strstr (path, "/../") != NULL) {
+			return jsonrpc_error_response(-32603, "Path traversal is not allowed (contains '/../')", NULL, NULL);
+		}
+		if (ss->sandbox && *ss->sandbox) {
+			size_t plen = strlen(path);
+			size_t slen = strlen(ss->sandbox);
+			if (slen == 0 || slen > plen || strncmp(path, ss->sandbox, slen) != 0 ||
+					(plen > slen && path[slen] != '/')) {
+				return jsonrpc_error_response(-32603, "Access denied: path is outside of the sandbox", NULL, NULL);
+			}
+		}
+
+		char *cmd = r_str_newf ("ls -q %s", path);
+		char *res = r2mcp_cmd (ss, cmd);
+		free (cmd);
 		char *o = jsonrpc_tooltext_response (res);
 		free (res);
 		return o;
