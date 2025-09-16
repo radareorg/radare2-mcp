@@ -37,7 +37,6 @@ void tools_registry_init(ServerState *ss) {
 	// Modes convenience
 	const int M_MINI = TOOL_MODE_MINI;
 	const int M_HTTP = TOOL_MODE_HTTP;
-	// const int M_ALL  = TOOL_MODE_NORMAL; // normal only
 
 	// Normal mode: full set
 	r_list_append ( (RList *)ss->tools, tool ("openFile", "Opens a binary file with radare2 for analysis <think>Call this tool before any other one from r2mcp. Use an absolute filePath</think>", "{\"type\":\"object\",\"properties\":{\"filePath\":{\"type\":\"string\",\"description\":\"Path to the file to open\"}},\"required\":[\"filePath\"]}", TOOL_MODE_NORMAL | M_MINI));

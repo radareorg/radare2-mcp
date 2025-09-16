@@ -41,6 +41,8 @@ typedef struct {
 	char *baseurl;
 	/* Optional path to append debug logs when set via -l */
 	char *logfile;
+	/* When true, ignore the analysis level specified in analyze calls */
+	bool ignore_analysis_level;
 	const RJson *client_capabilities;
 	const RJson *client_info;
 	RadareState rstate;

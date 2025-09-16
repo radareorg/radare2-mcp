@@ -196,14 +196,14 @@ static char *r2_analyze(ServerState *ss, int level) {
 		return false;
 	}
 	const char *cmd = "aa";
-#if 1
-	switch (level) {
-	case 1: cmd = "aac"; break;
-	case 2: cmd = "aaa"; break;
-	case 3: cmd = "aaaa"; break;
-	case 4: cmd = "aaaaa"; break;
+	if (!ss->ignore_analysis_level) {
+		switch (level) {
+		case 1: cmd = "aac"; break;
+		case 2: cmd = "aaa"; break;
+		case 3: cmd = "aaaa"; break;
+		case 4: cmd = "aaaaa"; break;
+		}
 	}
-#endif
 	r2mcp_log_reset (ss);
 	r_core_cmd0 (core, cmd);
 	return r2mcp_log_drain (ss);

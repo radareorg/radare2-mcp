@@ -40,6 +40,7 @@ void r2mcp_help(void) {
 		" -m         expose minimum amount of tools\n"
 		" -p         permissive tools: allow calling non-listed tools\n"
 		" -n         do not load any plugin or radare2rc\n"
+		" -i         ignore analysis level specified in analyze calls\n"
 		" -v         show version\n";
 	printf ("%s", help_text);
 }
@@ -64,8 +65,9 @@ int r2mcp_main(int argc, const char **argv) {
 	bool permissive = false;
 	char *baseurl = NULL;
 	char *logfile = NULL;
+	bool ignore_analysis_level = false;
 	RGetopt opt;
-	r_getopt_init(&opt, argc, argv, "hmvpd:nc:u:l:r");
+	r_getopt_init(&opt, argc, argv, "hmvpd:nc:u:l:ri");
 	int c;
 	while ( (c = r_getopt_next (&opt)) != -1) {
 		switch (c) {
@@ -101,6 +103,9 @@ int r2mcp_main(int argc, const char **argv) {
 		case 'r':
 			enable_run_command_tool = true;
 			break;
+		case 'i':
+			ignore_analysis_level = true;
+			break;
 		default:
 			eprintf ("Invalid flag -%c\n", c);
 			return 1;
@@ -120,6 +125,7 @@ int r2mcp_main(int argc, const char **argv) {
 		.http_mode = http_mode,
 		.baseurl = baseurl,
 		.logfile = logfile,
+		.ignore_analysis_level = ignore_analysis_level,
 		.client_capabilities = NULL,
 		.client_info = NULL
 	};

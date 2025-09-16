@@ -50,6 +50,9 @@ clean:
 	rm -f $(TARGET) $(OBJS)
 	-rm -rf r2mcp.dSYM
 
+mrproper: clean
+	rm -f Makefile
+
 install: all
 	$(INSTALL_DIR) $(DESTDIR)/$(PREFIX)/bin
 	$(INSTALL_PROGRAM) $(TARGET) $(DESTDIR)/$(PREFIX)/bin/r2mcp
