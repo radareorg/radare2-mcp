@@ -35,6 +35,7 @@ void r2mcp_help(void) {
 		" -d [pdc]   select a different decompiler (pdc by default)\n"
 		" -u [url]   use remote r2 webserver base URL (HTTP r2pipe client mode)\n"
 		" -l [file]  append debug logs to this file\n"
+		" -s [dir]   enable sandbox mode; only allow files under [dir]\n"
 		" -h         show this help\n"
 		" -r         enable the dangerous runCommand tool\n"
 		" -m         expose minimum amount of tools\n"
@@ -64,12 +65,13 @@ int r2mcp_main(int argc, const char **argv) {
 	bool http_mode = false;
 	bool permissive = false;
 	char *baseurl = NULL;
+	char *sandbox = NULL;
 	char *logfile = NULL;
 	bool ignore_analysis_level = false;
 	RGetopt opt;
-	r_getopt_init(&opt, argc, argv, "hmvpd:nc:u:l:ri");
+	r_getopt_init(&opt, argc, argv, "hmvpd:nc:u:l:s:ri");
 	int c;
-	while ( (c = r_getopt_next (&opt)) != -1) {
+	while ((c = r_getopt_next (&opt)) != -1) {
 		switch (c) {
 		case 'h':
 			r2mcp_help ();
@@ -90,6 +92,9 @@ int r2mcp_main(int argc, const char **argv) {
 			break;
 		case 'l':
 			logfile = strdup (opt.arg);
+			break;
+		case 's':
+			sandbox = strdup (opt.arg);
 			break;
 		case 'n':
 			loadplugins = true;
@@ -124,6 +129,7 @@ int r2mcp_main(int argc, const char **argv) {
 		.enable_run_command_tool = enable_run_command_tool,
 		.http_mode = http_mode,
 		.baseurl = baseurl,
+		.sandbox = sandbox,
 		.logfile = logfile,
 		.ignore_analysis_level = ignore_analysis_level,
 		.client_capabilities = NULL,
@@ -177,6 +183,7 @@ int r2mcp_main(int argc, const char **argv) {
 	r2mcp_state_fini (&ss);
 	/* Cleanup */
 	free (ss.baseurl);
+	free (ss.sandbox);
 	free (ss.logfile);
 	(void)0;
 	return 0;

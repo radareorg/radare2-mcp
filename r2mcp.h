@@ -39,6 +39,8 @@ typedef struct {
 	bool http_mode;
 	/* Base URL of the remote r2 webserver (if http_mode is true) */
 	char *baseurl;
+	/* Optional sandbox path. When set, only allow opening files under this dir */
+	char *sandbox;
 	/* Optional path to append debug logs when set via -l */
 	char *logfile;
 	/* When true, ignore the analysis level specified in analyze calls */

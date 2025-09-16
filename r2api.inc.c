@@ -126,8 +126,55 @@ char *r2mcp_cmdf(ServerState *ss, const char *fmt, ...) {
 	return res;
 }
 
+static bool path_is_absolute(const char *p) {
+	return p && p[0] == '/';
+}
+
+static bool path_contains_parent_ref(const char *p) {
+	return p && strstr(p, "/../") != NULL;
+}
+
+static bool path_is_within_sandbox(const char *p, const char *sb) {
+	if (!sb || !*sb) {
+		return true;
+	}
+	size_t plen = strlen(p);
+	size_t slen = strlen(sb);
+	if (slen == 0 || slen > plen) {
+		return false;
+	}
+	if (strncmp(p, sb, slen) != 0) {
+		return false;
+	}
+	if (plen == slen) {
+		return true; // exact match
+	}
+	// ensure boundary: next char must be '/'
+	return p[slen] == '/';
+}
+
 static bool r2_open_file(ServerState *ss, const char *filepath) {
 	R_LOG_INFO ("Attempting to open file: %s\n", filepath);
+
+	// Security checks common to both local and HTTP modes
+	if (!filepath || !*filepath) {
+		R_LOG_ERROR ("Empty file path is not allowed");
+		return false;
+	}
+	if (!path_is_absolute(filepath)) {
+		R_LOG_ERROR ("Relative paths are not allowed. Use an absolute path");
+		return false;
+	}
+	if (path_contains_parent_ref(filepath)) {
+		R_LOG_ERROR ("Path traversal is not allowed (contains '/../')");
+		return false;
+	}
+	if (ss && ss->sandbox && *ss->sandbox) {
+		if (!path_is_within_sandbox(filepath, ss->sandbox)) {
+			R_LOG_ERROR ("Access denied: path is outside of the sandbox");
+			return false;
+		}
+	}
 	/* In HTTP mode we do not touch the local r2 core. Just set the state
 	 * so subsequent calls to r2mcp_cmd will be allowed (they will be handled
 	 * by the HTTP helper).
