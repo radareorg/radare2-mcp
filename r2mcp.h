@@ -7,7 +7,7 @@
 
 /* Version fallback if not provided by build */
 #ifndef R2MCP_VERSION
-#define R2MCP_VERSION "1.1.0"
+#define R2MCP_VERSION "1.2.0"
 #endif
 
 typedef struct {
