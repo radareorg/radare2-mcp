@@ -63,39 +63,70 @@ jobs:
         name: debian-package
         path: dist/debian/*.deb
 
-  macos:
-    runs-on: macos-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        arch: [x86_64, arm64]
-    env:
-      ARCH: ${{ matrix.arch }}
-    steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-    - name: Cloning radare2
-      run: git clone --depth=1 --branch "${{env.R2V}}" https://github.com/radareorg/radare2
-    - name: Building and installing radare2
-      run: |
-        cd radare2
-        sys/install.sh
-    - name: Building radare2-mcp
-      run: ./configure && make
-    - name: Create macOS zip archive
-      if: startsWith(github.ref, 'refs/tags/')
-      run: |
-        mkdir -p release
-        zip -j release/${ZIP_PREFIX}${{ github.ref_name }}-macos-${{ matrix.arch }}.zip r2mcp
-    - name: Upload macOS binary
-      if: startsWith(github.ref, 'refs/tags/')
-      uses: actions/upload-artifact@v4
-      with:
-        name: macos-${{ matrix.arch }}-binary
-        path: release/${ZIP_PREFIX}${{ github.ref_name }}-macos-${{ matrix.arch }}.zip
+   macos:
+     runs-on: macos-latest
+     strategy:
+       fail-fast: false
+       matrix:
+         arch: [x86_64, arm64]
+     env:
+       ARCH: ${{ matrix.arch }}
+     steps:
+     - name: Checkout
+       uses: actions/checkout@v4
+     - name: Cloning radare2
+       run: git clone --depth=1 --branch "${{env.R2V}}" https://github.com/radareorg/radare2
+     - name: Building and installing radare2
+       run: |
+         cd radare2
+         sys/install.sh
+     - name: Building radare2-mcp
+       run: ./configure && make
+     - name: Create macOS zip archive
+       if: startsWith(github.ref, 'refs/tags/')
+       run: |
+         mkdir -p release
+         zip -j release/${ZIP_PREFIX}${{ github.ref_name }}-macos-${{ matrix.arch }}.zip r2mcp
+     - name: Upload macOS binary
+       if: startsWith(github.ref, 'refs/tags/')
+       uses: actions/upload-artifact@v4
+       with:
+         name: macos-${{ matrix.arch }}-binary
+         path: release/${ZIP_PREFIX}${{ github.ref_name }}-macos-${{ matrix.arch }}.zip
+
+   windows:
+     runs-on: windows-latest
+     strategy:
+       fail-fast: false
+     steps:
+     - name: Checkout
+       uses: actions/checkout@v4
+     - name: Download and install radare2
+       run: |
+         Invoke-WebRequest -Uri "https://github.com/radareorg/radare2/releases/download/${{env.R2V}}/radare2-${{env.R2V}}-w64.zip" -OutFile "radare2.zip"
+         Expand-Archive -Path "radare2.zip" -DestinationPath "radare2"
+         $radare2Path = Resolve-Path "radare2\radare2-${{env.R2V}}-w64"
+         $env:Path += ";$radare2Path\bin"
+         echo "$radare2Path\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+     - name: Building radare2-mcp
+       run: |
+         ./configure
+         make
+     - name: Create Windows zip archive
+       if: startsWith(github.ref, 'refs/tags/')
+       shell: bash
+       run: |
+         mkdir -p release
+         zip -j release/${ZIP_PREFIX}${{ github.ref_name }}-windows-x64.zip r2mcp.exe
+     - name: Upload Windows binary
+       if: startsWith(github.ref, 'refs/tags/')
+       uses: actions/upload-artifact@v4
+       with:
+         name: windows-x64-binary
+         path: release/${ZIP_PREFIX}${{ github.ref_name }}-windows-x64.zip
         
-  release:
-    needs: [r2git, linux-deb, macos]
+   release:
+     needs: [r2git, linux-deb, macos, windows]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     permissions:
@@ -112,11 +143,12 @@ jobs:
       - name: List downloaded artifacts
         run: find release-artifacts -type f
       
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
-        with:
-          files: |
-            release-artifacts/linux-x64-binary/*.zip
-            release-artifacts/debian-package/*.deb
-            release-artifacts/macos-*-binary/*.zip
-          generate_release_notes: true
+       - name: Create GitHub Release
+         uses: softprops/action-gh-release@v1
+         with:
+           files: |
+             release-artifacts/linux-x64-binary/*.zip
+             release-artifacts/debian-package/*.deb
+             release-artifacts/macos-*-binary/*.zip
+             release-artifacts/windows-x64-binary/*.zip
+           generate_release_notes: true
