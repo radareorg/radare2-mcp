@@ -97,6 +97,15 @@ void tools_registry_init(ServerState *ss) {
 	r_list_append ( (RList *)ss->tools, tool ("disassembleFunction", "Shows assembly listing of the function at the specified address", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the function to disassemble\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL));
 
 	r_list_append ( (RList *)ss->tools, tool ("disassemble", "Disassembles a specific number of instructions from an address <think>Use this tool to inspect a portion of memory as code without depending on function analysis boundaries. Use this tool when functions are large and you are only interested on few instructions</think>", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address to start disassembly\"},\"numInstructions\":{\"type\":\"integer\",\"description\":\"Number of instructions to disassemble (default: 10)\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL));
+
+	// Calculate: evaluate math expressions using radare2's r_num_math
+	// Reuses the RNum instance from core->num to ensure correct 64-bit
+	// calculations and symbol/flag resolution. Usecases: do proper 64-bit
+	// math, resolve addresses for flag names/symbols and avoid hallucinated results.
+	r_list_append ((RList *)ss->tools, tool ("calculate",
+		"Evaluate a math expression using core->num (r_num_math). Usecases: do proper 64-bit math, resolve addresses for flag names/symbols, and avoid hallucinated results.",
+		"{\"type\":\"object\",\"properties\":{\"expression\":{\"type\":\"string\",\"description\":\"Math expression to evaluate (eg. 0x100 + sym.flag - 4)\"}},\"required\":[\"expression\"]}",
+		TOOL_MODE_NORMAL | M_MINI));
 }
 
 void tools_registry_fini(ServerState *ss) {
@@ -407,6 +416,22 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 		char *o = jsonrpc_tooltext_response (res);
 		free (res);
 		return o;
+	}
+
+	if (!strcmp (tool_name, "calculate")) {
+		const char *expression = r_json_get_str (tool_args, "expression");
+		if (!expression) {
+			return jsonrpc_error_response (-32602, "Missing required parameter: expression", NULL, NULL);
+		}
+		if (!ss->rstate.core || !ss->rstate.core->num) {
+			return jsonrpc_error_response (-32611, "Core or number parser unavailable (open a file first)", NULL, NULL);
+		}
+		RCore *core = ss->rstate.core;
+		ut64 result = r_num_math (core->num, expression);
+		char *numstr = r_str_newf ("0x%"PFMT64x, (ut64)result);
+		char *resp = jsonrpc_tooltext_response (numstr);
+		free (numstr);
+		return resp;
 	}
 	if (!strcmp (tool_name, "closeFile")) {
 		if (ss->http_mode) {
