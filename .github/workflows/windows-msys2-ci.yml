@@ -54,13 +54,14 @@ jobs:
           $prefix = 'C:\\radare2'
           $posix = $prefix -replace '\\','/'
           Write-Host "Normalized r2_prefix (posix): $posix"
+          # Construct candidate paths explicitly to avoid Join-Path parsing
           $candidates = @(
-            Join-Path $prefix 'include',
-            Join-Path $prefix 'include\libr',
-            Join-Path $prefix 'radare2\include',
-            Join-Path $prefix 'lib',
-            Join-Path $prefix 'radare2\lib',
-            Join-Path $prefix 'bin'
+            "$prefix\\include",
+            "$prefix\\include\\libr",
+            "$prefix\\radare2\\include",
+            "$prefix\\lib",
+            "$prefix\\radare2\\lib",
+            "$prefix\\bin"
           )
           foreach ($d in $candidates) {
             if (Test-Path $d) {
