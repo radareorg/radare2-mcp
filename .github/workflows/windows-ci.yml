@@ -55,12 +55,20 @@ jobs:
            Write-Output "Listing top-level contents of $prefix"
            Get-ChildItem -Path $prefix -Depth 2 | Select-Object -First 200
 
-       - name: Configure Meson
-         shell: powershell
-         run: |
-           $R2V = '${{ env.R2V }}'
-           # If radare2 was extracted into /mingw64, tell Meson where to find it.
-           meson setup --reconfigure builddir --prefix=/mingw64 --buildtype=release -Dr2_prefix=/mingw64/radare2-$R2V-w64
+      - name: Configure Meson
+        shell: powershell
+        run: |
+          $R2V = '${{ env.R2V }}'
+          # Recompute the prefix in the same way the download step did so
+          # Meson gets the actual installation prefix where radare2 files
+          # (include/, lib/) were extracted. This avoids hardcoding a
+          # non-existent subdirectory (radare2-$R2V-w64) which is removed
+          # during extraction.
+          $prefix = 'C:\\radare2'
+          if (Test-Path 'C:\\msys64\\mingw64') { $prefix = 'C:\\msys64\\mingw64' }
+          Write-Output "Using radare2 prefix: $prefix"
+          # Tell Meson where to find radare2 and set install prefix accordingly.
+          meson setup --reconfigure builddir --prefix=$prefix --buildtype=release -Dr2_prefix=$prefix
 
       - name: Compile
         shell: bash
