@@ -41,6 +41,7 @@ void r2mcp_help(void) {
 		" -e [tool]  enable only the specified tool (repeatable)\n"
 		" -h         show this help\n"
 		" -r         enable the dangerous runCommand tool\n"
+		" -R         enable read-only mode (expose only non-mutating tools)\n"
 		" -m         expose minimum amount of tools\n"
 		" -t         list available tools and exit\n"
 		" -p         permissive tools: allow calling non-listed tools\n"
@@ -63,6 +64,7 @@ int main(int argc, const char **argv) {
 int r2mcp_main(int argc, const char **argv) {
 	bool minimode = false;
 	bool enable_run_command_tool = false;
+	bool readonly_mode = false;
 	bool list_tools = false;
 	RList *cmds = r_list_new ();
 	/* Whitelist of enabled tool names (populated via repeated -e flags) */
@@ -76,7 +78,7 @@ int r2mcp_main(int argc, const char **argv) {
 	char *logfile = NULL;
 	bool ignore_analysis_level = false;
 	RGetopt opt;
-	r_getopt_init(&opt, argc, argv, "hmvpd:nc:u:l:s:rite:");
+	r_getopt_init(&opt, argc, argv, "hmvpd:nc:u:l:s:rite:R");
 	int c;
 	while ((c = r_getopt_next (&opt)) != -1) {
 		switch (c) {
@@ -115,6 +117,9 @@ int r2mcp_main(int argc, const char **argv) {
 		case 'r':
 			enable_run_command_tool = true;
 			break;
+		case 'R':
+			readonly_mode = true;
+			break;
 		case 'i':
 			ignore_analysis_level = true;
 			break;
@@ -140,6 +145,7 @@ int r2mcp_main(int argc, const char **argv) {
 		.instructions = "Use this server to analyze binaries with radare2",
 		.initialized = false,
 		.minimode = minimode,
+		.readonly_mode = readonly_mode,
 		.permissive_tools = permissive,
 		.enable_run_command_tool = enable_run_command_tool,
 		.http_mode = http_mode,

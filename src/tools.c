@@ -24,6 +24,9 @@ static inline ToolMode current_mode(const ServerState *ss) {
 	if (ss->http_mode) {
 		return TOOL_MODE_HTTP;
 	}
+	if (ss->readonly_mode) {
+		return TOOL_MODE_RO;
+	}
 	if (ss->minimode) {
 		return TOOL_MODE_MINI;
 	}
@@ -54,6 +57,7 @@ void tools_registry_init(ServerState *ss) {
 	// Modes convenience
 	const int M_MINI = TOOL_MODE_MINI;
 	const int M_HTTP = TOOL_MODE_HTTP;
+	const int M_RO = TOOL_MODE_RO;
 
 	// Normal mode: full set
 	r_list_append (ss->tools, tool ("openFile", "Opens a binary file with radare2 for analysis <think>Call this tool before any other one from r2mcp. Use an absolute filePath</think>", "{\"type\":\"object\",\"properties\":{\"filePath\":{\"type\":\"string\",\"description\":\"Path to the file to open\"}},\"required\":[\"filePath\"]}", TOOL_MODE_NORMAL | M_MINI));
@@ -64,65 +68,60 @@ void tools_registry_init(ServerState *ss) {
 
 	r_list_append ( ss->tools, tool ("closeFile", "Close the currently open file", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL));
 
-	r_list_append ( ss->tools, tool ("listFunctions", "Lists all functions discovered during analysis", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | M_MINI | M_HTTP));
-	r_list_append ( ss->tools, tool ("listFunctionsTree", "Lists functions and successors (aflmu)", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | M_MINI | M_HTTP));
+		r_list_append ( ss->tools, tool ("listFunctions", "Lists all functions discovered during analysis", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | M_MINI | M_HTTP | M_RO));
+		r_list_append ( ss->tools, tool ("listFunctionsTree", "Lists functions and successors (aflmu)", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | M_MINI | M_HTTP | M_RO));
 
-	r_list_append ( ss->tools, tool ("listLibraries", "Lists all shared libraries linked to the binary", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | M_MINI | M_HTTP));
+		r_list_append ( ss->tools, tool ("listLibraries", "Lists all shared libraries linked to the binary", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | M_MINI | M_HTTP | M_RO));
 
-	r_list_append ( ss->tools, tool ("listImports", "Lists imported symbols (note: use listSymbols for addresses with sym.imp. prefix)", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | M_MINI | M_HTTP));
+		r_list_append ( ss->tools, tool ("listImports", "Lists imported symbols (note: use listSymbols for addresses with sym.imp. prefix)", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | M_MINI | M_HTTP | M_RO));
 
-	r_list_append ( ss->tools, tool ("listSections", "Displays memory sections and segments from the binary", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL));
+		r_list_append ( ss->tools, tool ("listSections", "Displays memory sections and segments from the binary", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | M_RO));
 
-	r_list_append ( ss->tools, tool ("showFunctionDetails", "Displays detailed information about the current function", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL));
+		r_list_append ( ss->tools, tool ("showFunctionDetails", "Displays detailed information about the current function", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | M_RO));
 
-	r_list_append ( ss->tools, tool ("getCurrentAddress", "Shows the current position and function name", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL));
+		r_list_append ( ss->tools, tool ("getCurrentAddress", "Shows the current position and function name", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | M_RO));
 
-	r_list_append ( ss->tools, tool ("showHeaders", "Displays binary headers and file information", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | M_MINI | M_HTTP));
+		r_list_append ( ss->tools, tool ("showHeaders", "Displays binary headers and file information", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | M_MINI | M_HTTP | M_RO));
 
-	r_list_append ( ss->tools, tool ("listSymbols", "Shows all symbols (functions, variables, imports) with addresses", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | M_MINI | M_HTTP));
+		r_list_append ( ss->tools, tool ("listSymbols", "Shows all symbols (functions, variables, imports) with addresses", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | M_MINI | M_HTTP | M_RO));
 
-	r_list_append ( ss->tools, tool ("listEntrypoints", "Displays program entrypoints, constructors and main function", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | M_MINI | M_HTTP));
+		r_list_append ( ss->tools, tool ("listEntrypoints", "Displays program entrypoints, constructors and main function", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | M_MINI | M_HTTP | M_RO));
 
-	r_list_append ( ss->tools, tool ("listMethods", "Lists all methods belonging to the specified class", "{\"type\":\"object\",\"properties\":{\"classname\":{\"type\":\"string\",\"description\":\"Name of the class to list methods for\"}},\"required\":[\"classname\"]}", TOOL_MODE_NORMAL));
+		r_list_append ( ss->tools, tool ("listMethods", "Lists all methods belonging to the specified class", "{\"type\":\"object\",\"properties\":{\"classname\":{\"type\":\"string\",\"description\":\"Name of the class to list methods for\"}},\"required\":[\"classname\"]}", TOOL_MODE_NORMAL | M_RO));
 
-	r_list_append ( ss->tools, tool ("listClasses", "Lists class names from various languages (C++, ObjC, Swift, Java, Dalvik)", "{\"type\":\"object\",\"properties\":{\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"}}}", TOOL_MODE_NORMAL));
+		r_list_append ( ss->tools, tool ("listClasses", "Lists class names from various languages (C++, ObjC, Swift, Java, Dalvik)", "{\"type\":\"object\",\"properties\":{\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"}}}", TOOL_MODE_NORMAL | M_RO));
 
-	r_list_append ( ss->tools, tool ("listDecompilers", "Shows all available decompiler backends", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL));
+		r_list_append ( ss->tools, tool ("listDecompilers", "Shows all available decompiler backends", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | M_RO));
 
 	r_list_append ( ss->tools, tool ("renameFunction", "Renames the function at the specified address", "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"New function name\"},\"address\":{\"type\":\"string\",\"description\":\"Address of the function to rename\"}},\"required\":[\"name\",\"address\"]}", TOOL_MODE_NORMAL));
 
 	r_list_append ( ss->tools, tool ("useDecompiler", "Selects which decompiler backend to use (default: pdc)", "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"Name of the decompiler\"}},\"required\":[\"name\"]}", TOOL_MODE_NORMAL));
 
-	r_list_append ( ss->tools, tool ("getFunctionPrototype", "Retrieves the function signature at the specified address", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the function\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL));
+		r_list_append ( ss->tools, tool ("getFunctionPrototype", "Retrieves the function signature at the specified address", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the function\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | M_RO));
 
 	r_list_append ( ss->tools, tool ("setFunctionPrototype", "Sets the function signature (return type, name, arguments)", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the function\"},\"prototype\":{\"type\":\"string\",\"description\":\"Function signature in C-like syntax\"}},\"required\":[\"address\",\"prototype\"]}", TOOL_MODE_NORMAL));
 
 	r_list_append ( ss->tools, tool ("setComment", "Adds a comment at the specified address", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address to put the comment in\"},\"message\":{\"type\":\"string\",\"description\":\"Comment text to use\"}},\"required\":[\"address\",\"message\"]}", TOOL_MODE_NORMAL | M_HTTP));
 
-	r_list_append ( ss->tools, tool ("listStrings", "Lists strings from data sections with optional regex filter", "{\"type\":\"object\",\"properties\":{\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"}}}", TOOL_MODE_NORMAL | M_MINI | M_HTTP));
+		r_list_append ( ss->tools, tool ("listStrings", "Lists strings from data sections with optional regex filter", "{\"type\":\"object\",\"properties\":{\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"}}}", TOOL_MODE_NORMAL | M_MINI | M_HTTP | M_RO));
 
-	r_list_append ( ss->tools, tool ("listAllStrings", "Scans the entire binary for strings with optional regex filter", "{\"type\":\"object\",\"properties\":{\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"}}}", TOOL_MODE_NORMAL));
+		r_list_append ( ss->tools, tool ("listAllStrings", "Scans the entire binary for strings with optional regex filter", "{\"type\":\"object\",\"properties\":{\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"}}}", TOOL_MODE_NORMAL | M_RO));
 
 	r_list_append ( ss->tools, tool ("analyze", "Runs binary analysis with optional depth level", "{\"type\":\"object\",\"properties\":{\"level\":{\"type\":\"number\",\"description\":\"Analysis level (0-4, higher is more thorough)\"}},\"required\":[]}", TOOL_MODE_NORMAL | M_MINI | M_HTTP));
 
-	r_list_append ( ss->tools, tool ("xrefsTo", "Finds all code references to the specified address", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address to check for cross-references\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | M_MINI | M_HTTP));
+		r_list_append ( ss->tools, tool ("xrefsTo", "Finds all code references to the specified address", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address to check for cross-references\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | M_MINI | M_HTTP | M_RO));
 
-	r_list_append ( ss->tools, tool ("decompileFunction", "Show C-like pseudocode of the function in the given address. <think>Use this to inspect the code in a function, do not run multiple times in the same offset</think>", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the function to decompile\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | M_MINI | M_HTTP));
+		r_list_append ( ss->tools, tool ("decompileFunction", "Show C-like pseudocode of the function in the given address. <think>Use this to inspect the code in a function, do not run multiple times in the same offset</think>", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the function to decompile\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | M_MINI | M_HTTP | M_RO));
 
-	r_list_append (ss->tools, tool ("listFiles", "Lists files in the specified path using radare2's ls -q command. Files ending with / are directories, otherwise they are files.", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"Path to list files from\"}},\"required\":[\"path\"]}", TOOL_MODE_NORMAL | M_MINI | M_HTTP));
+		r_list_append (ss->tools, tool ("listFiles", "Lists files in the specified path using radare2's ls -q command. Files ending with / are directories, otherwise they are files.", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"Path to list files from\"}},\"required\":[\"path\"]}", TOOL_MODE_NORMAL | M_MINI | M_HTTP | M_RO));
 
-	r_list_append ( ss->tools, tool ("disassembleFunction", "Shows assembly listing of the function at the specified address", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the function to disassemble\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL));
+		r_list_append ( ss->tools, tool ("disassembleFunction", "Shows assembly listing of the function at the specified address", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the function to disassemble\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | M_RO));
 
-	r_list_append ( ss->tools, tool ("disassemble", "Disassembles a specific number of instructions from an address <think>Use this tool to inspect a portion of memory as code without depending on function analysis boundaries. Use this tool when functions are large and you are only interested on few instructions</think>", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address to start disassembly\"},\"numInstructions\":{\"type\":\"integer\",\"description\":\"Number of instructions to disassemble (default: 10)\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL));
+		r_list_append ( ss->tools, tool ("disassemble", "Disassembles a specific number of instructions from an address <think>Use this tool to inspect a portion of memory as code without depending on function analysis boundaries. Use this tool when functions are large and you are only interested on few instructions</think>", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address to start disassembly\"},\"numInstructions\":{\"type\":\"integer\",\"description\":\"Number of instructions to disassemble (default: 10)\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | M_RO));
 
-	// Calculate: evaluate math expressions using radare2's r_num_math
-	// Reuses the RNum instance from core->num to ensure correct 64-bit
-	// calculations and symbol/flag resolution. Usecases: do proper 64-bit
-	// math, resolve addresses for flag names/symbols and avoid hallucinated results.
-	r_list_append (ss->tools, tool ("calculate",
+		r_list_append (ss->tools, tool ("calculate",
 		"Evaluate a math expression using core->num (r_num_math). Usecases: do proper 64-bit math, resolve addresses for flag names/symbols, and avoid hallucinated results.",
-		"{\"type\":\"object\",\"properties\":{\"expression\":{\"type\":\"string\",\"description\":\"Math expression to evaluate (eg. 0x100 + sym.flag - 4)\"}},\"required\":[\"expression\"]}",
-		TOOL_MODE_NORMAL | M_MINI));
+		"{\"type\":\"object\",\"properties\":{\"expression\":{\"type\":\"string\",\"description\":\"Math expression to evaluate (eg. 0x100 + sym.flag - 4)\"}},\"required\":[\"expression\"]}", TOOL_MODE_NORMAL | M_MINI | M_RO));
 }
 
 void tools_registry_fini(ServerState *ss) {
@@ -231,38 +230,44 @@ char *tools_build_catalog_json(const ServerState *ss, const char *cursor, int pa
 
 void tools_print_table(const ServerState *ss) {
 	if (!ss || !ss->tools) {
-		eprintf("No tools registered.\n");
+		R_LOG_ERROR ("No tools registered");
 		return;
 	}
 
 	RTable *table = r_table_new ("tools");
 	if (!table) {
-		eprintf ("Failed to allocate table\n");
+		R_LOG_ERROR ("Failed to allocate table");
 		return;
 	}
 
 	RTableColumnType *s = r_table_type ("string");
 	if (!s) {
-		eprintf ("Table string type unavailable\n");
+		R_LOG_WARN ("Table string type unavailable");
 		r_table_free (table);
 		return;
 	}
 
 	r_table_add_column (table, s, "name", 0);
-	r_table_add_column (table, s, "mini", 0);
+	r_table_add_column (table, s, "modes", 0);
 	r_table_add_column (table, s, "description", 0);
 
 	RListIter *it;
 	ToolSpec *t;
-	r_list_foreach (ss->tools, it, t) {
-		const char *mini = (t->modes & TOOL_MODE_MINI) ? "yes" : "no";
+		r_list_foreach (ss->tools, it, t) {
+		char modes_buf[8];
+		int p = 0;
+		if (t->modes & TOOL_MODE_MINI) { modes_buf[p++] = 'M'; }
+		if (t->modes & TOOL_MODE_HTTP) { modes_buf[p++] = 'H'; }
+		if (t->modes & TOOL_MODE_RO) { modes_buf[p++] = 'R'; }
+		if (t->modes & TOOL_MODE_NORMAL) { modes_buf[p++] = 'N'; }
+		modes_buf[p] = '\0';
 		const char *desc = t->description ? t->description : "";
-		r_table_add_rowf (table, "sss", t->name, mini, desc);
+		r_table_add_rowf (table, "sss", t->name, modes_buf, desc);
 	}
 
 	char *table_str = r_table_tostring (table);
 	if (table_str) {
-		eprintf ("%s\n", table_str);
+		printf ("%s\n", table_str);
 		free (table_str);
 	}
 	r_table_free (table);
