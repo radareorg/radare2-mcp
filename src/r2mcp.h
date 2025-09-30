@@ -35,6 +35,8 @@ typedef struct {
 	bool minimode;
 	bool permissive_tools; // allow calling tools not exposed for current mode
 	bool enable_run_command_tool;
+	/* When true operate in read-only mode: only expose non-mutating tools */
+	bool readonly_mode;
 	/* When true, operate in HTTP r2pipe client mode and do NOT use r2 C APIs */
 	bool http_mode;
 	/* Base URL of the remote r2 webserver (if http_mode is true) */
