@@ -36,43 +36,23 @@ jobs:
           python -m pip install --upgrade pip
           pip install meson ninja
 
-      - name: Download radare2 release (Windows zip)
-        shell: powershell
-        run: |
-          $R2V = '${{ env.R2V }}'
-          $candidates = @(
-            "radare2-$R2V-w64.zip",
-            "radare2-$R2V-windows-x64.zip",
-            "radare2-$R2V-windows.zip",
-            "radare2-$R2V-msys2.zip",
-            "radare2-$R2V-mingw64.zip"
-          )
-          $dest = "$env:TEMP\radare2.zip"
-          $found = $false
-          foreach ($n in $candidates) {
-            $url = "https://github.com/radareorg/radare2/releases/download/$R2V/$n"
-            Write-Output "Trying $url"
-            try {
-              Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing -ErrorAction Stop
-              $found = $true
-              Write-Output "Downloaded $n"
-              break
-            } catch {
-              Write-Output "Not found: $n"
-            }
-          }
-          if (-not $found) {
-            Write-Output "No radare2 release zip found for $R2V; failing the job."
-            exit 1
-          }
-          # Prefer installing into MSYS2 prefix if it exists
-          $prefix = 'C:\\radare2'
-          if (Test-Path 'C:\\msys64\\mingw64') { $prefix = 'C:\\msys64\\mingw64' }
-          if (-not (Test-Path $prefix)) { New-Item -ItemType Directory -Path $prefix -Force | Out-Null }
-          Expand-Archive -Path $dest -DestinationPath $prefix -Force
-          Write-Output "Extracted radare2 to $prefix"
-          Write-Output "Listing top-level contents of $prefix"
-          Get-ChildItem -Path $prefix -Depth 2 | Select-Object -First 200
+       - name: Download radare2 release (Windows zip)
+         shell: powershell
+         run: |
+           $R2V = '${{ env.R2V }}'
+           $url = "https://github.com/radareorg/radare2/releases/download/$R2V/radare2-$R2V-w64.zip"
+           $dest = "$env:TEMP\radare2.zip"
+           Write-Output "Downloading $url"
+           Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing
+           # Prefer installing into MSYS2 prefix if it exists
+           $prefix = 'C:\\radare2'
+           if (Test-Path 'C:\\msys64\\mingw64') { $prefix = 'C:\\msys64\\mingw64' }
+           if (-not (Test-Path $prefix)) { New-Item -ItemType Directory -Path $prefix -Force | Out-Null }
+           Expand-Archive -Path $dest -DestinationPath $prefix -Force
+           Rename-Item -Path "$prefix\radare2-$R2V-w64" -NewName "radare2" -Force
+           Write-Output "Extracted and renamed radare2 to $prefix\radare2"
+           Write-Output "Listing top-level contents of $prefix"
+           Get-ChildItem -Path $prefix -Depth 2 | Select-Object -First 200
 
       - name: Configure Meson
         shell: bash
