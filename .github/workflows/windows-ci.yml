@@ -1,0 +1,82 @@
+name: windows-ci
+
+on:
+  push:
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    name: Build r2mcp on Windows (MSYS2 + Meson)
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up MSYS2 (MINGW64)
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: |
+            mingw-w64-x86_64-toolchain
+            mingw-w64-x86_64-pkg-config
+            mingw-w64-x86_64-ninja
+
+      - name: Install Python tools and Meson
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          pip install meson ninja
+
+      - name: Configure Meson
+        shell: bash
+        run: |
+          meson setup builddir --prefix=/mingw64 --buildtype=release
+
+      - name: Compile
+        shell: bash
+        run: |
+          meson compile -C builddir -v
+
+      - name: Package zip artifact
+        if: always()
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Force -Path output
+          $src = ''
+          if (Test-Path builddir/r2mcp.exe) { Copy-Item builddir/r2mcp.exe output/; $src = 'builddir/r2mcp.exe' }
+          if (Test-Path builddir/src/r2mcp.exe) { Copy-Item builddir/src/r2mcp.exe output/; $src = 'builddir/src/r2mcp.exe' }
+          if ($src -eq '') { Write-Output "Warning: r2mcp.exe not found after build" }
+          Compress-Archive -Path output/* -DestinationPath r2mcp-windows.zip -Force
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: r2mcp-windows
+          path: r2mcp-windows.zip
+
+      - name: Create GitHub Release (on tag)
+        id: create_release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.ref_name }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload release asset (on tag)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: r2mcp-windows.zip
+          asset_name: r2mcp-windows.zip
+          asset_content_type: application/zip
+
