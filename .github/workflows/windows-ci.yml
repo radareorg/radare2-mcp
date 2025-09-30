@@ -49,16 +49,17 @@ jobs:
            if (Test-Path 'C:\\msys64\\mingw64') { $prefix = 'C:\\msys64\\mingw64' }
            if (-not (Test-Path $prefix)) { New-Item -ItemType Directory -Path $prefix -Force | Out-Null }
            Expand-Archive -Path $dest -DestinationPath $prefix -Force
-           Rename-Item -Path "$prefix\radare2-$R2V-w64" -NewName "radare2" -Force
-           Write-Output "Extracted and renamed radare2 to $prefix\radare2"
+           Move-Item -Path "$prefix\radare2-$R2V-w64\*" -Destination $prefix -Force
+           Remove-Item -Path "$prefix\radare2-$R2V-w64" -Recurse -Force
+           Write-Output "Extracted radare2 contents to $prefix"
            Write-Output "Listing top-level contents of $prefix"
            Get-ChildItem -Path $prefix -Depth 2 | Select-Object -First 200
 
-      - name: Configure Meson
-        shell: bash
-        run: |
-          # If radare2 was extracted into /mingw64, tell Meson where to find it.
-          meson setup --reconfigure builddir --prefix=C:\\radare2 --buildtype=release -Dr2_prefix=C:\\radare2
+       - name: Configure Meson
+         shell: bash
+         run: |
+           # If radare2 was extracted into /mingw64, tell Meson where to find it.
+           meson setup --reconfigure builddir --prefix=/mingw64 --buildtype=release -Dr2_prefix=/mingw64
 
       - name: Compile
         shell: bash
