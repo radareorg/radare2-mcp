@@ -51,6 +51,13 @@ jobs:
           }
           Write-Output "Extracted radare2 contents to $prefix"
 
+      - name: Show extracted radare2 contents
+        shell: powershell
+        run: |
+          $prefix = 'C:\\radare2'
+          Write-Output "Listing contents of $prefix"
+          Get-ChildItem -Path $prefix -Recurse -Depth 2 | Select-Object FullName, Mode, Length | Format-Table -AutoSize
+
       - name: Configure Meson
         shell: powershell
         run: |
@@ -62,8 +69,11 @@ jobs:
           # during extraction.
           $prefix = 'C:\\radare2'
           Write-Output "Using radare2 prefix: $prefix"
+          # Meson on Windows expects absolute paths; normalize to forward-slash style
+          $posix = $prefix -replace '\\','/'
+          Write-Output "Passing r2_prefix as: $posix"
           # Tell Meson where to find radare2 and set install prefix accordingly.
-          meson setup --reconfigure builddir --backend vs --prefix=$prefix --buildtype=release -Dr2_prefix=$prefix
+          meson setup --reconfigure builddir --backend vs --prefix="$posix" --buildtype=release -Dr2_prefix="$posix"
 
       - name: Compile
         shell: powershell
