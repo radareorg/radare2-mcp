@@ -44,6 +44,7 @@ jobs:
           R2V=${{ env.R2V }}
           TMPZIP=/tmp/radare2.zip
           candidates=(
+            "radare2-${R2V}-w64.zip"
             "radare2-${R2V}-windows-x64.zip"
             "radare2-${R2V}-windows.zip"
             "radare2-${R2V}-msys2.zip"
@@ -62,8 +63,8 @@ jobs:
             fi
           done
           if [ -z "$found" ]; then
-            echo "No radare2 release zip found for $R2V; continuing without it."
-            exit 0
+            echo "No radare2 release zip found for $R2V; failing the job."
+            exit 1
           fi
           # Extract into /mingw64 if available
           prefix=/mingw64
