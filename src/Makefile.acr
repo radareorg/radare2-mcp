@@ -11,6 +11,7 @@ SRC = main.c
 SRC += r2mcp.c
 SRC += readbuffer.c
 SRC += tools.c
+SRC += dsltest.c
 SRC += prompts.c
 INC += utils.inc.c
 INC += r2api.inc.c
