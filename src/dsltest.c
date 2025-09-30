@@ -94,11 +94,7 @@ static int run_statement(ServerState *ss, char *stmt, RCore *core) {
 		if (bare) {
 			r_strbuf_appendf (sb, "\"%s\":%s", key, val);
 		} else {
-#if R2_VERSION_NUMBER > 60004
-			char *esc = r_str_escape_json (val, -1);
-#else
-			char *esc = r_str_escape_utf8_for_json (val, -1);
-#endif
+			char *esc = strdup (val); // r_str_escape_json (val, -1);
 			r_strbuf_appendf (sb, "\"%s\":\"%s\"", key, esc);
 			free (esc);
 		}
