@@ -50,7 +50,7 @@ if not r_core_dep.found()
         incdirs += [ join_paths(p, 'include', 'libr'), join_paths(p, 'include') ]
       endif
       rcore_inc = include_directories(incdirs)
-      r_core_dep = declare_dependency(link_with: rcore_lib, include_directories: rcore_inc)
+      r_core_dep = declare_dependency(dependencies: [rcore_lib], include_directories: rcore_inc)
     else
       error('Windows dependency lookup for r_core failed: ensure radare2 is installed and pass -Dr2_prefix=<prefix> (e.g. C:/radare2)')
     endif
@@ -83,7 +83,7 @@ if not r_core_dep.found()
         rcore_lib = cc.find_library(name, dirs: extra_libdirs, required: false)
         if rcore_lib.found()
           rcore_inc = include_directories(incdirs + [ join_paths(p, 'include', 'libr') ])
-          r_core_dep = declare_dependency(link_with: rcore_lib, include_directories: rcore_inc)
+          r_core_dep = declare_dependency(dependencies: [rcore_lib], include_directories: rcore_inc)
           found = true
           break
         endif
