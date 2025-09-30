@@ -71,6 +71,10 @@ jobs:
           mkdir -p "$prefix"
           unzip -o "$TMPZIP" -d "$prefix"
           echo "Extracted radare2 to $prefix"
+          echo "Listing top-level contents of $prefix"
+          ls -la "$prefix" | sed -n '1,200p' || true
+          ls -la "${prefix}/include" || true
+          ls -la "${prefix}/lib" || true
 
       - name: Optionally build radare2 from source
         if: env.R2_TAG != ''

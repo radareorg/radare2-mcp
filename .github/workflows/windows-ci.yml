@@ -70,12 +70,14 @@ jobs:
           if (-not (Test-Path $prefix)) { New-Item -ItemType Directory -Path $prefix -Force | Out-Null }
           Expand-Archive -Path $dest -DestinationPath $prefix -Force
           Write-Output "Extracted radare2 to $prefix"
+          Write-Output "Listing top-level contents of $prefix"
+          Get-ChildItem -Path $prefix -Depth 2 | Select-Object -First 200
 
       - name: Configure Meson
         shell: bash
         run: |
           # If radare2 was extracted into /mingw64, tell Meson where to find it.
-          meson setup --reconfigure builddir --prefix=C:\\radare2 --buildtype=release -Dr2_prefix=C:\\radare2
+          meson setup --reconfigure builddir --prefix=/mingw64 --buildtype=release -Dr2_prefix=/mingw64
 
       - name: Compile
         shell: bash

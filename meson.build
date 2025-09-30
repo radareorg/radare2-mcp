@@ -29,12 +29,23 @@ if not r_core_dep.found()
   endif
 
   foreach p : r2_prefixes
-    incdir = join_paths(p, 'include')
-    libdir = join_paths(p, 'lib')
-    # Try to find the core library in that prefix.
-    rcore_lib = cc.find_library('r_core', dirs: [libdir], required: false)
+    # Common library/include locations under a provided prefix.
+    libdirs = [
+      join_paths(p, 'lib'),
+      join_paths(p, 'lib64'),
+      join_paths(p, 'radare2', 'lib'),
+      join_paths(p, 'radare2', 'lib64'),
+      join_paths(p, 'mingw64', 'lib'),
+    ]
+    incdirs = [
+      join_paths(p, 'include'),
+      join_paths(p, 'radare2', 'include'),
+      join_paths(p, 'include', 'radare2'),
+    ]
+    # Try to find the core library in any of these lib dirs.
+    rcore_lib = cc.find_library('r_core', dirs: libdirs, required: false)
     if rcore_lib.found()
-      rcore_inc = include_directories(incdir)
+      rcore_inc = include_directories(incdirs)
       r_core_dep = declare_dependency(link_with: rcore_lib, include_directories: rcore_inc)
       break
     endif
