@@ -7,8 +7,20 @@ version : '1.2.0',
 
 cc = meson.get_compiler('c')
 
-# radare2 core dependency via pkg-config (mirrors Makefile's pkg-config r_core)
-r_core_dep = dependency('r_core', required: true)
+# radare2 core dependency: prefer pkg-config when available,
+# but fall back to CMake when `pkg-config` is not present (Windows CI).
+pkg = find_program('pkg-config', required: false)
+if pkg.found()
+  r_core_dep = dependency('r_core', method: 'pkg-config', required: false)
+else
+  r_core_dep = dependency('r_core', method: 'cmake', required: false)
+endif
+if not r_core_dep.found()
+  r_core_dep = dependency('r_core', required: false)
+endif
+if not r_core_dep.found()
+  error('Dependency lookup for r_core failed: install radare2 development files or provide pkg-config/cmake paths')
+endif
 
 # Match Makefile warning flags when using gcc/clang
 c_args = []
