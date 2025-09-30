@@ -6,7 +6,6 @@
 #include "r2mcp.h"
 #include "tools.h"
 
-// Forward declaration for DSL function
 int r2mcp_run_dsl_tests(ServerState *ss, const char *dsl, RCore *core);
 
 typedef struct r2mcp_data_t {
@@ -27,30 +26,19 @@ static bool r2mcp_call(RCorePluginSession *cps, const char *input) {
 	// Initialize server state if not already done
 	if (!data->ss) {
 		data->ss = R_NEW0 (ServerState);
-		if (!data->ss) {
-			r_cons_printf (core->cons, "Failed to allocate server state\n");
-			return true;
-		}
-
 		// Initialize the tools registry
 		tools_registry_init (data->ss);
-
 		// Set up the core reference
 		data->ss->rstate.core = core;
 		data->ss->rstate.file_opened = true; // We're already in r2 with a file
 	}
 
-	// If no arguments, show tools list
 	if (R_STR_ISEMPTY (args)) {
-		r_cons_printf (core->cons, "Available r2mcp tools:\n");
 		tools_print_table (data->ss);
-		return true;
-	}
-
-	// Parse and execute the DSL command
-	int rc = r2mcp_run_dsl_tests (data->ss, args, core);
-	if (rc != 0) {
-		r_cons_printf (core->cons, "Error executing r2mcp command\n");
+	} else {
+		if (r2mcp_run_dsl_tests (data->ss, args, core) != 0) {
+			R_LOG_ERROR ("Error executing r2mcp command");
+		}
 	}
 
 	return true;
@@ -58,9 +46,6 @@ static bool r2mcp_call(RCorePluginSession *cps, const char *input) {
 
 static bool r2mcp_init(RCorePluginSession *cps) {
 	R2mcpData *data = R_NEW0 (R2mcpData);
-	if (!data) {
-		return false;
-	}
 	cps->data = data;
 	return true;
 }
