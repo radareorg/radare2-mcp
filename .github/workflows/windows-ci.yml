@@ -3,7 +3,7 @@ name: windows-ci
 on:
   push:
     tags:
-      - 'v*'
+      - "[0-9]*"
   pull_request:
     branches: [ main ]
 
@@ -36,7 +36,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install meson ninja
 
-       - name: Download radare2 release (Windows zip)
+      - name: Download radare2 release (Windows zip)
          shell: powershell
          run: |
            $R2V = '${{ env.R2V }}'
@@ -58,7 +58,7 @@ jobs:
         shell: bash
         run: |
           # If radare2 was extracted into /mingw64, tell Meson where to find it.
-          meson setup --reconfigure builddir --prefix=/mingw64 --buildtype=release -Dr2_prefix=/mingw64
+          meson setup --reconfigure builddir --prefix=C:\\radare2 --buildtype=release -Dr2_prefix=C:\\radare2
 
       - name: Compile
         shell: bash
