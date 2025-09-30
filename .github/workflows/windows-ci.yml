@@ -56,10 +56,11 @@ jobs:
            Get-ChildItem -Path $prefix -Depth 2 | Select-Object -First 200
 
        - name: Configure Meson
-         shell: bash
+         shell: powershell
          run: |
+           $R2V = '${{ env.R2V }}'
            # If radare2 was extracted into /mingw64, tell Meson where to find it.
-           meson setup --reconfigure builddir --prefix=/mingw64 --buildtype=release -Dr2_prefix=/mingw64
+           meson setup --reconfigure builddir --prefix=/mingw64 --buildtype=release -Dr2_prefix=/mingw64/radare2-$R2V-w64
 
       - name: Compile
         shell: bash
