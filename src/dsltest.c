@@ -128,6 +128,7 @@ static int run_statement(ServerState *ss, char *stmt, RCore *core) {
 				const char *text_end = strstr (text_start, "\"");
 				if (text_end) {
 					char *text = r_str_ndup (text_start, text_end - text_start);
+					r_str_replace_in (text, -1, "\\n", "\n", true);
 					r_cons_printf (core->cons, "%s\n", text);
 					free (text);
 				} else {

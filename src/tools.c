@@ -351,6 +351,10 @@ static char *filter_named_functions_only(const char *input) {
 // Main dispatcher that handles tool calls. Returns heap-allocated JSON
 // string representing the tool "result" (caller must free it).
 char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
+	RJson nil = {0};
+	if (!tool_args) {
+		tool_args = &nil;
+	}
 	if (!tool_name) {
 		return jsonrpc_error_response (-32602, "Missing required parameter: name", NULL, NULL);
 	}
