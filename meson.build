@@ -12,6 +12,14 @@ cc = meson.get_compiler('c')
 # locating the library under user-provided prefixes (see -Dr2_prefix).
 r_core_dep = dependency('r_core', method: 'pkg-config', required: false)
 
+# Centralized resolution results: when we locate `r_core` manually below we
+# record the library and include search directories in `r2_libdirs` and
+# `r2_incdirs`. Later lookups for other `r_*` libraries will assume they
+# live in the same locations, avoiding repeating complex prefix search
+# logic.
+r2_libdirs = []
+r2_incdirs = []
+
 # If pkg-config didn't yield an r_core dependency, fall back to manual
 # discovery logic below (search common prefixes / extracted zips).
 if not r_core_dep.found()
@@ -51,6 +59,9 @@ if not r_core_dep.found()
       endif
       rcore_inc = include_directories(incdirs)
       r_core_dep = declare_dependency(dependencies: [rcore_lib], include_directories: rcore_inc)
+      # Remember resolved dirs for other r_* lookups
+      r2_libdirs = r2libdirs
+      r2_incdirs = incdirs
     else
       error('Windows dependency lookup for r_core failed: ensure radare2 is installed and pass -Dr2_prefix=<prefix> (e.g. C:/radare2)')
     endif
@@ -84,6 +95,10 @@ if not r_core_dep.found()
         if rcore_lib.found()
           rcore_inc = include_directories(incdirs + [ join_paths(p, 'include', 'libr') ])
           r_core_dep = declare_dependency(dependencies: [rcore_lib], include_directories: rcore_inc)
+          # Record the successful prefix and candidate lib/include dirs so
+          # other r_* dependencies can be looked up in the same locations.
+          r2_libdirs = extra_libdirs
+          r2_incdirs = incdirs + [ join_paths(p, 'include', 'libr') ]
           found = true
           break
         endif
@@ -106,100 +121,141 @@ endif
 # not found.
 r_util_dep = dependency('r_util', method: 'pkg-config', required: false)
 if not r_util_dep.found()
-  r2_prefixes = []
-  if get_option('r2_prefix') != ''
-    r2_prefixes += [get_option('r2_prefix')]
-  endif
   found = false
-  foreach p : r2_prefixes
-    libdirs = [
-      join_paths(p, 'lib'),
-      join_paths(p, 'lib64'),
-      join_paths(p, 'radare2', 'lib'),
-      join_paths(p, 'radare2', 'lib64'),
-    ]
-    candidate_names = ['r_util', 'libr_util']
-    foreach name : candidate_names
-      ulib = cc.find_library(name, dirs: libdirs, required: false)
+  # If r_core was manually resolved above, prefer the same lib/include
+  # directories for other r_* libraries to simplify dependency lookup.
+  if r2_libdirs.length() > 0
+    foreach name : ['r_util', 'libr_util']
+      ulib = cc.find_library(name, dirs: r2_libdirs, required: false)
       if ulib.found()
-        uinc = include_directories([ join_paths(p, 'include'), join_paths(p, 'include', 'libr') ])
+        uinc = include_directories(r2_incdirs)
         r_util_dep = declare_dependency(dependencies: [ulib], include_directories: uinc)
         found = true
         break
       endif
     endforeach
-    if found
-      break
-    endif
-  endforeach
+  endif
   if not found
-    warning('r_util dependency not found via pkg-config or -Dr2_prefix; build may fail on systems without radare2 dev files')
+    r2_prefixes = []
+    if get_option('r2_prefix') != ''
+      r2_prefixes += [get_option('r2_prefix')]
+    endif
+    foreach p : r2_prefixes
+      libdirs = [
+        join_paths(p, 'lib'),
+        join_paths(p, 'lib64'),
+        join_paths(p, 'radare2', 'lib'),
+        join_paths(p, 'radare2', 'lib64'),
+      ]
+      candidate_names = ['r_util', 'libr_util']
+      foreach name : candidate_names
+        ulib = cc.find_library(name, dirs: libdirs, required: false)
+        if ulib.found()
+          uinc = include_directories([ join_paths(p, 'include'), join_paths(p, 'include', 'libr') ])
+          r_util_dep = declare_dependency(dependencies: [ulib], include_directories: uinc)
+          found = true
+          break
+        endif
+      endforeach
+      if found
+        break
+      endif
+    endforeach
+    if not found
+      warning('r_util dependency not found via pkg-config or -Dr2_prefix; build may fail on systems without radare2 dev files')
+    endif
   endif
 endif
 
 r_cons_dep = dependency('r_cons', method: 'pkg-config', required: false)
 if not r_cons_dep.found()
-  r2_prefixes = []
-  if get_option('r2_prefix') != ''
-    r2_prefixes += [get_option('r2_prefix')]
-  endif
   found = false
-  foreach p : r2_prefixes
-    libdirs = [
-      join_paths(p, 'lib'),
-      join_paths(p, 'lib64'),
-      join_paths(p, 'radare2', 'lib'),
-      join_paths(p, 'radare2', 'lib64'),
-    ]
-    candidate_names = ['r_cons', 'libr_cons']
-    foreach name : candidate_names
-      clib = cc.find_library(name, dirs: libdirs, required: false)
+  if r2_libdirs.length() > 0
+    foreach name : ['r_cons', 'libr_cons']
+      clib = cc.find_library(name, dirs: r2_libdirs, required: false)
       if clib.found()
-        cinc = include_directories([ join_paths(p, 'include'), join_paths(p, 'include', 'libr') ])
+        cinc = include_directories(r2_incdirs)
         r_cons_dep = declare_dependency(dependencies: [clib], include_directories: cinc)
         found = true
         break
       endif
     endforeach
-    if found
-      break
-    endif
-  endforeach
+  endif
   if not found
-    warning('r_cons dependency not found via pkg-config or -Dr2_prefix; console helpers may be unavailable')
+    r2_prefixes = []
+    if get_option('r2_prefix') != ''
+      r2_prefixes += [get_option('r2_prefix')]
+    endif
+    foreach p : r2_prefixes
+      libdirs = [
+        join_paths(p, 'lib'),
+        join_paths(p, 'lib64'),
+        join_paths(p, 'radare2', 'lib'),
+        join_paths(p, 'radare2', 'lib64'),
+      ]
+      candidate_names = ['r_cons', 'libr_cons']
+      foreach name : candidate_names
+        clib = cc.find_library(name, dirs: libdirs, required: false)
+        if clib.found()
+          cinc = include_directories([ join_paths(p, 'include'), join_paths(p, 'include', 'libr') ])
+          r_cons_dep = declare_dependency(dependencies: [clib], include_directories: cinc)
+          found = true
+          break
+        endif
+      endforeach
+      if found
+        break
+      endif
+    endforeach
+    if not found
+      warning('r_cons dependency not found via pkg-config or -Dr2_prefix; console helpers may be unavailable')
+    endif
   endif
 endif
 
 r_config_dep = dependency('r_config', method: 'pkg-config', required: false)
 if not r_config_dep.found()
-  r2_prefixes = []
-  if get_option('r2_prefix') != ''
-    r2_prefixes += [get_option('r2_prefix')]
-  endif
   found = false
-  foreach p : r2_prefixes
-    libdirs = [
-      join_paths(p, 'lib'),
-      join_paths(p, 'lib64'),
-      join_paths(p, 'radare2', 'lib'),
-      join_paths(p, 'radare2', 'lib64'),
-    ]
-    candidate_names = ['r_config', 'libr_config']
-    foreach name : candidate_names
-      clib = cc.find_library(name, dirs: libdirs, required: false)
+  if r2_libdirs.length() > 0
+    foreach name : ['r_config', 'libr_config']
+      clib = cc.find_library(name, dirs: r2_libdirs, required: false)
       if clib.found()
-        cinc = include_directories([ join_paths(p, 'include'), join_paths(p, 'include', 'libr') ])
+        cinc = include_directories(r2_incdirs)
         r_config_dep = declare_dependency(dependencies: [clib], include_directories: cinc)
         found = true
         break
       endif
     endforeach
-    if found
-      break
-    endif
-  endforeach
+  endif
   if not found
-    warning('r_cons dependency not found via pkg-config or -Dr2_prefix; console helpers may be unavailable')
+    r2_prefixes = []
+    if get_option('r2_prefix') != ''
+      r2_prefixes += [get_option('r2_prefix')]
+    endif
+    foreach p : r2_prefixes
+      libdirs = [
+        join_paths(p, 'lib'),
+        join_paths(p, 'lib64'),
+        join_paths(p, 'radare2', 'lib'),
+        join_paths(p, 'radare2', 'lib64'),
+      ]
+      candidate_names = ['r_config', 'libr_config']
+      foreach name : candidate_names
+        clib = cc.find_library(name, dirs: libdirs, required: false)
+        if clib.found()
+          cinc = include_directories([ join_paths(p, 'include'), join_paths(p, 'include', 'libr') ])
+          r_config_dep = declare_dependency(dependencies: [clib], include_directories: cinc)
+          found = true
+          break
+        endif
+      endforeach
+      if found
+        break
+      endif
+    endforeach
+    if not found
+      warning('r_cons dependency not found via pkg-config or -Dr2_prefix; console helpers may be unavailable')
+    endif
   endif
 endif
 
