@@ -1,0 +1,103 @@
+/* radare - Copyright 2025 - pancake */
+
+#define R_LOG_ORIGIN "core.r2mcp"
+
+#include <r_core.h>
+#include "r2mcp.h"
+#include "tools.h"
+
+// Forward declaration for DSL function
+int r2mcp_run_dsl_tests(ServerState *ss, const char *dsl);
+
+typedef struct r2mcp_data_t {
+	ServerState *ss;
+} R2mcpData;
+
+static bool r2mcp_call(RCorePluginSession *cps, const char *input) {
+	RCore *core = cps->core;
+	R2mcpData *data = cps->data;
+	
+	if (!r_str_startswith (input, "r2mcp")) {
+		return false;
+	}
+	
+	// Skip "r2mcp" command name
+	const char *args = input + 5;
+	while (*args && isspace ((unsigned char)*args)) {
+		args++;
+	}
+	
+	// Initialize server state if not already done
+	if (!data->ss) {
+		data->ss = R_NEW0 (ServerState);
+		if (!data->ss) {
+			r_cons_printf (core->cons, "Failed to allocate server state\n");
+			return true;
+		}
+		
+		// Initialize the tools registry
+		tools_registry_init (data->ss);
+		
+		// Set up the core reference
+		data->ss->rstate.core = core;
+		data->ss->rstate.file_opened = true; // We're already in r2 with a file
+	}
+	
+	// If no arguments, show tools list
+	if (R_STR_ISEMPTY (args)) {
+		r_cons_printf (core->cons, "Available r2mcp tools:\n");
+		tools_print_table (data->ss);
+		return true;
+	}
+	
+	// Parse and execute the DSL command
+	int rc = r2mcp_run_dsl_tests (data->ss, args);
+	if (rc != 0) {
+		r_cons_printf (core->cons, "Error executing r2mcp command\n");
+	}
+	
+	return true;
+}
+
+static bool r2mcp_init(RCorePluginSession *cps) {
+	R2mcpData *data = R_NEW0 (R2mcpData);
+	if (!data) {
+		return false;
+	}
+	cps->data = data;
+	return true;
+}
+
+static bool r2mcp_fini(RCorePluginSession *cps) {
+	R2mcpData *data = cps->data;
+	if (data) {
+		if (data->ss) {
+			tools_registry_fini (data->ss);
+			free (data->ss);
+		}
+		free (data);
+	}
+	return true;
+}
+
+// PLUGIN Definition Info
+RCorePlugin r_core_plugin_r2mcp = {
+	.meta = {
+		.name = "core-r2mcp",
+		.desc = "r2mcp command integration for radare2",
+		.author = "pancake",
+		.license = "MIT",
+	},
+	.call = r2mcp_call,
+	.init = r2mcp_init,
+	.fini = r2mcp_fini,
+};
+
+#ifndef R2_PLUGIN_INCORE
+R_API RLibStruct radare_plugin = {
+	.type = R_LIB_TYPE_CORE,
+	.data = &r_core_plugin_r2mcp,
+	.version = R2_VERSION,
+	.abiversion = R2_ABIVERSION
+};
+#endif

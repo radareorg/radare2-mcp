@@ -180,6 +180,15 @@ srcs = [
   'src/prompts.c',
 ]
 
+plugin_srcs = [
+  'src/plugin.c',
+  'src/r2mcp.c',
+  'src/readbuffer.c',
+  'src/tools.c',
+  'src/dsltest.c',
+  'src/prompts.c',
+]
+
 # Windows-specific configuration
 if host_machine.system() == 'windows'
   # Copy Windows config header
@@ -212,4 +221,14 @@ executable(
   c_args: c_args,
   link_args: link_args,
   install: true,
+)
+
+# Build the radare2 plugin as a shared library
+plugin_lib = shared_library(
+  'core_r2mcp',
+  plugin_srcs,
+  dependencies: [r_core_dep, r_util_dep, r_cons_dep, r_config_dep],
+  c_args: c_args,
+  link_args: link_args,
+  install: false,  # We'll install manually to r2pm plugin directory
 )
