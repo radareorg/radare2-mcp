@@ -116,7 +116,6 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            release-artifacts/linux-x64-binary/*.zip
-            release-artifacts/debian-package/*.deb
-            release-artifacts/macos-*-binary/*.zip
+            release-artifacts/**/*.zip
+            release-artifacts/**/*.deb
           generate_release_notes: true
