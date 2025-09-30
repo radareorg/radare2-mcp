@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include <stdio.h>
 
+#if R2__UNIX__
 /* Signal handling moved from r2mcp.c */
 static void signal_handler(int signum) {
 	const char msg[] = "\nInterrupt received, shutting down...\n";
@@ -26,6 +27,7 @@ void setup_signals(void) {
 	sigaction (SIGHUP, &sa, NULL);
 	signal (SIGPIPE, SIG_IGN);
 }
+#endif
 
 /* Help and version moved from r2mcp.c */
 void r2mcp_help(void) {
@@ -152,9 +154,9 @@ int r2mcp_main(int argc, const char **argv) {
 
 	/* Enable logging */
 	r2mcp_log_pub (&ss, "r2mcp starting");
-
+#if R2__UNIX__
 	setup_signals ();
-
+#endif
 	/* Initialize registries */
 	tools_registry_init (&ss);
 	if (list_tools) {

@@ -1,0 +1,199 @@
+#ifndef CONFIG_H
+#define CONFIG_H
+
+/* Windows-specific configuration for r2mcp */
+
+/* Version information */
+#define R2MCP_VERSION "1.2.0"
+#define R2MCP_VERSION_MAJOR 1
+#define R2MCP_VERSION_MINOR 2
+#define R2MCP_VERSION_PATCH 0
+
+/* Platform detection */
+#define WINDOWS 1
+#define WIN32 1
+#define _WIN32 1
+#define _WIN64 1
+
+/* Compiler-specific definitions */
+#ifdef _MSC_VER
+#define HAVE_MSC_VER 1
+#endif
+
+/* Standard C library features */
+#define HAVE_STDLIB_H 1
+#define HAVE_STDIO_H 1
+#define HAVE_STRING_H 1
+#define HAVE_STRINGS_H 1
+#define HAVE_UNISTD_H 1
+#define HAVE_SYS_TYPES_H 1
+#define HAVE_SYS_STAT_H 1
+#define HAVE_FCNTL_H 1
+#define HAVE_ERRNO_H 1
+#define HAVE_SIGNAL_H 1
+
+/* Windows-specific headers */
+#define HAVE_WINDOWS_H 1
+#define HAVE_WINSOCK2_H 1
+#define HAVE_WS2TCPIP_H 1
+
+/* Function availability */
+#define HAVE_MEMCPY 1
+#define HAVE_MEMSET 1
+#define HAVE_STRCPY 1
+#define HAVE_STRNCPY 1
+#define HAVE_STRCAT 1
+#define HAVE_STRNCAT 1
+#define HAVE_STRCMP 1
+#define HAVE_STRNCMP 1
+#define HAVE_STRLEN 1
+#define HAVE_STRDUP 1
+#define HAVE_STRCHR 1
+#define HAVE_STRRCHR 1
+#define HAVE_STRSTR 1
+#define HAVE_STRTOK 1
+#define HAVE_SPRINTF 1
+#define HAVE_SNPRINTF 1
+#define HAVE_VSNPRINTF 1
+#define HAVE_ATOI 1
+#define HAVE_ATOL 1
+#define HAVE_STRTOL 1
+#define HAVE_STRTOUL 1
+#define HAVE_MALLOC 1
+#define HAVE_CALLOC 1
+#define HAVE_REALLOC 1
+#define HAVE_FREE 1
+
+/* File I/O */
+#define HAVE_OPEN 1
+#define HAVE_CLOSE 1
+#define HAVE_READ 1
+#define HAVE_WRITE 1
+#define HAVE_LSEEK 1
+#define HAVE_UNLINK 1
+#define HAVE_RENAME 1
+#define HAVE_MKDIR 1
+#define HAVE_RMDIR 1
+#define HAVE_ACCESS 1
+#define HAVE_STAT 1
+
+/* Process control */
+#undef HAVE_FORK
+#define HAVE_FORK 0
+#define HAVE_EXEC 0
+#define HAVE_WAITPID 0
+#define HAVE_KILL 0
+#define HAVE_GETPID 1
+#define HAVE_GETPPID 0
+
+/* Network */
+#define HAVE_SOCKET 1
+#define HAVE_CONNECT 1
+#define HAVE_BIND 1
+#define HAVE_LISTEN 1
+#define HAVE_ACCEPT 1
+#define HAVE_SEND 1
+#define HAVE_RECV 1
+#define HAVE_SELECT 1
+#define HAVE_POLL 1
+
+/* Threading */
+#define HAVE_PTHREAD_H 0
+#define HAVE_THREAD_H 1
+
+/* Math */
+#define HAVE_MATH_H 1
+#define HAVE_FLOOR 1
+#define HAVE_CEIL 1
+#define HAVE_ROUND 1
+#define HAVE_SQRT 1
+#define HAVE_POW 1
+#define HAVE_LOG 1
+#define HAVE_LOG10 1
+#define HAVE_SIN 1
+#define HAVE_COS 1
+#define HAVE_TAN 1
+#define HAVE_ASIN 1
+#define HAVE_ACOS 1
+#define HAVE_ATAN 1
+#define HAVE_ATAN2 1
+
+/* Time */
+#define HAVE_TIME_H 1
+#define HAVE_SYS_TIME_H 0
+#define HAVE_TIME 1
+#define HAVE_GETTIMEOFDAY 0
+#define HAVE_CLOCK_GETTIME 0
+
+/* Random */
+#define HAVE_RAND 1
+#define HAVE_SRAND 1
+#define HAVE_RANDOM 0
+#define HAVE_SRANDOM 0
+
+/* Environment */
+#define HAVE_GETENV 1
+#define HAVE_SETENV 0
+#define HAVE_UNSETENV 0
+#define HAVE_PUTENV 1
+
+/* Signal handling */
+#define HAVE_SIGNAL 1
+#define HAVE_SIGACTION 0
+#define HAVE_SIGPROCMASK 0
+
+/* Directory operations */
+#define HAVE_OPENDIR 0
+#define HAVE_READDIR 0
+#define HAVE_CLOSEDIR 0
+#define HAVE_REWINDDIR 0
+
+/* Windows-specific features */
+#define HAVE_GETPROCESSID 1
+#define HAVE_GETCURRENTTHREADID 1
+#define HAVE_GETCURRENTPROCESSID 1
+
+/* Large file support */
+#define HAVE_LARGEFILE_SUPPORT 1
+#define _FILE_OFFSET_BITS 64
+
+/* Endianness */
+#define WORDS_BIGENDIAN 0
+#define WORDS_LITTLEENDIAN 1
+
+/* Architecture */
+#define ARCH_X86 1
+#define ARCH_X86_64 1
+#define ARCH_AMD64 1
+
+/* Build configuration */
+#define DEBUG 0
+#define NDEBUG 1
+#define RELEASE 1
+
+/* Feature flags */
+#define HAVE_DYNAMIC_LOADING 1
+#define HAVE_SHARED_LIBRARIES 1
+#define HAVE_PLUGINS 1
+
+/* Windows API version */
+#define WINVER 0x0601
+#define _WIN32_WINNT 0x0601
+#define _WIN32_IE 0x0800
+
+/* Unicode support */
+#define UNICODE 1
+#define _UNICODE 1
+
+/* Security */
+#define HAVE_SECURE_CRT 1
+
+/* Compiler warnings */
+#ifdef _MSC_VER
+#pragma warning(disable: 4996) /* deprecated functions */
+#pragma warning(disable: 4101) /* unreferenced local variable */
+#pragma warning(disable: 4244) /* conversion from 'type1' to 'type2' */
+#pragma warning(disable: 4267) /* conversion from 'size_t' to 'type' */
+#endif
+
+#endif /* CONFIG_H */

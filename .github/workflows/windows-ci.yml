@@ -1,0 +1,149 @@
+name: windows-ci
+
+on:
+  push:
+    tags:
+      - "[0-9]*"
+  pull_request:
+    branches: [ main ]
+
+env:
+  R2V: 6.0.2
+
+jobs:
+  build:
+    name: r2mcp-windows
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python (for Meson)
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      - name: Install Meson
+        shell: powershell
+        run: |
+          python -m pip install --upgrade pip
+          pip install meson
+
+      - name: Download and extract radare2 release
+        shell: powershell
+        run: |
+          $R2V = '${{ env.R2V }}'
+          $url = "https://github.com/radareorg/radare2/releases/download/$R2V/radare2-$R2V-w64.zip"
+          $dest = "$env:TEMP\radare2.zip"
+          Write-Output "Downloading $url"
+          Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing
+          $prefix = 'C:\\radare2'
+          if (Test-Path $prefix) { Remove-Item -Path $prefix -Recurse -Force }
+          New-Item -ItemType Directory -Force -Path $prefix | Out-Null
+          Expand-Archive -Path $dest -DestinationPath $prefix -Force
+          # Some zips include a top-level folder; move its contents up if needed
+          $inner = Get-ChildItem -Path $prefix | Where-Object { $_.PSIsContainer } | Select-Object -First 1
+          if ($inner -and (Get-ChildItem -Path $inner.FullName | Measure-Object).Count -gt 0) {
+            Get-ChildItem -Path $inner.FullName -Force | Move-Item -Destination $prefix -Force
+            Remove-Item -Path $inner.FullName -Recurse -Force
+          }
+          Write-Output "Extracted radare2 contents to $prefix"
+
+      - name: Show extracted radare2 contents
+        shell: powershell
+        run: |
+          $prefix = 'C:\\radare2'
+          Write-Output "Listing contents of $prefix"
+          Get-ChildItem -Path $prefix -Recurse -Depth 2 | Select-Object FullName, Mode, Length | Format-Table -AutoSize
+
+      - name: Show radare2 candidate include/lib dirs
+        shell: powershell
+        run: |
+          $prefix = 'C:\\radare2'
+          $posix = $prefix -replace '\\','/'
+          Write-Output "Normalized r2_prefix (posix): $posix"
+          # Construct candidate paths explicitly to avoid Join-Path parsing
+          $candidates = @(
+            "$prefix\\include",
+            "$prefix\\include\\libr",
+            "$prefix\\radare2\\include",
+            "$prefix\\lib",
+            "$prefix\\radare2\\lib",
+            "$prefix\\bin"
+          )
+          foreach ($d in $candidates) {
+            if (Test-Path $d) {
+              Write-Output "Contents of ${d}:"
+              Get-ChildItem -Path $d -Recurse -Depth 1 | Select-Object FullName, Mode, Length | Format-Table -AutoSize
+            } else {
+              Write-Output "Not found: ${d}"
+            }
+          }
+          Write-Output "Looking for likely radare2 artifacts (libs/dlls/headers):"
+          Get-ChildItem -Path (Join-Path $prefix 'lib') -Filter 'r_core*' -ErrorAction SilentlyContinue | Select-Object FullName, Mode | Format-Table -AutoSize
+          Get-ChildItem -Path (Join-Path $prefix 'lib') -Filter 'libr_core*' -ErrorAction SilentlyContinue | Select-Object FullName, Mode | Format-Table -AutoSize
+          Get-ChildItem -Path (Join-Path $prefix 'bin') -Filter 'r_core*' -ErrorAction SilentlyContinue | Select-Object FullName, Mode | Format-Table -AutoSize
+          Get-ChildItem -Path (Join-Path $prefix 'include') -Filter '*r_core*' -Recurse -ErrorAction SilentlyContinue | Select-Object FullName | Format-Table -AutoSize
+
+      - name: Configure Meson
+        shell: powershell
+        run: |
+          $R2V = '${{ env.R2V }}'
+          # Recompute the prefix in the same way the download step did so
+          # Meson gets the actual installation prefix where radare2 files
+          # (include/, lib/) were extracted. This avoids hardcoding a
+          # non-existent subdirectory (radare2-$R2V-w64) which is removed
+          # during extraction.
+          $prefix = 'C:\\radare2'
+          Write-Output "Using radare2 prefix: $prefix"
+          # Meson on Windows expects absolute paths; normalize to forward-slash style
+          $posix = $prefix -replace '\\','/'
+          Write-Output "Passing r2_prefix as: $posix"
+          # Tell Meson where to find radare2 and set install prefix accordingly.
+          # Use the Ninja backend (instead of Visual Studio) so the MSYS2
+          # environment builds with Ninja rather than generating a .sln file.
+          meson setup --reconfigure builddir --backend ninja --prefix="$posix" --buildtype=release -Dr2_prefix="$posix"
+
+      - name: Compile
+        shell: powershell
+        run: |
+          meson compile -C builddir -v
+
+      - name: Package zip artifact
+        if: always()
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Force -Path output
+          $src = ''
+          if (Test-Path builddir/r2mcp.exe) { Copy-Item builddir/r2mcp.exe output/; $src = 'builddir/r2mcp.exe' }
+          if (Test-Path builddir/src/r2mcp.exe) { Copy-Item builddir/src/r2mcp.exe output/; $src = 'builddir/src/r2mcp.exe' }
+          if ($src -eq '') { Write-Output "Warning: r2mcp.exe not found after build" }
+          Compress-Archive -Path output/* -DestinationPath r2mcp-windows.zip -Force
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: r2mcp-windows
+          path: r2mcp-windows.zip
+
+      - name: Create GitHub Release (on tag)
+        id: create_release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.ref_name }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload release asset (on tag)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: r2mcp-windows.zip
+          asset_name: r2mcp-windows.zip
+          asset_content_type: application/zip

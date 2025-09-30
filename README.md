@@ -117,6 +117,8 @@ Note: you will need another LLM agent, such as Claude, Gemini or else to be able
 
 ### Build from Source
 
+#### Linux/macOS
+
 To test the server locally, you can build and install it with make:
 
 ```bash
@@ -125,19 +127,11 @@ make install
 
 This will compile the server and place the `r2mcp` binary in `/usr/local/bin` on macOS.
 
-You can now add the following configuration to your VS Code `mcp.json` as explained above:
+#### Windows
 
-```json
-{
-  "servers": {
-    "r2mcp": {
-      "type": "stdio",
-      "command": "r2mcp",
-      "args": []
-    }
-  },
-  "inputs": []
-}
+For Windows, just use meson and ninja like it's done in the CI:
+
+```cmd
+meson b
+ninja -C b
 ```
-
-**Tip:** So that the client doesn't get confused, it's best to enable one server at a time. You can do this by commenting out the other server in the configuration file.
