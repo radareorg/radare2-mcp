@@ -49,6 +49,7 @@ static const char *r_json_get_str(const RJson *json, const char *key) {
 
 	return field->str_value;
 }
+
 #endif
 
 // JSON-RPC error response builder. Returns heap-allocated JSON string (caller frees).

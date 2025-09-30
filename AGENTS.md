@@ -14,7 +14,7 @@ This document contains repository- and project-specific guidance for editing and
 - `src/r2mcp.h`, `src/tools.h`, `src/readbuffer.h`, `src/prompts.h` - public headers for the modules above.
 
 Coding style and rules (project-specific)
-- Indentation: use TABS for indentation (project convention).
+- Indentation: use **TABS** for indentation (project convention).
 - Function calls: include a space before the parenthesis, e.g. `foo ()`.
 - Always use braces `{}` for conditionals and loops, even if a single statement.
 - `case` labels in `switch` statements must be aligned at the same column as other cases.
