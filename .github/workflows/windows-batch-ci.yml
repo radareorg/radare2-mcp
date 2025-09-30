@@ -1,0 +1,97 @@
+name: windows-batch-ci
+
+on:
+  push:
+    tags:
+      - "[0-9]*"
+  pull_request:
+    branches: [ main ]
+
+env:
+  R2V: 6.0.2
+
+jobs:
+  build-windows-batch:
+    name: Build r2mcp on Windows (Batch Files + MSVC)
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Preconfigure Visual Studio Environment
+        shell: cmd
+        run: |
+          echo Setting up Visual Studio environment...
+          call preconfigure.bat amd64
+
+      - name: Configure radare2 dependencies
+        shell: cmd
+        run: |
+          echo Configuring radare2 dependencies...
+          call configure.bat
+
+      - name: Build r2mcp
+        shell: cmd
+        run: |
+          echo Building r2mcp...
+          call make.bat
+
+      - name: Test executable
+        shell: cmd
+        run: |
+          echo Testing r2mcp executable...
+          if exist src\r2mcp.exe (
+            src\r2mcp.exe -h || echo Help command completed
+            src\r2mcp.exe -t || echo Tools command completed
+          ) else (
+            echo ERROR: r2mcp.exe not found
+            exit /b 1
+          )
+
+      - name: Package Windows binary
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: cmd
+        run: |
+          echo Creating Windows distribution package...
+          if exist r2mcp-*-w64.zip (
+            echo Found distribution zip: r2mcp-*-w64.zip
+            dir r2mcp-*-w64.zip
+          ) else (
+            echo No distribution zip found, creating manual package...
+            mkdir r2mcp-windows-release
+            copy src\r2mcp.exe r2mcp-windows-release\
+            copy README.md r2mcp-windows-release\
+            copy install.bat r2mcp-windows-release\
+            powershell -command "Compress-Archive -Path r2mcp-windows-release -DestinationPath r2mcp-windows-release.zip"
+          )
+
+      - name: Upload Windows binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: r2mcp-windows-batch
+          path: |
+            src/r2mcp.exe
+            r2mcp-*-w64.zip
+            r2mcp-windows-release.zip
+          retention-days: 30
+
+      - name: Create GitHub Release (on tag)
+        id: create_release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.ref_name }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload release asset (on tag)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: r2mcp-*-w64.zip
+          asset_name: r2mcp-${{ github.ref_name }}-windows-x64.zip
+          asset_content_type: application/zip

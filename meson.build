@@ -103,6 +103,11 @@ endif
 c_args = []
 if cc.get_id() == 'gcc' or cc.get_id() == 'clang'
   c_args += ['-Wall', '-Wextra']
+elif cc.get_id() == 'msvc' or cc.get_id() == 'clang-cl'
+  # MSVC-specific flags
+  c_args += ['/W3']  # Warning level 3
+  c_args += ['/wd4996']  # Disable deprecated function warnings
+  c_args += ['/wd4101']  # Disable unreferenced local variable warnings
 endif
 
 srcs = [
@@ -113,10 +118,36 @@ srcs = [
   'src/prompts.c',
 ]
 
+# Windows-specific configuration
+if host_machine.system() == 'windows'
+  # Copy Windows config header
+  configure_file(
+    input: 'config.h.w64',
+    output: 'config.h',
+    copy: true
+  )
+  
+  # Windows-specific link arguments
+  link_args = []
+  if cc.get_id() == 'msvc' or cc.get_id() == 'clang-cl'
+    link_args += ['/SUBSYSTEM:CONSOLE']
+    link_args += ['/DEFAULTLIB:setupapi.lib']
+  endif
+else
+  # Non-Windows: use configure script to generate config.h
+  configure_file(
+    input: 'src/config.h.acr',
+    output: 'config.h',
+    configuration: configuration_data()
+  )
+  link_args = []
+endif
+
 executable(
   'r2mcp',
   srcs,
   dependencies: [r_core_dep],
   c_args: c_args,
+  link_args: link_args,
   install: true,
 )

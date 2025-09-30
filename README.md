@@ -117,6 +117,8 @@ Note: you will need another LLM agent, such as Claude, Gemini or else to be able
 
 ### Build from Source
 
+#### Linux/macOS
+
 To test the server locally, you can build and install it with make:
 
 ```bash
@@ -124,6 +126,26 @@ make install
 ```
 
 This will compile the server and place the `r2mcp` binary in `/usr/local/bin` on macOS.
+
+#### Windows
+
+For Windows, we provide batch files similar to r2frida's approach:
+
+```cmd
+# Set up Visual Studio environment
+preconfigure.bat amd64
+
+# Download and configure radare2 dependencies  
+configure.bat
+
+# Build r2mcp
+make.bat
+
+# Install r2mcp (optional)
+install.bat
+```
+
+See [WINDOWS_BUILD.md](WINDOWS_BUILD.md) for detailed Windows build instructions.
 
 You can now add the following configuration to your VS Code `mcp.json` as explained above:
 
