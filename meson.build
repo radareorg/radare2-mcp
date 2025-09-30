@@ -21,15 +21,11 @@ endif
 if not r_core_dep.found()
   # Try locating radare2 from environment-provided prefixes. This helps CI on
   # Windows where pkg-config may not be installed and CMake lookup may fail.
+  # Allow callers to pass a prefix via the meson option 'r2_prefix'. This is
+  # easier to set from CI (meson setup -Dr2_prefix=...). See meson_options.txt.
   r2_prefixes = []
-  if os.getenv('R2_PREFIX')
-    r2_prefixes += [os.getenv('R2_PREFIX')]
-  endif
-  if os.getenv('RADARE2_PREFIX')
-    r2_prefixes += [os.getenv('RADARE2_PREFIX')]
-  endif
-  if os.getenv('R2_DIR')
-    r2_prefixes += [os.getenv('R2_DIR')]
+  if get_option('r2_prefix') != ''
+    r2_prefixes += [get_option('r2_prefix')]
   endif
 
   foreach p : r2_prefixes
@@ -45,7 +41,7 @@ if not r_core_dep.found()
   endforeach
 
   if not r_core_dep.found()
-    error('Dependency lookup for r_core failed: install radare2 development files or provide pkg-config/cmake paths or set R2_PREFIX/RADARE2_PREFIX/R2_DIR')
+    error('Dependency lookup for r_core failed: install radare2 development files or provide pkg-config/cmake paths or set the meson option -Dr2_prefix=<prefix>')
   endif
 endif
 
