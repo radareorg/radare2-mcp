@@ -83,7 +83,7 @@ jobs:
       - name: Meson configure
         shell: bash
         run: |
-          meson setup builddir --prefix=/mingw64 --buildtype=release -Dr2_prefix=/mingw64 || meson configure builddir
+          meson setup --reconfigure builddir --prefix=/mingw64 --buildtype=release -Dr2_prefix=/mingw64
 
       - name: Build with Meson
         shell: bash

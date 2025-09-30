@@ -75,7 +75,7 @@ jobs:
         shell: bash
         run: |
           # If radare2 was extracted into /mingw64, tell Meson where to find it.
-          meson setup builddir --prefix=/mingw64 --buildtype=release -Dr2_prefix=/mingw64 || meson configure builddir
+          meson setup --reconfigure builddir --prefix=/mingw64 --buildtype=release -Dr2_prefix=/mingw64
 
       - name: Compile
         shell: bash
