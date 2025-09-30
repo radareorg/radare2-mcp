@@ -24,67 +24,36 @@ if not r_core_dep.found()
   # reliably with radare2 release zips on Windows.
   is_windows_like = host_machine.system() == 'windows' or cc.get_id() == 'msvc' or cc.get_id() == 'clang-cl'
 
-  found = false
+  # Simpler, robust Windows behavior mirroring third_party projects:
+  # Try to find r_core by checking a small list of likely library dirs.
   if is_windows_like
-    radare2_prog = find_program('radare2', required: false)
-    radare2_libdir = ''
-    radare2_incdir = ''
-    radare2_plugdir = ''
-    if radare2_prog.found()
-      rlib = run_command(radare2_prog, '-H', 'R2_LIBDIR', check: false)
-      if rlib.returncode() == 0
-        radare2_libdir = rlib.stdout().strip()
-      endif
-      rinc = run_command(radare2_prog, '-H', 'R2_INCDIR', check: false)
-      if rinc.returncode() == 0
-        radare2_incdir = rinc.stdout().strip()
-      endif
-      rplug = run_command(radare2_prog, '-H', 'R2_LIBR_PLUGINS', check: false)
-      if rplug.returncode() == 0
-        radare2_plugdir = rplug.stdout().strip()
-      endif
-    endif
-
-    # Build candidate dirs from discovered locations or provided prefix
-    candidate_dirs = []
-    if radare2_libdir != ''
-      candidate_dirs += [radare2_libdir]
-    endif
+    r2libdirs = []
+    # prefer explicit prefix if given
     if get_option('r2_prefix') != ''
       p = get_option('r2_prefix')
-      candidate_dirs += [ join_paths(p, 'lib'), join_paths(p, 'bin'), join_paths(p, 'radare2', 'lib'), join_paths(p, 'mingw64', 'lib') ]
+      r2libdirs += [ join_paths(p, 'lib'), join_paths(p, 'radare2', 'lib'), join_paths(p, 'bin'), join_paths(p, 'mingw64', 'lib') ]
     endif
-    # Always try the conventional install location used by the CI helper
-    candidate_dirs += [ 'C:\\radare2\\lib', 'C:/radare2/lib' ]
+    # repository-local radare2 (used by some subprojects) and conventional path
+    r2libdirs += [ meson.current_source_dir() + '/radare2/lib', 'C:/radare2/lib', 'C:\\radare2\\lib' ]
 
-    # include dirs corresponding to candidate dirs (best-effort)
-    incdirs = []
-    if radare2_incdir != ''
-      incdirs += [ radare2_incdir ]
-    endif
-    if get_option('r2_prefix') != ''
-      p = get_option('r2_prefix')
-      incdirs += [ join_paths(p, 'include'), join_paths(p, 'include', 'radare2'), join_paths(p, 'include', 'libr') ]
+    # try to find r_core in the candidate dirs (MSVC import libs or mingw import libs)
+    rcore_lib = cc.find_library('r_core', dirs: r2libdirs, required: false)
+    if not rcore_lib.found()
+      rcore_lib = cc.find_library('libr_core', dirs: r2libdirs, required: false)
     endif
 
-    candidate_names = [ 'r_core', 'r_core-6', 'r_core6', 'r_core64', 'libr_core' ]
-    foreach name : candidate_names
-      foreach d : candidate_dirs
-        rcore_lib = cc.find_library(name, dirs: [d], required: false)
-        if rcore_lib.found()
-          rcore_inc = include_directories(incdirs + [ join_paths(d, '..', 'include', 'libr'), join_paths(d, '..', 'include') ])
-          r_core_dep = declare_dependency(link_with: rcore_lib, include_directories: rcore_inc)
-          found = true
-          break
-        endif
-      endforeach
-      if found
-        break
+    if rcore_lib.found()
+      # basic include candidates
+      incdirs = []
+      if get_option('r2_prefix') != ''
+        p = get_option('r2_prefix')
+        incdirs += [ join_paths(p, 'include', 'libr'), join_paths(p, 'include') ]
       endif
-    endforeach
-
-    if not found
-      error('Windows dependency lookup for r_core failed: ensure radare2 is installed and pass -Dr2_prefix=<prefix> or make the `radare2` executable available on PATH')
+      incdirs += [ meson.current_source_dir() + '/radare2/include/libr' ]
+      rcore_inc = include_directories(incdirs)
+      r_core_dep = declare_dependency(link_with: rcore_lib, include_directories: rcore_inc)
+    else
+      error('Windows dependency lookup for r_core failed: ensure radare2 is installed and pass -Dr2_prefix=<prefix> (e.g. C:/radare2)')
     endif
   else
     # Non-Windows: try locating radare2 from environment-provided prefixes. This
