@@ -102,7 +102,9 @@ jobs:
           $posix = $prefix -replace '\\','/'
           Write-Output "Passing r2_prefix as: $posix"
           # Tell Meson where to find radare2 and set install prefix accordingly.
-          meson setup --reconfigure builddir --backend vs --prefix="$posix" --buildtype=release -Dr2_prefix="$posix"
+          # Use the Ninja backend (instead of Visual Studio) so the MSYS2
+          # environment builds with Ninja rather than generating a .sln file.
+          meson setup --reconfigure builddir --backend ninja --prefix="$posix" --buildtype=release -Dr2_prefix="$posix"
 
       - name: Compile
         shell: powershell
