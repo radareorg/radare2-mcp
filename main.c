@@ -36,6 +36,7 @@ void r2mcp_help(void) {
 		" -u [url]   use remote r2 webserver base URL (HTTP r2pipe client mode)\n"
 		" -l [file]  append debug logs to this file\n"
 		" -s [dir]   enable sandbox mode; only allow files under [dir]\n"
+		" -e [tool]  enable only the specified tool (repeatable)\n"
 		" -h         show this help\n"
 		" -r         enable the dangerous runCommand tool\n"
 		" -m         expose minimum amount of tools\n"
@@ -62,6 +63,8 @@ int r2mcp_main(int argc, const char **argv) {
 	bool enable_run_command_tool = false;
 	bool list_tools = false;
 	RList *cmds = r_list_new ();
+	/* Whitelist of enabled tool names (populated via repeated -e flags) */
+	RList *enabled_tools = r_list_newf (free);
 	bool loadplugins = true;
 	const char *deco = NULL;
 	bool http_mode = false;
@@ -71,7 +74,7 @@ int r2mcp_main(int argc, const char **argv) {
 	char *logfile = NULL;
 	bool ignore_analysis_level = false;
 	RGetopt opt;
-	r_getopt_init(&opt, argc, argv, "hmvpd:nc:u:l:s:rit");
+	r_getopt_init(&opt, argc, argv, "hmvpd:nc:u:l:s:rite:");
 	int c;
 	while ((c = r_getopt_next (&opt)) != -1) {
 		switch (c) {
@@ -116,6 +119,11 @@ int r2mcp_main(int argc, const char **argv) {
 		case 't':
 			list_tools = true;
 			break;
+		case 'e':
+			if (opt.arg) {
+				r_list_append (enabled_tools, strdup (opt.arg));
+			}
+			break;
 		default:
 			R_LOG_ERROR ("Invalid flag -%c", c);
 			return 1;
@@ -138,7 +146,8 @@ int r2mcp_main(int argc, const char **argv) {
 		.logfile = logfile,
 		.ignore_analysis_level = ignore_analysis_level,
 		.client_capabilities = NULL,
-		.client_info = NULL
+		.client_info = NULL,
+		.enabled_tools = enabled_tools,
 	};
 
 	/* Enable logging */
@@ -195,6 +204,9 @@ int r2mcp_main(int argc, const char **argv) {
 	free (ss.baseurl);
 	free (ss.sandbox);
 	free (ss.logfile);
+	if (ss.enabled_tools) {
+		r_list_free (ss.enabled_tools);
+	}
 	(void)0;
 	return 0;
 }

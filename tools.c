@@ -3,6 +3,23 @@
 #include "tools.h"
 #include "utils.inc.c" // bring in shared helpers like jsonrpc_tooltext_response
 
+// Check an optional whitelist of enabled tool names. If ss->enabled_tools is
+// NULL, all tools are considered allowed. Otherwise only names present in the
+// list are allowed.
+static bool tool_allowed_by_whitelist(const ServerState *ss, const char *name) {
+	if (!ss || !ss->enabled_tools) {
+		return true;
+	}
+	RListIter *it;
+	const char *s;
+	r_list_foreach (ss->enabled_tools, it, s) {
+		if (!strcmp (s, name)) {
+			return true;
+		}
+	}
+	return false;
+}
+
 static inline ToolMode current_mode(const ServerState *ss) {
 	if (ss->http_mode) {
 		return TOOL_MODE_HTTP;
@@ -128,7 +145,7 @@ static RList *tools_filtered_for_mode(const ServerState *ss) {
 	RListIter *it;
 	ToolSpec *t;
 	r_list_foreach (ss->tools, it, t) {
-		if (tool_matches_mode (t, mode)) {
+		if (tool_matches_mode (t, mode) && tool_allowed_by_whitelist (ss, t->name)) {
 			r_list_append (out, t); // reference only
 		}
 	}
@@ -147,6 +164,9 @@ bool tools_is_tool_allowed(const ServerState *ss, const char *name) {
 	ToolSpec *t;
 	r_list_foreach (ss->tools, it, t) {
 		if (!strcmp (t->name, name)) {
+			if (!tool_allowed_by_whitelist (ss, name)) {
+				return false;
+			}
 			return tool_matches_mode (t, mode);
 		}
 	}

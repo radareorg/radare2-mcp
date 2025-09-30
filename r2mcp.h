@@ -50,6 +50,12 @@ typedef struct {
 	RadareState rstate;
 	RStrBuf *sb;
 	RList *tools; // registry of ToolSpec* (RList*), opaque here
+	/* Optional whitelist of tool names enabled via command line -e options.
+	 * When non-NULL, only tools whose name appears in this list will be
+	 * registered in the runtime tools registry. Items are heap-allocated
+	 * strings and the list should be created with `r_list_newf(free)`.
+	 */
+	RList *enabled_tools;
 	void *prompts; // registry of PromptSpec* (RList*), opaque here
 } ServerState;
 
