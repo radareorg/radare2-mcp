@@ -4,14 +4,16 @@
 #include <string.h>
 #include <errno.h>
 
-#ifdef _WIN32
+#if defined(R2__WINDOWS__)
 #include <windows.h>
 #include <io.h>
 #include <fcntl.h>
-#else
+#elif defined(R2__UNIX__)
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#else
+#error please define R2__WINDOWS__ or R2__UNIX__ for platform detection
 #endif
 
 /**
@@ -29,7 +31,7 @@ char *curl_post_capture(const char *url, const char *msg, int *exit_code_out) {
     if (exit_code_out) *exit_code_out = -1;
     if (!url || !msg) { errno = EINVAL; return NULL; }
 
-#ifdef _WIN32
+#if defined(R2__WINDOWS__)
     SECURITY_ATTRIBUTES sa;
     sa.nLength = sizeof (SECURITY_ATTRIBUTES);
     sa.lpSecurityDescriptor = NULL;
@@ -129,7 +131,7 @@ char *curl_post_capture(const char *url, const char *msg, int *exit_code_out) {
     if (!buf) return NULL;
     buf[len] = '\0';
     return buf;
-#else
+#elif defined(R2__UNIX__)
     int pipefd[2];
     if (pipe (pipefd) == -1) {
         return NULL;
@@ -229,5 +231,7 @@ char *curl_post_capture(const char *url, const char *msg, int *exit_code_out) {
     // NUL-terminate (even if empty)
     buf[len] = '\0';
     return buf;
+#else
+#error unsupported platform for curl_post_capture
 #endif
 }
