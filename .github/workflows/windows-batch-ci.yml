@@ -19,21 +19,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Preconfigure Visual Studio Environment
+      - name: Build r2mcp (Windows Batch)
         shell: cmd
         run: |
           echo Setting up Visual Studio environment...
           call preconfigure.bat amd64
-
-      - name: Configure radare2 dependencies
-        shell: cmd
-        run: |
+          
           echo Configuring radare2 dependencies...
           call configure.bat
-
-      - name: Build r2mcp
-        shell: cmd
-        run: |
+          
           echo Building r2mcp...
           call make.bat
 
@@ -41,6 +35,7 @@ jobs:
         shell: cmd
         run: |
           echo Testing r2mcp executable...
+          call preconfigure.bat amd64
           if exist src\r2mcp.exe (
             src\r2mcp.exe -h || echo Help command completed
             src\r2mcp.exe -t || echo Tools command completed
@@ -54,6 +49,7 @@ jobs:
         shell: cmd
         run: |
           echo Creating Windows distribution package...
+          call preconfigure.bat amd64
           if exist r2mcp-*-w64.zip (
             echo Found distribution zip: r2mcp-*-w64.zip
             dir r2mcp-*-w64.zip

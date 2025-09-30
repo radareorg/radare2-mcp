@@ -4,10 +4,15 @@ set r2mcp_version=1.2.0
 if "%PLATFORM%" == "x64" (set target_arch=x86_64) else (set target_arch=x86)
 set DEBUG=/O2
 
-cl
+echo Testing Visual Studio compiler...
+cl /? > NUL 2> NUL
 if not %ERRORLEVEL%==0 (
+	echo ERROR: Visual Studio compiler not found
 	echo VSARCH not set, please run preconfigure.bat
+	echo Current PATH: %PATH%
 	exit /b 1
+) else (
+	echo Visual Studio compiler found
 )
 if exist radare2 (
 	set R2_BASE=%CD%\radare2
@@ -27,8 +32,11 @@ for /f %%i in ('radare2 -H R2_USER_PLUGINS') do set R2_PLUGDIR=%%i
 
 echo Using R2_BASE: %R2_BASE%
 echo Radare2 Version: %R2V%
+echo R2_PLUGDIR: %R2_PLUGDIR%
 set R2_INC=/I"%R2_BASE%\include" /I"%R2_BASE%\include\libr" /I"%R2_BASE%\include\libr\sdb"
 set R2=%R2_BASE%\bin\radare2.exe
+echo R2_INC: %R2_INC%
+echo R2: %R2%
 for %%i in (%*) do (
 	if "%%i"=="debug" (set DEBUG=/Z7)
 	if "%%i"=="install" (set INSTALL=1)

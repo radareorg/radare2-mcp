@@ -67,39 +67,49 @@ ECHO VSARCH is set to: %VSARCH%
 echo === Finding Visual Studio...
 cl --help > NUL 2> NUL
 if %ERRORLEVEL% == 0 (
-  echo FOUND
+  echo FOUND - cl.exe already in PATH
 ) else (
-  if EXIST "C:\Program Files\Microsoft Visual Studio\2022\Enterprise" (
+  echo cl.exe not found, searching for Visual Studio installations...
+  
+  REM Try GitHub Actions default VS 2022 location first
+  if EXIST "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" (
     echo "Found 2022 Enterprise edition"
-    pushd "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\"
-    vcvarsall.bat %VSARCH%
-    popd
+    call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" %VSARCH%
   ) else (
-    if EXIST "C:\Program Files\Microsoft Visual Studio\2022\Community" (
+    if EXIST "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat" (
       echo "Found 2022 Community edition"
-      pushd "C:\Program Files\Microsoft Visual Studio\"
-      cd "2022\Community\VC\Auxiliary\Build\"
-      vcvarsall.bat %VSARCH%
-      popd
+      call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat" %VSARCH%
     ) else (
-      if EXIST "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community" (
-        echo "Found 2019 community edition"
-        call "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Auxiliary\Build\vcvarsall.bat" %VSARCH%
+      if EXIST "C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Auxiliary\Build\vcvarsall.bat" (
+        echo "Found 2022 Professional edition"
+        call "C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Auxiliary\Build\vcvarsall.bat" %VSARCH%
       ) else (
-        if EXIST "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" (
-          echo "Found 2019 Enterprise edition"
-          call "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" %VSARCH%
+        if EXIST "C:\Program Files\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvarsall.bat" (
+          echo "Found 2022 BuildTools"
+          call "C:\Program Files\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvarsall.bat" %VSARCH%
         ) else (
-          if EXIST "C:\Program Files (x86)\Microsoft Visual Studio\2019\Professional\VC\Auxiliary\Build\vcvarsall.bat" (
-            echo "Found 2019 Professional edition"
-            call "C:\Program Files (x86)\Microsoft Visual Studio\2019\Professional\VC\Auxiliary\Build\vcvarsall.bat" %VSARCH%
+          REM Try VS 2019 locations
+          if EXIST "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Auxiliary\Build\vcvarsall.bat" (
+            echo "Found 2019 Community edition"
+            call "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Auxiliary\Build\vcvarsall.bat" %VSARCH%
           ) else (
-            if EXIST "C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\VC\Auxiliary\Build\vcvarsall.bat" (
-              echo "Found 2019 BuildTools"
-              call "C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\VC\Auxiliary\Build\vcvarsall.bat" %VSARCH%
+            if EXIST "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" (
+              echo "Found 2019 Enterprise edition"
+              call "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" %VSARCH%
             ) else (
-              echo "Not Found"
-              exit /b 1
+              if EXIST "C:\Program Files (x86)\Microsoft Visual Studio\2019\Professional\VC\Auxiliary\Build\vcvarsall.bat" (
+                echo "Found 2019 Professional edition"
+                call "C:\Program Files (x86)\Microsoft Visual Studio\2019\Professional\VC\Auxiliary\Build\vcvarsall.bat" %VSARCH%
+              ) else (
+                if EXIST "C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\VC\Auxiliary\Build\vcvarsall.bat" (
+                  echo "Found 2019 BuildTools"
+                  call "C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\VC\Auxiliary\Build\vcvarsall.bat" %VSARCH%
+                ) else (
+                  echo "ERROR: Visual Studio not found in any expected location"
+                  echo "Please install Visual Studio 2019 or 2022 with C++ build tools"
+                  exit /b 1
+                )
+              )
             )
           )
         )
