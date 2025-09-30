@@ -83,3 +83,8 @@ void r2mcp_log_pub(ServerState *ss, const char *msg);
 // internal static helpers so we keep the original separation.
 bool r2mcp_open_file(ServerState *ss, const char *filepath);
 char *r2mcp_analyze(ServerState *ss, int level);
+
+// Run a small domain-specific language (DSL) used for testing tools from the
+// command-line. The DSL describes a sequence of tool calls with arguments and
+// prints their results. Returns 0 on success, non-zero on failure.
+int r2mcp_run_dsl_tests(ServerState *ss, const char *dsl);
