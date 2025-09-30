@@ -7,6 +7,9 @@ on:
   pull_request:
     branches: [ main ]
 
+env:
+  R2V: 6.0.2
+
 jobs:
   build:
     name: Build r2mcp on Windows (MSYS2 + Meson)
@@ -33,10 +36,46 @@ jobs:
           python -m pip install --upgrade pip
           pip install meson ninja
 
+      - name: Download radare2 release (Windows zip)
+        shell: powershell
+        run: |
+          $R2V = '${{ env.R2V }}'
+          $candidates = @(
+            "radare2-$R2V-windows-x64.zip",
+            "radare2-$R2V-windows.zip",
+            "radare2-$R2V-msys2.zip",
+            "radare2-$R2V-mingw64.zip"
+          )
+          $dest = "$env:TEMP\radare2.zip"
+          $found = $false
+          foreach ($n in $candidates) {
+            $url = "https://github.com/radareorg/radare2/releases/download/$R2V/$n"
+            Write-Output "Trying $url"
+            try {
+              Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing -ErrorAction Stop
+              $found = $true
+              Write-Output "Downloaded $n"
+              break
+            } catch {
+              Write-Output "Not found: $n"
+            }
+          }
+          if (-not $found) {
+            Write-Output "No radare2 release zip found for $R2V; continuing without it."
+            exit 0
+          }
+          # Prefer installing into MSYS2 prefix if it exists
+          $prefix = 'C:\\radare2'
+          if (Test-Path 'C:\\msys64\\mingw64') { $prefix = 'C:\\msys64\\mingw64' }
+          if (-not (Test-Path $prefix)) { New-Item -ItemType Directory -Path $prefix -Force | Out-Null }
+          Expand-Archive -Path $dest -DestinationPath $prefix -Force
+          Write-Output "Extracted radare2 to $prefix"
+
       - name: Configure Meson
         shell: bash
         run: |
-          meson setup builddir --prefix=/mingw64 --buildtype=release
+          # If radare2 was extracted into /mingw64, tell Meson where to find it.
+          meson setup builddir --prefix=/mingw64 --buildtype=release -Dr2_prefix=/mingw64 || meson configure builddir
 
       - name: Compile
         shell: bash
