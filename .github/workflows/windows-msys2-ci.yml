@@ -64,10 +64,10 @@ jobs:
           )
           foreach ($d in $candidates) {
             if (Test-Path $d) {
-              Write-Host "Contents of $d:"
+              Write-Host "Contents of ${d}:"
               Get-ChildItem -Path $d -Recurse -Depth 1 | Select-Object FullName, Mode, Length | Format-Table -AutoSize
             } else {
-              Write-Host "Not found: $d"
+              Write-Host "Not found: ${d}"
             }
           }
 

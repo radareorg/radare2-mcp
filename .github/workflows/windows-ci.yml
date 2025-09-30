@@ -74,10 +74,10 @@ jobs:
           )
           foreach ($d in $candidates) {
             if (Test-Path $d) {
-              Write-Output "Contents of $d:"
+              Write-Output "Contents of ${d}:"
               Get-ChildItem -Path $d -Recurse -Depth 1 | Select-Object FullName, Mode, Length | Format-Table -AutoSize
             } else {
-              Write-Output "Not found: $d"
+              Write-Output "Not found: ${d}"
             }
           }
           Write-Output "Looking for likely radare2 artifacts (libs/dlls/headers):"
