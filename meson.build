@@ -31,10 +31,10 @@ if not r_core_dep.found()
     # prefer explicit prefix if given
     if get_option('r2_prefix') != ''
       p = get_option('r2_prefix')
-      r2libdirs += [ join_paths(p, 'lib'), join_paths(p, 'radare2', 'lib'), join_paths(p, 'bin'), join_paths(p, 'mingw64', 'lib') ]
+      r2libdirs += [ join_paths(p, 'lib'), join_paths(p, 'radare2', 'lib') ]
     endif
     # repository-local radare2 (used by some subprojects) and conventional path
-    r2libdirs += [ meson.current_source_dir() + '/radare2/lib', 'C:/radare2/lib', 'C:\\radare2\\lib' ]
+    r2libdirs += [ meson.current_source_dir() + '/radare2/lib', 'C:/radare2/lib', './radare2/lib' ]
 
     # try to find r_core in the candidate dirs (MSVC import libs or mingw import libs)
     rcore_lib = cc.find_library('r_core', dirs: r2libdirs, required: false)

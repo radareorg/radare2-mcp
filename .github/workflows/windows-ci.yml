@@ -20,40 +20,36 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up MSYS2 (MINGW64)
-        uses: msys2/setup-msys2@v2
+      - name: Set up Python (for Meson)
+        uses: actions/setup-python@v4
         with:
-          msystem: MINGW64
-          update: true
-          install: |
-            mingw-w64-x86_64-toolchain
-            mingw-w64-x86_64-pkg-config
-            mingw-w64-x86_64-ninja
+          python-version: '3.x'
 
-      - name: Install Python tools and Meson
-        shell: bash
+      - name: Install Meson
+        shell: powershell
         run: |
           python -m pip install --upgrade pip
-          pip install meson ninja
+          pip install meson
 
-      - name: Download radare2 release (Windows zip)
-         shell: powershell
-         run: |
-           $R2V = '${{ env.R2V }}'
-           $url = "https://github.com/radareorg/radare2/releases/download/$R2V/radare2-$R2V-w64.zip"
-           $dest = "$env:TEMP\radare2.zip"
-           Write-Output "Downloading $url"
-           Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing
-           # Prefer installing into MSYS2 prefix if it exists
-           $prefix = 'C:\\radare2'
-           if (Test-Path 'C:\\msys64\\mingw64') { $prefix = 'C:\\msys64\\mingw64' }
-           if (-not (Test-Path $prefix)) { New-Item -ItemType Directory -Path $prefix -Force | Out-Null }
-           Expand-Archive -Path $dest -DestinationPath $prefix -Force
-           Move-Item -Path "$prefix\radare2-$R2V-w64\*" -Destination $prefix -Force
-           Remove-Item -Path "$prefix\radare2-$R2V-w64" -Recurse -Force
-           Write-Output "Extracted radare2 contents to $prefix"
-           Write-Output "Listing top-level contents of $prefix"
-           Get-ChildItem -Path $prefix -Depth 2 | Select-Object -First 200
+      - name: Download and extract radare2 release
+        shell: powershell
+        run: |
+          $R2V = '${{ env.R2V }}'
+          $url = "https://github.com/radareorg/radare2/releases/download/$R2V/radare2-$R2V-w64.zip"
+          $dest = "$env:TEMP\radare2.zip"
+          Write-Output "Downloading $url"
+          Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing
+          $prefix = 'C:\\radare2'
+          if (Test-Path $prefix) { Remove-Item -Path $prefix -Recurse -Force }
+          New-Item -ItemType Directory -Force -Path $prefix | Out-Null
+          Expand-Archive -Path $dest -DestinationPath $prefix -Force
+          # Some zips include a top-level folder; move its contents up if needed
+          $inner = Get-ChildItem -Path $prefix | Where-Object { $_.PSIsContainer } | Select-Object -First 1
+          if ($inner -and (Get-ChildItem -Path $inner.FullName | Measure-Object).Count -gt 0) {
+            Get-ChildItem -Path $inner.FullName -Force | Move-Item -Destination $prefix -Force
+            Remove-Item -Path $inner.FullName -Recurse -Force
+          }
+          Write-Output "Extracted radare2 contents to $prefix"
 
       - name: Configure Meson
         shell: powershell
@@ -67,10 +63,10 @@ jobs:
           $prefix = 'C:\\radare2'
           Write-Output "Using radare2 prefix: $prefix"
           # Tell Meson where to find radare2 and set install prefix accordingly.
-          meson setup --reconfigure builddir --prefix=$prefix --buildtype=release -Dr2_prefix=$prefix
+          meson setup --reconfigure builddir --backend vs --prefix=$prefix --buildtype=release -Dr2_prefix=$prefix
 
       - name: Compile
-        shell: bash
+        shell: powershell
         run: |
           meson compile -C builddir -v
 
