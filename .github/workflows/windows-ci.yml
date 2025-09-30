@@ -55,7 +55,7 @@ jobs:
           Compress-Archive -Path output/* -DestinationPath r2mcp-windows.zip -Force
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: r2mcp-windows
           path: r2mcp-windows.zip
@@ -79,4 +79,3 @@ jobs:
           asset_path: r2mcp-windows.zip
           asset_name: r2mcp-windows.zip
           asset_content_type: application/zip
-

@@ -72,7 +72,7 @@ jobs:
           powershell.exe -Command "Compress-Archive -Path release/* -DestinationPath r2mcp-windows-msys2.zip -Force"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: r2mcp-windows-msys2
           path: r2mcp-windows-msys2.zip
@@ -96,4 +96,3 @@ jobs:
           asset_path: r2mcp-windows-msys2.zip
           asset_name: r2mcp-windows-msys2.zip
           asset_content_type: application/zip
-
