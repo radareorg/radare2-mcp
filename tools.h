@@ -38,3 +38,7 @@ bool tools_is_tool_allowed(const ServerState *ss, const char *name);
 // a JSON error result if the tool is unavailable or arguments are invalid.
 // The returned string must be freed by the caller.
 char *tools_call(ServerState *ss, const char *tool_name, RJson *args);
+
+// Print a human friendly table of available tools for the current mode
+// Columns: name | mini-mode (yes/no) | description
+void tools_print_table(const ServerState *ss);

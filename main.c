@@ -39,6 +39,7 @@ void r2mcp_help(void) {
 		" -h         show this help\n"
 		" -r         enable the dangerous runCommand tool\n"
 		" -m         expose minimum amount of tools\n"
+		" -t         list available tools and exit\n"
 		" -p         permissive tools: allow calling non-listed tools\n"
 		" -n         do not load any plugin or radare2rc\n"
 		" -i         ignore analysis level specified in analyze calls\n"
@@ -59,6 +60,7 @@ int main(int argc, const char **argv) {
 int r2mcp_main(int argc, const char **argv) {
 	bool minimode = false;
 	bool enable_run_command_tool = false;
+	bool list_tools = false;
 	RList *cmds = r_list_new ();
 	bool loadplugins = true;
 	const char *deco = NULL;
@@ -69,7 +71,7 @@ int r2mcp_main(int argc, const char **argv) {
 	char *logfile = NULL;
 	bool ignore_analysis_level = false;
 	RGetopt opt;
-	r_getopt_init(&opt, argc, argv, "hmvpd:nc:u:l:s:ri");
+	r_getopt_init(&opt, argc, argv, "hmvpd:nc:u:l:s:rit");
 	int c;
 	while ((c = r_getopt_next (&opt)) != -1) {
 		switch (c) {
@@ -111,8 +113,11 @@ int r2mcp_main(int argc, const char **argv) {
 		case 'i':
 			ignore_analysis_level = true;
 			break;
+		case 't':
+			list_tools = true;
+			break;
 		default:
-			eprintf ("Invalid flag -%c\n", c);
+			R_LOG_ERROR ("Invalid flag -%c", c);
 			return 1;
 		}
 	}
@@ -143,6 +148,11 @@ int r2mcp_main(int argc, const char **argv) {
 
 	/* Initialize registries */
 	tools_registry_init (&ss);
+	if (list_tools) {
+		/* Print tools and exit early */
+		tools_print_table (&ss);
+		return 0;
+	}
 	prompts_registry_init (&ss);
 
 	/* Initialize r2 (unless running in HTTP client mode) */

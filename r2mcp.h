@@ -49,7 +49,7 @@ typedef struct {
 	const RJson *client_info;
 	RadareState rstate;
 	RStrBuf *sb;
-	void *tools; // registry of ToolSpec* (RList*), opaque here
+	RList *tools; // registry of ToolSpec* (RList*), opaque here
 	void *prompts; // registry of PromptSpec* (RList*), opaque here
 } ServerState;
 
