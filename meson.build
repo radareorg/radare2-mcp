@@ -39,13 +39,21 @@ if not r_core_dep.found()
       join_paths(p, 'radare2', 'include'),
       join_paths(p, 'include', 'radare2'),
     ]
-    # Try to find the core library in any of these lib dirs.
-    rcore_lib = cc.find_library('r_core', dirs: libdirs, required: false)
-    if rcore_lib.found()
-      rcore_inc = include_directories(incdirs)
-      r_core_dep = declare_dependency(link_with: rcore_lib, include_directories: rcore_inc)
-      break
-    endif
+    # Try to find the core library in any of these lib dirs. Some radare2
+    # releases and Windows installers place libraries in `bin` or use
+    # slightly different names (version suffixes). Try several common
+    # candidate names so Meson can locate the import library on MSVC or
+    # the shared object/dll on mingw.
+    extra_libdirs = libdirs + [ join_paths(p, 'bin') ]
+    candidate_names = [ 'r_core', 'r_core-6', 'r_core6', 'r_core64', 'libr_core' ]
+    foreach name : candidate_names
+      rcore_lib = cc.find_library(name, dirs: extra_libdirs, required: false)
+      if rcore_lib.found()
+        rcore_inc = include_directories(incdirs + [ join_paths(p, 'include', 'libr') ])
+        r_core_dep = declare_dependency(link_with: rcore_lib, include_directories: rcore_inc)
+        break
+      endif
+    endforeach
   endforeach
 
   if not r_core_dep.found()
