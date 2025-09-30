@@ -230,26 +230,26 @@ char *tools_build_catalog_json(const ServerState *ss, const char *cursor, int pa
 
 void tools_print_table(const ServerState *ss) {
 	if (!ss || !ss->tools) {
-		eprintf("No tools registered.\n");
+		R_LOG_ERROR ("No tools registered");
 		return;
 	}
 
 	RTable *table = r_table_new ("tools");
 	if (!table) {
-		eprintf ("Failed to allocate table\n");
+		R_LOG_ERROR ("Failed to allocate table");
 		return;
 	}
 
 	RTableColumnType *s = r_table_type ("string");
 	if (!s) {
-		eprintf ("Table string type unavailable\n");
+		R_LOG_WARN ("Table string type unavailable");
 		r_table_free (table);
 		return;
 	}
 
-		r_table_add_column (table, s, "name", 0);
-		r_table_add_column (table, s, "modes", 0);
-		r_table_add_column (table, s, "description", 0);
+	r_table_add_column (table, s, "name", 0);
+	r_table_add_column (table, s, "modes", 0);
+	r_table_add_column (table, s, "description", 0);
 
 	RListIter *it;
 	ToolSpec *t;
@@ -267,7 +267,7 @@ void tools_print_table(const ServerState *ss) {
 
 	char *table_str = r_table_tostring (table);
 	if (table_str) {
-		eprintf ("%s\n", table_str);
+		printf ("%s\n", table_str);
 		free (table_str);
 	}
 	r_table_free (table);
