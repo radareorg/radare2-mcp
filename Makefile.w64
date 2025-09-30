@@ -1,0 +1,142 @@
+# Windows-specific Makefile for r2mcp
+# This Makefile uses MSVC compiler (cl.exe) and follows the r2frida pattern
+
+CC = cl
+CFLAGS = /nologo /MT /Gy /O2 /Wall
+LDFLAGS = /nologo
+TARGET = r2mcp.exe
+R2MCP_VERSION = 1.2.0
+
+# Source files
+SRC = src/main.c src/r2mcp.c src/readbuffer.c src/tools.c src/prompts.c
+OBJS = src/main.obj src/r2mcp.obj src/readbuffer.obj src/tools.obj src/prompts.obj
+
+# Include files that are included into other source files
+INC = src/utils.inc.c src/r2api.inc.c
+
+# Detect architecture
+ifeq ($(PROCESSOR_ARCHITECTURE),AMD64)
+    PLATFORM = x64
+    TARGET_ARCH = x86_64
+else
+    PLATFORM = x86
+    TARGET_ARCH = x86
+endif
+
+# Set up radare2 paths
+R2_BASE ?= C:\radare2
+ifeq ($(wildcard radare2),)
+    ifeq ($(wildcard $(R2_BASE)),)
+        $(error ERROR: Cannot find radare2 in CWD or $(R2_BASE))
+    endif
+else
+    R2_BASE = $(CURDIR)\radare2
+endif
+
+R2_INC = /I"$(R2_BASE)\include" /I"$(R2_BASE)\include\libr" /I"$(R2_BASE)\include\libr\sdb"
+R2_LIB = "$(R2_BASE)\lib\*.lib"
+
+# Get radare2 version
+R2V := $(shell "$(R2_BASE)\bin\radare2.exe" -qv 2>nul)
+
+# Compiler flags
+CFLAGS += /DR2MCP_VERSION_STRING="\"$(R2MCP_VERSION)\""
+CFLAGS += $(R2_INC)
+CFLAGS += /I"src"
+
+# Linker flags
+LDFLAGS += /defaultlib:setupapi.lib
+
+.PHONY: all clean check_deps help install uninstall user-install user-uninstall debug release
+
+all: check_deps $(TARGET)
+
+check_deps:
+	@echo Checking dependencies...
+	@if not exist "$(R2_BASE)\bin\radare2.exe" (echo ERROR: radare2 not found at $(R2_BASE) && exit /b 1)
+	@echo Using R2_BASE: $(R2_BASE)
+	@echo Radare2 Version: $(R2V)
+	@echo Platform: $(PLATFORM)
+	@echo Target Architecture: $(TARGET_ARCH)
+
+$(TARGET): config.h $(OBJS) $(INC)
+	@echo Building R2 MCP server...
+	$(CC) $(CFLAGS) -o $@ $(OBJS) $(R2_LIB) $(LDFLAGS)
+	@echo Server built successfully.
+
+config.h: config.h.w64
+	@echo Copying Windows configuration header...
+	copy /y config.h.w64 config.h
+
+src/%.obj: src/%.c config.h
+	@echo Compiling $<...
+	$(CC) $(CFLAGS) /c $< /Fo$@
+
+clean:
+	@echo Cleaning build artifacts...
+	del /q $(OBJS) 2>nul || echo No object files to clean
+	del /q $(TARGET) 2>nul || echo No target to clean
+	del /q config.h 2>nul || echo No config.h to clean
+	del /q r2mcp-*-w64.zip 2>nul || echo No zip files to clean
+	rmdir /s /q r2mcp-*-w64 2>nul || echo No distribution directory to clean
+
+debug: CFLAGS := $(subst /O2,/Z7,$(CFLAGS))
+debug: $(TARGET)
+
+release: $(TARGET)
+
+install: all
+	@echo Installing r2mcp to $(R2_BASE)\bin...
+	copy $(TARGET) "$(R2_BASE)\bin\$(TARGET)"
+
+uninstall:
+	@echo Uninstalling r2mcp from $(R2_BASE)\bin...
+	del "$(R2_BASE)\bin\$(TARGET)" 2>nul || echo r2mcp not found in $(R2_BASE)\bin
+
+user-install: all
+	@echo Installing r2mcp to user directory...
+	@for /f %%i in ('"$(R2_BASE)\bin\radare2.exe" -H R2_USER_PLUGINS') do set R2_PLUGDIR=%%i
+	@if not defined R2_PLUGDIR (echo ERROR: Cannot determine R2_USER_PLUGINS directory && exit /b 1)
+	@echo Installing to %R2_PLUGDIR%...
+	copy $(TARGET) "%R2_PLUGDIR%\$(TARGET)"
+
+user-uninstall:
+	@echo Uninstalling r2mcp from user directory...
+	@for /f %%i in ('"$(R2_BASE)\bin\radare2.exe" -H R2_USER_PLUGINS') do set R2_PLUGDIR=%%i
+	@if not defined R2_PLUGDIR (echo ERROR: Cannot determine R2_USER_PLUGINS directory && exit /b 1)
+	del "%R2_PLUGDIR%\$(TARGET)" 2>nul || echo r2mcp not found in %R2_PLUGDIR%
+
+dist: $(TARGET)
+	@echo Creating distribution package...
+	@if exist r2mcp-$(R2V)-w64.zip del r2mcp-$(R2V)-w64.zip
+	@if exist r2mcp-$(R2V)-w64 rmdir /s /q r2mcp-$(R2V)-w64
+	@mkdir r2mcp-$(R2V)-w64
+	@copy README.md r2mcp-$(R2V)-w64\
+	@copy $(TARGET) r2mcp-$(R2V)-w64\
+	@copy install.bat r2mcp-$(R2V)-w64\
+	@powershell -command "Compress-Archive -Path r2mcp-$(R2V)-w64 -DestinationPath r2mcp-$(R2V)-w64.zip"
+	@echo Distribution package created: r2mcp-$(R2V)-w64.zip
+
+help:
+	@echo Available targets:
+	@echo   all            - Build the server (default)
+	@echo   check_deps     - Check for required dependencies
+	@echo   clean          - Remove built binaries
+	@echo   debug          - Build with debug symbols
+	@echo   release         - Build release version
+	@echo   install        - Install the server to radare2 bin directory
+	@echo   uninstall       - Remove the server from radare2 bin directory
+	@echo   user-install    - Install the server to user plugin directory
+	@echo   user-uninstall  - Remove the server from user plugin directory
+	@echo   dist            - Create distribution zip package
+	@echo   help            - Display this help message
+	@echo.
+	@echo Usage: nmake /f Makefile.w64 [target]
+	@echo.
+	@echo Environment variables:
+	@echo   R2_BASE         - Path to radare2 installation (default: C:\radare2)
+	@echo   PLATFORM         - Target platform (x86 or x64)
+	@echo.
+	@echo Example:
+	@echo   nmake /f Makefile.w64 all
+	@echo   nmake /f Makefile.w64 R2_BASE=C:\radare2 install
