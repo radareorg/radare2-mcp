@@ -19,7 +19,34 @@ if not r_core_dep.found()
   r_core_dep = dependency('r_core', required: false)
 endif
 if not r_core_dep.found()
-  error('Dependency lookup for r_core failed: install radare2 development files or provide pkg-config/cmake paths')
+  # Try locating radare2 from environment-provided prefixes. This helps CI on
+  # Windows where pkg-config may not be installed and CMake lookup may fail.
+  r2_prefixes = []
+  if os.getenv('R2_PREFIX')
+    r2_prefixes += [os.getenv('R2_PREFIX')]
+  endif
+  if os.getenv('RADARE2_PREFIX')
+    r2_prefixes += [os.getenv('RADARE2_PREFIX')]
+  endif
+  if os.getenv('R2_DIR')
+    r2_prefixes += [os.getenv('R2_DIR')]
+  endif
+
+  foreach p : r2_prefixes
+    incdir = join_paths(p, 'include')
+    libdir = join_paths(p, 'lib')
+    # Try to find the core library in that prefix.
+    rcore_lib = cc.find_library('r_core', dirs: [libdir], required: false)
+    if rcore_lib.found()
+      rcore_inc = include_directories(incdir)
+      r_core_dep = declare_dependency(link_with: rcore_lib, include_directories: rcore_inc)
+      break
+    endif
+  endforeach
+
+  if not r_core_dep.found()
+    error('Dependency lookup for r_core failed: install radare2 development files or provide pkg-config/cmake paths or set R2_PREFIX/RADARE2_PREFIX/R2_DIR')
+  endif
 endif
 
 # Match Makefile warning flags when using gcc/clang
