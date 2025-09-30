@@ -7,13 +7,12 @@ version : '1.2.0',
 
 cc = meson.get_compiler('c')
 
-# radare2 core dependency: use pkg-config when available
+# radare2 core dependency: use pkg-config when available. Do not fall back
+# to CMake-based dependency discovery; instead, if pkg-config fails, try
+# locating the library under user-provided prefixes (see -Dr2_prefix).
 pkg = find_program('pkg-config', required: false)
 if pkg.found()
   r_core_dep = dependency('r_core', method: 'pkg-config', required: false)
-endif
-if not r_core_dep.found()
-  r_core_dep = dependency('r_core', required: false)
 endif
 if not r_core_dep.found()
   # Try locating radare2 from environment-provided prefixes. This helps CI on
