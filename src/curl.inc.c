@@ -1,3 +1,5 @@
+/* r2mcp - MIT - Copyright 2025 - pancake, dnakov */
+
 #define _POSIX_C_SOURCE 200809L
 #include <stdio.h>
 #include <stdlib.h>
@@ -28,10 +30,17 @@
  *         On error, *exit_code_out (if provided) is set to a negative number when possible.
  */
 char *curl_post_capture(const char *url, const char *msg, int *exit_code_out) {
-	if (exit_code_out) *exit_code_out = -1;
-	if (!url || !msg) { errno = EINVAL; return NULL; }
-
-#if defined(R2__WINDOWS__)
+	if (exit_code_out) {
+		*exit_code_out = -1;
+	}
+	if (!url || !msg) {
+		errno = EINVAL;
+		return NULL;
+	}
+	char *buf = NULL;
+	size_t len = 0;
+	int exit_code = -1;
+#if R2__WINDOWS__
 	SECURITY_ATTRIBUTES sa;
 	sa.nLength = sizeof (SECURITY_ATTRIBUTES);
 	sa.lpSecurityDescriptor = NULL;
@@ -44,16 +53,11 @@ char *curl_post_capture(const char *url, const char *msg, int *exit_code_out) {
 	// Ensure the read handle is not inherited
 	SetHandleInformation (read_h, HANDLE_FLAG_INHERIT, 0);
 
-	// Build command line: curl -sS -d "msg" "url"
-	// Simple quoting: wrap msg and url in double quotes.
-	size_t cmdlen = strlen ("curl -sS -d \"") + strlen (msg) + strlen (url) + 32;
-	char *cmd = malloc (cmdlen);
-	if (!cmd) {
-		CloseHandle (read_h);
-		CloseHandle (write_h);
-		return NULL;
-	}
-	snprintf (cmd, cmdlen, "curl -sS -d \"%s\" \"%s\"", msg, url);
+	char *escaped_msg = r_str_escape_sh (msg);
+	char *escaped_url = r_str_escape_sh (url);
+	char *cmd = r_str_newf ("curl -sS -d \"%s\" \"%s\"", escaped_msg, escaped_url);
+	free (escaped_msg);
+	free (escaped_url);
 
 	STARTUPINFOA si;
 	PROCESS_INFORMATION pi;
@@ -63,7 +67,7 @@ char *curl_post_capture(const char *url, const char *msg, int *exit_code_out) {
 	si.hStdError = GetStdHandle (STD_ERROR_HANDLE);
 	si.dwFlags |= STARTF_USESTDHANDLES;
 
-	ZeroMemory (&pi, sizeof (pi));
+	ZeroMemory (&pi, sizeof(pi));
 
 	// Create process
 	BOOL ok = CreateProcessA (NULL, cmd, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi);
@@ -77,8 +81,8 @@ char *curl_post_capture(const char *url, const char *msg, int *exit_code_out) {
 	}
 
 	// Read child's stdout
-	size_t cap = 8192, len = 0;
-	char *buf = malloc (cap);
+	size_t cap = 8192;
+	buf = malloc (cap);
 	if (!buf) {
 		CloseHandle (read_h);
 		CloseHandle (pi.hProcess);
@@ -90,13 +94,13 @@ char *curl_post_capture(const char *url, const char *msg, int *exit_code_out) {
 	for (;;) {
 		if (len + 4096 + 1 > cap) {
 			size_t ncap = cap * 2;
-			char *tmp = realloc (buf, ncap);
+			char *tmp = realloc(buf, ncap);
 			if (!tmp) {
-				free (buf);
-				buf = NULL;
+				R_FREE (buf);
 				break;
 			}
-			buf = tmp; cap = ncap;
+			buf = tmp;
+			cap = ncap;
 		}
 		DWORD nread = 0;
 		BOOL r = ReadFile (read_h, buf + len, 4096, &nread, NULL);
@@ -105,11 +109,12 @@ char *curl_post_capture(const char *url, const char *msg, int *exit_code_out) {
 			continue;
 		}
 		if (!r) {
-			DWORD err = GetLastError ();
+			DWORD err = GetLastError();
 			if (err == ERROR_BROKEN_PIPE) {
 				break; // EOF
 			}
-			free (buf); buf = NULL; break;
+			R_FREE (buf);
+			break;
 		}
 		// r == TRUE but nread == 0 -> EOF
 		break;
@@ -123,21 +128,16 @@ char *curl_post_capture(const char *url, const char *msg, int *exit_code_out) {
 	if (!GetExitCodeProcess (pi.hProcess, &exitcode)) {
 		exitcode = (DWORD)-1;
 	}
+	exit_code = (int)exitcode;
 	CloseHandle (pi.hProcess);
 	CloseHandle (pi.hThread);
-
-	if (exit_code_out) *exit_code_out = (int)exitcode;
-
-	if (!buf) return NULL;
-	buf[len] = '\0';
-	return buf;
-#elif defined(R2__UNIX__)
+#elif R2__UNIX__
 	int pipefd[2];
 	if (pipe (pipefd) == -1) {
 		return NULL;
 	}
 
-	pid_t pid = fork ();
+	pid_t pid = fork();
 	if (pid == -1) {
 		int e = errno;
 		close (pipefd[0]);
@@ -176,8 +176,8 @@ char *curl_post_capture(const char *url, const char *msg, int *exit_code_out) {
 	close (pipefd[1]); // we read from pipefd[0]
 
 	// Read child's stdout fully into a dynamic buffer
-	size_t cap = 8192, len = 0;
-	char *buf = malloc (cap);
+	size_t cap = 8192;
+	buf = malloc (cap);
 	if (!buf) {
 		close (pipefd[0]);
 		// Reap child to avoid a zombie
@@ -191,11 +191,11 @@ char *curl_post_capture(const char *url, const char *msg, int *exit_code_out) {
 			size_t ncap = cap * 2;
 			char *tmp = realloc (buf, ncap);
 			if (!tmp) {
-				free (buf);
-				buf = NULL;
+				R_FREE (buf);
 				break;
 			}
-			buf = tmp; cap = ncap;
+			buf = tmp;
+			cap = ncap;
 		}
 		ssize_t n = read (pipefd[0], buf + len, 4096);
 		if (n > 0) {
@@ -203,35 +203,31 @@ char *curl_post_capture(const char *url, const char *msg, int *exit_code_out) {
 		} else if (n == 0) {
 			break; // EOF
 		} else if (errno != EINTR) {
-			free (buf); buf = NULL; // read error
+			free (buf);
+			buf = NULL; // read error
 			break;
 		}
 	}
-
 	close (pipefd[0]);
-
 	// Reap curl
-	int status = 0, rc = -1;
+	int status = 0;
 	if (waitpid (pid, &status, 0) != -1) {
 		if (WIFEXITED (status)) {
-			rc = WEXITSTATUS (status);
+			exit_code = WEXITSTATUS (status);
 		} else if (WIFSIGNALED (status)) {
-			rc = 128 + WTERMSIG (status);
+			exit_code = 128 + WTERMSIG (status);
 		}
 	}
-
-	if (exit_code_out) {
-		*exit_code_out = rc;
-	}
-
-	if (!buf) {
-		return NULL;
-	}
-
-	// NUL-terminate (even if empty)
-	buf[len] = '\0';
-	return buf;
 #else
 #error unsupported platform for curl_post_capture
 #endif
+	if (exit_code_out) {
+		*exit_code_out = exit_code;
+	}
+	if (!buf) {
+		return NULL;
+	}
+	// NUL-terminate (even if empty)
+	buf[len] = '\0';
+	return buf;
 }
