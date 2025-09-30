@@ -3,11 +3,24 @@
 #include <r_core.h>
 #include <r_util/r_json.h>
 #include <r_util/r_print.h>
-#include <unistd.h>
-#include <fcntl.h>
 #include <stdio.h>
 #include <stdarg.h>
 #include <errno.h>
+
+#if defined(R2__UNIX__)
+#include <unistd.h>
+#include <fcntl.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <signal.h>
+#elif defined(R2__WINDOWS__)
+#include <windows.h>
+#include <io.h>
+#include <fcntl.h>
+#include <signal.h>
+#else
+#error please define R2__WINDOWS__ or R2__UNIX__ for platform detection
+#endif
 #include "config.h"
 #include "r2mcp.h"
 #include "tools.h"
@@ -35,13 +48,27 @@ void r2mcp_running_set(int value) {
 
 // Local I/O mode helper (moved from utils.inc.c to avoid unused warnings in other TUs)
 static void set_nonblocking_io(bool nonblocking) {
-	int flags = fcntl (STDIN_FILENO, F_GETFL, 0);
-	if (nonblocking) {
-		fcntl (STDIN_FILENO, F_SETFL, flags | O_NONBLOCK);
-	} else {
-		fcntl (STDIN_FILENO, F_SETFL, flags & ~O_NONBLOCK);
-	}
-	setvbuf (stdout, NULL, _IOLBF, 0);
+#if defined(R2__UNIX__)
+    int flags = fcntl (STDIN_FILENO, F_GETFL, 0);
+    if (nonblocking) {
+        fcntl (STDIN_FILENO, F_SETFL, flags | O_NONBLOCK);
+    } else {
+        fcntl (STDIN_FILENO, F_SETFL, flags & ~O_NONBLOCK);
+    }
+    setvbuf (stdout, NULL, _IOLBF, 0);
+#elif defined(R2__WINDOWS__)
+    // Windows doesn't support POSIX fcntl/O_NONBLOCK on stdin reliably.
+    // We set stdin mode to binary/text depending on requested mode and
+    // keep line-buffered stdout. This is a best-effort no-op for nonblocking.
+    if (nonblocking) {
+        _setmode (_fileno (stdin), _O_BINARY);
+    } else {
+        _setmode (_fileno (stdin), _O_TEXT);
+    }
+    setvbuf (stdout, NULL, _IOLBF, 0);
+#else
+    (void)nonblocking;
+#endif
 }
 
 /* Public wrappers to expose internal static helpers from r2api.inc.c */
