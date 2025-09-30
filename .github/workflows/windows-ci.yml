@@ -12,7 +12,7 @@ env:
 
 jobs:
   build:
-    name: Build r2mcp on Windows (MSYS2 + Meson)
+    name: r2mcp-windows
     runs-on: windows-latest
     permissions:
       contents: read

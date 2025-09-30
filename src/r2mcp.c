@@ -49,25 +49,25 @@ void r2mcp_running_set(int value) {
 // Local I/O mode helper (moved from utils.inc.c to avoid unused warnings in other TUs)
 static void set_nonblocking_io(bool nonblocking) {
 #if defined(R2__UNIX__)
-    int flags = fcntl (STDIN_FILENO, F_GETFL, 0);
-    if (nonblocking) {
-        fcntl (STDIN_FILENO, F_SETFL, flags | O_NONBLOCK);
-    } else {
-        fcntl (STDIN_FILENO, F_SETFL, flags & ~O_NONBLOCK);
-    }
-    setvbuf (stdout, NULL, _IOLBF, 0);
+	int flags = fcntl (STDIN_FILENO, F_GETFL, 0);
+	if (nonblocking) {
+		fcntl (STDIN_FILENO, F_SETFL, flags | O_NONBLOCK);
+	} else {
+		fcntl (STDIN_FILENO, F_SETFL, flags & ~O_NONBLOCK);
+	}
+	setvbuf (stdout, NULL, _IOLBF, 0);
 #elif defined(R2__WINDOWS__)
-    // Windows doesn't support POSIX fcntl/O_NONBLOCK on stdin reliably.
-    // We set stdin mode to binary/text depending on requested mode and
-    // keep line-buffered stdout. This is a best-effort no-op for nonblocking.
-    if (nonblocking) {
-        _setmode (_fileno (stdin), _O_BINARY);
-    } else {
-        _setmode (_fileno (stdin), _O_TEXT);
-    }
-    setvbuf (stdout, NULL, _IOLBF, 0);
+	// Windows doesn't support POSIX fcntl/O_NONBLOCK on stdin reliably.
+	// We set stdin mode to binary/text depending on requested mode and
+	// keep line-buffered stdout. This is a best-effort no-op for nonblocking.
+	if (nonblocking) {
+		_setmode (_fileno (stdin), _O_BINARY);
+	} else {
+		_setmode (_fileno (stdin), _O_TEXT);
+	}
+	setvbuf (stdout, NULL, _IOLBF, 0);
 #else
-    (void)nonblocking;
+	(void)nonblocking;
 #endif
 }
 

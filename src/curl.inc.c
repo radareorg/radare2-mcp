@@ -28,209 +28,209 @@
  *         On error, *exit_code_out (if provided) is set to a negative number when possible.
  */
 char *curl_post_capture(const char *url, const char *msg, int *exit_code_out) {
-    if (exit_code_out) *exit_code_out = -1;
-    if (!url || !msg) { errno = EINVAL; return NULL; }
+	if (exit_code_out) *exit_code_out = -1;
+	if (!url || !msg) { errno = EINVAL; return NULL; }
 
 #if defined(R2__WINDOWS__)
-    SECURITY_ATTRIBUTES sa;
-    sa.nLength = sizeof (SECURITY_ATTRIBUTES);
-    sa.lpSecurityDescriptor = NULL;
-    sa.bInheritHandle = TRUE;
+	SECURITY_ATTRIBUTES sa;
+	sa.nLength = sizeof (SECURITY_ATTRIBUTES);
+	sa.lpSecurityDescriptor = NULL;
+	sa.bInheritHandle = TRUE;
 
-    HANDLE read_h = NULL, write_h = NULL;
-    if (!CreatePipe (&read_h, &write_h, &sa, 0)) {
-        return NULL;
-    }
-    // Ensure the read handle is not inherited
-    SetHandleInformation (read_h, HANDLE_FLAG_INHERIT, 0);
+	HANDLE read_h = NULL, write_h = NULL;
+	if (!CreatePipe (&read_h, &write_h, &sa, 0)) {
+		return NULL;
+	}
+	// Ensure the read handle is not inherited
+	SetHandleInformation (read_h, HANDLE_FLAG_INHERIT, 0);
 
-    // Build command line: curl -sS -d "msg" "url"
-    // Simple quoting: wrap msg and url in double quotes.
-    size_t cmdlen = strlen ("curl -sS -d \"") + strlen (msg) + strlen (url) + 32;
-    char *cmd = malloc (cmdlen);
-    if (!cmd) {
-        CloseHandle (read_h);
-        CloseHandle (write_h);
-        return NULL;
-    }
-    snprintf (cmd, cmdlen, "curl -sS -d \"%s\" \"%s\"", msg, url);
+	// Build command line: curl -sS -d "msg" "url"
+	// Simple quoting: wrap msg and url in double quotes.
+	size_t cmdlen = strlen ("curl -sS -d \"") + strlen (msg) + strlen (url) + 32;
+	char *cmd = malloc (cmdlen);
+	if (!cmd) {
+		CloseHandle (read_h);
+		CloseHandle (write_h);
+		return NULL;
+	}
+	snprintf (cmd, cmdlen, "curl -sS -d \"%s\" \"%s\"", msg, url);
 
-    STARTUPINFOA si;
-    PROCESS_INFORMATION pi;
-    ZeroMemory (&si, sizeof (si));
-    si.cb = sizeof (si);
-    si.hStdOutput = write_h;
-    si.hStdError = GetStdHandle (STD_ERROR_HANDLE);
-    si.dwFlags |= STARTF_USESTDHANDLES;
+	STARTUPINFOA si;
+	PROCESS_INFORMATION pi;
+	ZeroMemory (&si, sizeof (si));
+	si.cb = sizeof (si);
+	si.hStdOutput = write_h;
+	si.hStdError = GetStdHandle (STD_ERROR_HANDLE);
+	si.dwFlags |= STARTF_USESTDHANDLES;
 
-    ZeroMemory (&pi, sizeof (pi));
+	ZeroMemory (&pi, sizeof (pi));
 
-    // Create process
-    BOOL ok = CreateProcessA (NULL, cmd, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi);
-    free (cmd);
-    // Close the write handle in parent after creating the child
-    CloseHandle (write_h);
+	// Create process
+	BOOL ok = CreateProcessA (NULL, cmd, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi);
+	free (cmd);
+	// Close the write handle in parent after creating the child
+	CloseHandle (write_h);
 
-    if (!ok) {
-        CloseHandle (read_h);
-        return NULL;
-    }
+	if (!ok) {
+		CloseHandle (read_h);
+		return NULL;
+	}
 
-    // Read child's stdout
-    size_t cap = 8192, len = 0;
-    char *buf = malloc (cap);
-    if (!buf) {
-        CloseHandle (read_h);
-        CloseHandle (pi.hProcess);
-        CloseHandle (pi.hThread);
-        WaitForSingleObject (pi.hProcess, INFINITE);
-        return NULL;
-    }
+	// Read child's stdout
+	size_t cap = 8192, len = 0;
+	char *buf = malloc (cap);
+	if (!buf) {
+		CloseHandle (read_h);
+		CloseHandle (pi.hProcess);
+		CloseHandle (pi.hThread);
+		WaitForSingleObject (pi.hProcess, INFINITE);
+		return NULL;
+	}
 
-    for (;;) {
-        if (len + 4096 + 1 > cap) {
-            size_t ncap = cap * 2;
-            char *tmp = realloc (buf, ncap);
-            if (!tmp) {
-                free (buf);
-                buf = NULL;
-                break;
-            }
-            buf = tmp; cap = ncap;
-        }
-        DWORD nread = 0;
-        BOOL r = ReadFile (read_h, buf + len, 4096, &nread, NULL);
-        if (r && nread > 0) {
-            len += (size_t)nread;
-            continue;
-        }
-        if (!r) {
-            DWORD err = GetLastError ();
-            if (err == ERROR_BROKEN_PIPE) {
-                break; // EOF
-            }
-            free (buf); buf = NULL; break;
-        }
-        // r == TRUE but nread == 0 -> EOF
-        break;
-    }
+	for (;;) {
+		if (len + 4096 + 1 > cap) {
+			size_t ncap = cap * 2;
+			char *tmp = realloc (buf, ncap);
+			if (!tmp) {
+				free (buf);
+				buf = NULL;
+				break;
+			}
+			buf = tmp; cap = ncap;
+		}
+		DWORD nread = 0;
+		BOOL r = ReadFile (read_h, buf + len, 4096, &nread, NULL);
+		if (r && nread > 0) {
+			len += (size_t)nread;
+			continue;
+		}
+		if (!r) {
+			DWORD err = GetLastError ();
+			if (err == ERROR_BROKEN_PIPE) {
+				break; // EOF
+			}
+			free (buf); buf = NULL; break;
+		}
+		// r == TRUE but nread == 0 -> EOF
+		break;
+	}
 
-    CloseHandle (read_h);
+	CloseHandle (read_h);
 
-    // Wait for process and get exit code
-    WaitForSingleObject (pi.hProcess, INFINITE);
-    DWORD exitcode = 0;
-    if (!GetExitCodeProcess (pi.hProcess, &exitcode)) {
-        exitcode = (DWORD)-1;
-    }
-    CloseHandle (pi.hProcess);
-    CloseHandle (pi.hThread);
+	// Wait for process and get exit code
+	WaitForSingleObject (pi.hProcess, INFINITE);
+	DWORD exitcode = 0;
+	if (!GetExitCodeProcess (pi.hProcess, &exitcode)) {
+		exitcode = (DWORD)-1;
+	}
+	CloseHandle (pi.hProcess);
+	CloseHandle (pi.hThread);
 
-    if (exit_code_out) *exit_code_out = (int)exitcode;
+	if (exit_code_out) *exit_code_out = (int)exitcode;
 
-    if (!buf) return NULL;
-    buf[len] = '\0';
-    return buf;
+	if (!buf) return NULL;
+	buf[len] = '\0';
+	return buf;
 #elif defined(R2__UNIX__)
-    int pipefd[2];
-    if (pipe (pipefd) == -1) {
-        return NULL;
-    }
+	int pipefd[2];
+	if (pipe (pipefd) == -1) {
+		return NULL;
+	}
 
-    pid_t pid = fork ();
-    if (pid == -1) {
-        int e = errno;
-        close (pipefd[0]);
-        close (pipefd[1]);
-        errno = e;
-        return NULL;
-    }
+	pid_t pid = fork ();
+	if (pid == -1) {
+		int e = errno;
+		close (pipefd[0]);
+		close (pipefd[1]);
+		errno = e;
+		return NULL;
+	}
 
-    if (pid == 0) {
-        // Child: stdout -> pipe write end
-        // stderr unchanged (so errors still show on parent stderr because of -sS)
-        if (dup2 (pipefd[1], STDOUT_FILENO) == -1) {
-            _exit (127);
-        }
+	if (pid == 0) {
+		// Child: stdout -> pipe write end
+		// stderr unchanged (so errors still show on parent stderr because of -sS)
+		if (dup2 (pipefd[1], STDOUT_FILENO) == -1) {
+			_exit (127);
+		}
 
-        close (pipefd[0]);
-        close (pipefd[1]);
+		close (pipefd[0]);
+		close (pipefd[1]);
 
-        // Build argv; no shell is involved (safe for spaces/quotes in msg/url).
-        // Note: if msg starts with '@', curl treats it as a file. If that's unwanted,
-        // use "--data-raw" instead of "-d".
-        char *const argv[] = {
-            "curl",
-            "-sS",
-            "-d", (char *)msg,
-            (char *)url,
-            NULL
-        };
+		// Build argv; no shell is involved (safe for spaces/quotes in msg/url).
+		// Note: if msg starts with '@', curl treats it as a file. If that's unwanted,
+		// use "--data-raw" instead of "-d".
+		char *const argv[] = {
+			"curl",
+			"-sS",
+			"-d", (char *)msg,
+			(char *)url,
+			NULL
+		};
 
-        execvp ("curl", argv);
-        // If exec fails:
-        _exit (127);
-    }
+		execvp ("curl", argv);
+		// If exec fails:
+		_exit (127);
+	}
 
-    // Parent
-    close (pipefd[1]); // we read from pipefd[0]
+	// Parent
+	close (pipefd[1]); // we read from pipefd[0]
 
-    // Read child's stdout fully into a dynamic buffer
-    size_t cap = 8192, len = 0;
-    char *buf = malloc (cap);
-    if (!buf) {
-        close (pipefd[0]);
-        // Reap child to avoid a zombie
-        int st;
-        waitpid (pid, &st, 0);
-        return NULL;
-    }
+	// Read child's stdout fully into a dynamic buffer
+	size_t cap = 8192, len = 0;
+	char *buf = malloc (cap);
+	if (!buf) {
+		close (pipefd[0]);
+		// Reap child to avoid a zombie
+		int st;
+		waitpid (pid, &st, 0);
+		return NULL;
+	}
 
-    for (;;) {
-        if (len + 4096 + 1 > cap) {
-            size_t ncap = cap * 2;
-            char *tmp = realloc (buf, ncap);
-            if (!tmp) {
-                free (buf);
-                buf = NULL;
-                break;
-            }
-            buf = tmp; cap = ncap;
-        }
-        ssize_t n = read (pipefd[0], buf + len, 4096);
-        if (n > 0) {
-            len += (size_t)n;
-        } else if (n == 0) {
-            break; // EOF
-        } else if (errno != EINTR) {
-            free (buf); buf = NULL; // read error
-            break;
-        }
-    }
+	for (;;) {
+		if (len + 4096 + 1 > cap) {
+			size_t ncap = cap * 2;
+			char *tmp = realloc (buf, ncap);
+			if (!tmp) {
+				free (buf);
+				buf = NULL;
+				break;
+			}
+			buf = tmp; cap = ncap;
+		}
+		ssize_t n = read (pipefd[0], buf + len, 4096);
+		if (n > 0) {
+			len += (size_t)n;
+		} else if (n == 0) {
+			break; // EOF
+		} else if (errno != EINTR) {
+			free (buf); buf = NULL; // read error
+			break;
+		}
+	}
 
-    close (pipefd[0]);
+	close (pipefd[0]);
 
-    // Reap curl
-    int status = 0, rc = -1;
-    if (waitpid (pid, &status, 0) != -1) {
-        if (WIFEXITED (status)) {
-            rc = WEXITSTATUS (status);
-        } else if (WIFSIGNALED (status)) {
-            rc = 128 + WTERMSIG (status);
-        }
-    }
+	// Reap curl
+	int status = 0, rc = -1;
+	if (waitpid (pid, &status, 0) != -1) {
+		if (WIFEXITED (status)) {
+			rc = WEXITSTATUS (status);
+		} else if (WIFSIGNALED (status)) {
+			rc = 128 + WTERMSIG (status);
+		}
+	}
 
-    if (exit_code_out) {
-        *exit_code_out = rc;
-    }
+	if (exit_code_out) {
+		*exit_code_out = rc;
+	}
 
-    if (!buf) {
-        return NULL;
-    }
+	if (!buf) {
+		return NULL;
+	}
 
-    // NUL-terminate (even if empty)
-    buf[len] = '\0';
-    return buf;
+	// NUL-terminate (even if empty)
+	buf[len] = '\0';
+	return buf;
 #else
 #error unsupported platform for curl_post_capture
 #endif

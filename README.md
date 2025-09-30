@@ -129,37 +129,9 @@ This will compile the server and place the `r2mcp` binary in `/usr/local/bin` on
 
 #### Windows
 
-For Windows, we provide batch files similar to r2frida's approach:
+For Windows, just use meson and ninja like it's done in the CI:
 
 ```cmd
-# Set up Visual Studio environment
-preconfigure.bat amd64
-
-# Download and configure radare2 dependencies  
-configure.bat
-
-# Build r2mcp
-make.bat
-
-# Install r2mcp (optional)
-install.bat
+meson b
+ninja -C b
 ```
-
-See [WINDOWS_BUILD.md](WINDOWS_BUILD.md) for detailed Windows build instructions.
-
-You can now add the following configuration to your VS Code `mcp.json` as explained above:
-
-```json
-{
-  "servers": {
-    "r2mcp": {
-      "type": "stdio",
-      "command": "r2mcp",
-      "args": []
-    }
-  },
-  "inputs": []
-}
-```
-
-**Tip:** So that the client doesn't get confused, it's best to enable one server at a time. You can do this by commenting out the other server in the configuration file.
