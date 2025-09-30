@@ -78,6 +78,7 @@
 #define HAVE_STAT 1
 
 /* Process control */
+#undef HAVE_FORK
 #define HAVE_FORK 0
 #define HAVE_EXEC 0
 #define HAVE_WAITPID 0
