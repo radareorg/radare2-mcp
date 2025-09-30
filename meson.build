@@ -44,7 +44,7 @@ if not r_core_dep.found()
     # candidate names so Meson can locate the import library on MSVC or
     # the shared object/dll on mingw.
     extra_libdirs = libdirs + [ join_paths(p, 'bin') ]
-    candidate_names = [ 'r_core', 'r_core-6', 'r_core6', 'r_core64', 'libr_core' ]
+    candidate_names = [ 'r_core', 'libr_core' ]
     foreach name : candidate_names
       rcore_lib = cc.find_library(name, dirs: extra_libdirs, required: false)
       if rcore_lib.found()

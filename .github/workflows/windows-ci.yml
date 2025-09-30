@@ -65,7 +65,6 @@ jobs:
           # non-existent subdirectory (radare2-$R2V-w64) which is removed
           # during extraction.
           $prefix = 'C:\\radare2'
-          if (Test-Path 'C:\\msys64\\mingw64') { $prefix = 'C:\\msys64\\mingw64' }
           Write-Output "Using radare2 prefix: $prefix"
           # Tell Meson where to find radare2 and set install prefix accordingly.
           meson setup --reconfigure builddir --prefix=$prefix --buildtype=release -Dr2_prefix=$prefix
