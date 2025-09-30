@@ -1,6 +1,4 @@
-
 #include "r2mcp.h"
-
 // Simple DSL runner for invoking tools from the CLI for testing.
 // DSL grammar (very small):
 //   program := stmt (';' stmt)*
@@ -8,12 +6,10 @@
 // Values may be quoted with double-quotes. Keys/values do not support
 // nested structures. Example:
 //   openFile filePath="/bin/ls"; listFunctions onlyNamed=true; closeFile
-
 char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args);
-
 // Parse a single statement of the form: toolName [key=val ...]
 // Returns 0 on success.
-static int run_statement(ServerState *ss, char *stmt) {
+static int run_statement(ServerState *ss, char *stmt, RCore *core) {
 	r_str_trim (stmt);
 	if (R_STR_ISEMPTY (stmt)) {
 		return 0;
@@ -39,7 +35,7 @@ static int run_statement(ServerState *ss, char *stmt) {
 		// key
 		char *key = p;
 		// advance to '=' or whitespace
-		while (*p && *p != '=' && !isspace ((unsigned char)*p)) {
+		while (*p && *p != '=' && !isspace ((ut8)*p)) {
 			p++;
 		}
 		if (!*p || *p != '=') {
@@ -53,16 +49,17 @@ static int run_statement(ServerState *ss, char *stmt) {
 			p++;
 			val = p;
 			while (*p && *p != '"') {
-				if (*p == '\\' && p[1]) p += 2; else p++;
+				if (*p == '\\' && p[1]) {
+					p += 2;
+				} else {
+					p++;
+				}
 			}
 			if (*p == '"') {
 				*p++ = '\0';
 			}
 		} else {
-			// unquoted value until whitespace or semicolon
-			while (*p && !isspace ((unsigned char)*p)) {
-				p++;
-			}
+			p = (char *)r_str_trim_head_ro (p);
 			if (*p) {
 				*p++ = '\0';
 			}
@@ -85,8 +82,9 @@ static int run_statement(ServerState *ss, char *stmt) {
 			}
 			while (*q) {
 				if (!isdigit ((ut8)*q)) {
-					digits = false; break;
-					}
+					digits = false;
+					break;
+				}
 				q++;
 			}
 			if (digits && *val) {
@@ -96,7 +94,7 @@ static int run_statement(ServerState *ss, char *stmt) {
 		if (bare) {
 			r_strbuf_appendf (sb, "\"%s\":%s", key, val);
 		} else {
-			char *esc = r_str_escape_utf8_for_json (val, -1);
+			char *esc = strdup (val); // r_str_escape_json (val, -1);
 			r_strbuf_appendf (sb, "\"%s\":\"%s\"", key, esc);
 			free (esc);
 		}
@@ -105,8 +103,7 @@ static int run_statement(ServerState *ss, char *stmt) {
 	r_strbuf_append (sb, "}");
 	char *jsonbuf = r_strbuf_drain (sb);
 	// debug: built args JSON (left commented intentionally)
-	// printf("[DSL] args json: %s\n", jsonbuf);
-
+	// printf ("[DSL] args json: %s\n", jsonbuf);
 	RJson *args = NULL;
 	if (strlen (jsonbuf) > 2) {
 		// parse it (parser does not take ownership; keep jsonbuf alive until free)
@@ -123,16 +120,38 @@ static int run_statement(ServerState *ss, char *stmt) {
 		r_json_free (args);
 	}
 	if (res) {
-		printf ("[DSL] %s -> %s\n", tool, res);
+		if (core) {
+			// Extract text from JSON response
+			const char *text_start = strstr (res, "\"text\":\"");
+			if (text_start) {
+				text_start += 8; // skip "text":"
+				const char *text_end = strstr (text_start, "\"");
+				if (text_end) {
+					char *text = r_str_ndup (text_start, text_end - text_start);
+					r_str_replace_in (text, -1, "\\n", "\n", true);
+					r_cons_printf (core->cons, "%s\n", text);
+					free (text);
+				} else {
+					r_cons_printf (core->cons, "(malformed text in response)\n");
+				}
+			} else {
+				r_cons_printf (core->cons, "(no text in response)\n");
+			}
+		} else {
+			printf ("[DSL] %s -> %s\n", tool, res);
+		}
 		free (res);
 	} else {
-		printf ("[DSL] %s -> (no result)\n", tool);
+		if (core) {
+			r_cons_printf (core->cons, "(no result)\n");
+		} else {
+			printf ("[DSL] %s -> (no result)\n", tool);
+		}
 	}
 	free (jsonbuf);
 	return 0;
 }
-
-int r2mcp_run_dsl_tests(ServerState *ss, const char *dsl) {
+int r2mcp_run_dsl_tests(ServerState *ss, const char *dsl, RCore *core) {
 	R_RETURN_VAL_IF_FAIL (dsl, 1);
 	char *copy = strdup (dsl);
 	char *cur = copy;
@@ -140,13 +159,13 @@ int r2mcp_run_dsl_tests(ServerState *ss, const char *dsl) {
 	int rc = 0;
 	while ((semi = strchr (cur, ';')) != NULL) {
 		*semi = '\0';
-		if (run_statement (ss, cur) != 0) {
+		if (run_statement (ss, cur, core) != 0) {
 			rc = 1;
 		}
 		cur = semi + 1;
 	}
 	if (*cur) {
-		if (run_statement (ss, cur) != 0) {
+		if (run_statement (ss, cur, core) != 0) {
 			rc = 1;
 		}
 	}

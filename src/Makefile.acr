@@ -3,9 +3,11 @@ TARGET = r2mcp
 CFLAGS = -Wall -Wextra -g
 PKGCONFIG = pkg-config
 INSTALL_DIR?=install -d
+R2_LIBEXT=$(shell r2 -H R2_LIBEXT)
 INSTALL_PROGRAM?=install -m 755
 PREFIX?=/usr/local
 R2PM_BINDIR?=$(shell r2pm -H R2PM_BINDIR)
+R2PM_PLUGDIR?=$(shell r2pm -H R2PM_PLUGDIR)
 
 SRC = main.c
 SRC += r2mcp.c
@@ -13,6 +15,7 @@ SRC += readbuffer.c
 SRC += tools.c
 SRC += dsltest.c
 SRC += prompts.c
+SRC += plugin.c
 INC += utils.inc.c
 INC += r2api.inc.c
 OBJS:=$(subst .c,.o,$(SRC))
@@ -34,7 +37,8 @@ LDFLAGS = $(R2_LDFLAGS)
 
 .PHONY: all clean check_deps help install uninstall user-install user-uninstall
 
-all: check_deps $(TARGET)
+LIBTARGET=libcore_$(TARGET).$(R2_LIBEXT)
+all: check_deps $(TARGET) $(LIBTARGET)
 
 check_deps:
 	@echo "Checking dependencies..."
@@ -46,6 +50,9 @@ $(TARGET): $(OBJS) $(INC)
 	@echo "Building R2 MCP server..."
 	$(CC) $(CFLAGS) -o $@ $(OBJS) $(LDFLAGS)
 	@echo "✓ Server built successfully."
+
+$(LIBTARGET): $(OBJS) $(INC)
+	$(CC) $(CFLAGS) -o $(LIBTARGET) $(OBJS) $(LDFLAGS)
 
 clean:
 	rm -f $(TARGET) $(OBJS)
@@ -64,6 +71,7 @@ uninstall:
 user-install: all
 	$(INSTALL_DIR) $(R2PM_BINDIR)
 	$(INSTALL_PROGRAM) $(TARGET) $(R2PM_BINDIR)/r2mcp
+	$(INSTALL_PROGRAM) $(LIBTARGET) $(R2PM_PLUGDIR)
 
 doc:
 	cat INSTALL.md

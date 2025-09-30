@@ -1,12 +1,15 @@
 #include "config.h"
+
 #include "r2mcp.h"
+
 #include "tools.h"
+
 #include "prompts.h"
-
 #include <signal.h>
-#include <unistd.h>
-#include <stdio.h>
 
+#include <unistd.h>
+
+#include <stdio.h>
 #if R2__UNIX__
 /* Signal handling moved from r2mcp.c */
 static void signal_handler(int signum) {
@@ -15,20 +18,18 @@ static void signal_handler(int signum) {
 	r2mcp_running_set (0);
 	signal (signum, SIG_DFL);
 }
-
 void setup_signals(void) {
-	struct sigaction sa = {0};
+	struct sigaction sa = { 0 };
 	sa.sa_flags = 0;
 	sa.sa_handler = signal_handler;
 	sigemptyset (&sa.sa_mask);
-
 	sigaction (SIGINT, &sa, NULL);
 	sigaction (SIGTERM, &sa, NULL);
 	sigaction (SIGHUP, &sa, NULL);
 	signal (SIGPIPE, SIG_IGN);
 }
-#endif
 
+#endif
 /* Help and version moved from r2mcp.c */
 void r2mcp_help(void) {
 	const char help_text[] =
@@ -59,14 +60,13 @@ void r2mcp_version(void) {
 int main(int argc, const char **argv) {
 	return r2mcp_main (argc, argv);
 }
-
 /* Moved from r2mcp.c to isolate main concerns here */
 int r2mcp_main(int argc, const char **argv) {
 	bool minimode = false;
 	bool enable_run_command_tool = false;
 	bool readonly_mode = false;
 	bool list_tools = false;
-    RList *cmds = r_list_new ();
+	RList *cmds = r_list_new ();
 	/* Whitelist of enabled tool names (populated via repeated -e flags) */
 	RList *enabled_tools = NULL;
 	bool loadplugins = true;
@@ -76,10 +76,10 @@ int r2mcp_main(int argc, const char **argv) {
 	char *baseurl = NULL;
 	char *sandbox = NULL;
 	char *logfile = NULL;
-    bool ignore_analysis_level = false;
-    const char *dsl_tests = NULL;
+	bool ignore_analysis_level = false;
+	const char *dsl_tests = NULL;
 	RGetopt opt;
-    r_getopt_init(&opt, argc, argv, "hmvpd:nc:u:l:s:rite:RT:");
+	r_getopt_init (&opt, argc, argv, "hmvpd:nc:u:l:s:rite:RT:");
 	int c;
 	while ((c = r_getopt_next (&opt)) != -1) {
 		switch (c) {
@@ -143,7 +143,6 @@ int r2mcp_main(int argc, const char **argv) {
 			return 1;
 		}
 	}
-
 	ServerState ss = {
 		.info = {
 			.name = "Radare2 MCP Connector",
@@ -164,7 +163,6 @@ int r2mcp_main(int argc, const char **argv) {
 		.client_info = NULL,
 		.enabled_tools = enabled_tools,
 	};
-
 	/* Enable logging */
 	r2mcp_log_pub (&ss, "r2mcp starting");
 #if R2__UNIX__
@@ -178,7 +176,6 @@ int r2mcp_main(int argc, const char **argv) {
 		return 0;
 	}
 	prompts_registry_init (&ss);
-
 	/* Initialize r2 (unless running in HTTP client mode) */
 	if (!ss.http_mode) {
 		if (!r2mcp_state_init (&ss)) {
@@ -202,10 +199,9 @@ int r2mcp_main(int argc, const char **argv) {
 	} else {
 		r2mcp_log_pub (&ss, "HTTP r2pipe client mode active - skipping local r2 initialization");
 	}
-
 	/* If -T was provided, run DSL tests and exit */
 	if (dsl_tests) {
-		int r = r2mcp_run_dsl_tests (&ss, dsl_tests);
+		int r = r2mcp_run_dsl_tests (&ss, dsl_tests, NULL);
 		/* Cleanup and return */
 		tools_registry_fini (&ss);
 		prompts_registry_fini (&ss);
@@ -213,17 +209,17 @@ int r2mcp_main(int argc, const char **argv) {
 		free (ss.baseurl);
 		free (ss.sandbox);
 		free (ss.logfile);
-		if (ss.enabled_tools) r_list_free (ss.enabled_tools);
+		if (ss.enabled_tools) {
+			r_list_free (ss.enabled_tools);
+		}
 		return r == 0 ? 0 : 2;
 	}
-
 	RListIter *iter;
 	const char *cmd;
 	r_list_foreach (cmds, iter, cmd) {
 		r2mcp_cmd (&ss, cmd);
 	}
 	r_list_free (cmds);
-
 	r2mcp_running_set (1);
 	r2mcp_eventloop (&ss);
 	tools_registry_fini (&ss);

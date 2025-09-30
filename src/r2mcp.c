@@ -116,7 +116,7 @@ char *r2mcp_cmd(ServerState *ss, const char *cmd) {
 	char *res = r_core_cmd_str (core, filteredCommand);
 	char *err = r2mcp_log_drain (ss);
 	free (filteredCommand);
-	r2state_settings (core);
+	// r2state_settings (core);
 	if (err) {
 		char *newres = r_str_newf ("%s<log>\n%s\n</log>\n", res, err);
 		free (res);
