@@ -170,6 +170,39 @@ if not r_cons_dep.found()
   endif
 endif
 
+r_config_dep = dependency('r_config', method: 'pkg-config', required: false)
+if not r_config_dep.found()
+  r2_prefixes = []
+  if get_option('r2_prefix') != ''
+    r2_prefixes += [get_option('r2_prefix')]
+  endif
+  found = false
+  foreach p : r2_prefixes
+    libdirs = [
+      join_paths(p, 'lib'),
+      join_paths(p, 'lib64'),
+      join_paths(p, 'radare2', 'lib'),
+      join_paths(p, 'radare2', 'lib64'),
+    ]
+    candidate_names = ['r_config', 'libr_config']
+    foreach name : candidate_names
+      clib = cc.find_library(name, dirs: libdirs, required: false)
+      if clib.found()
+        cinc = include_directories([ join_paths(p, 'include'), join_paths(p, 'include', 'libr') ])
+        r_config_dep = declare_dependency(dependencies: [clib], include_directories: cinc)
+        found = true
+        break
+      endif
+    endforeach
+    if found
+      break
+    endif
+  endforeach
+  if not found
+    warning('r_cons dependency not found via pkg-config or -Dr2_prefix; console helpers may be unavailable')
+  endif
+endif
+
 # Match Makefile warning flags when using gcc/clang
 c_args = []
 if cc.get_id() == 'gcc' or cc.get_id() == 'clang'
@@ -217,7 +250,7 @@ endif
 executable(
   'r2mcp',
   srcs,
-  dependencies: [r_core_dep, r_util_dep, r_cons_dep],
+  dependencies: [r_core_dep, r_util_dep, r_cons_dep, r_config_dep],
   c_args: c_args,
   link_args: link_args,
   install: true,
