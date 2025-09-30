@@ -176,6 +176,7 @@ srcs = [
   'src/r2mcp.c',
   'src/readbuffer.c',
   'src/tools.c',
+  'src/dsltest.c',
   'src/prompts.c',
 ]
 

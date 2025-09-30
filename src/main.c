@@ -66,9 +66,9 @@ int r2mcp_main(int argc, const char **argv) {
 	bool enable_run_command_tool = false;
 	bool readonly_mode = false;
 	bool list_tools = false;
-	RList *cmds = r_list_new ();
+    RList *cmds = r_list_new ();
 	/* Whitelist of enabled tool names (populated via repeated -e flags) */
-	RList *enabled_tools = r_list_newf (free);
+	RList *enabled_tools = NULL;
 	bool loadplugins = true;
 	const char *deco = NULL;
 	bool http_mode = false;
@@ -76,9 +76,10 @@ int r2mcp_main(int argc, const char **argv) {
 	char *baseurl = NULL;
 	char *sandbox = NULL;
 	char *logfile = NULL;
-	bool ignore_analysis_level = false;
+    bool ignore_analysis_level = false;
+    const char *dsl_tests = NULL;
 	RGetopt opt;
-	r_getopt_init(&opt, argc, argv, "hmvpd:nc:u:l:s:rite:R");
+    r_getopt_init(&opt, argc, argv, "hmvpd:nc:u:l:s:rite:RT:");
 	int c;
 	while ((c = r_getopt_next (&opt)) != -1) {
 		switch (c) {
@@ -126,8 +127,14 @@ int r2mcp_main(int argc, const char **argv) {
 		case 't':
 			list_tools = true;
 			break;
+		case 'T':
+			dsl_tests = opt.arg;
+			break;
 		case 'e':
 			if (opt.arg) {
+				if (!enabled_tools) {
+					enabled_tools = r_list_newf (free);
+				}
 				r_list_append (enabled_tools, strdup (opt.arg));
 			}
 			break;
@@ -194,6 +201,20 @@ int r2mcp_main(int argc, const char **argv) {
 		}
 	} else {
 		r2mcp_log_pub (&ss, "HTTP r2pipe client mode active - skipping local r2 initialization");
+	}
+
+	/* If -T was provided, run DSL tests and exit */
+	if (dsl_tests) {
+		int r = r2mcp_run_dsl_tests (&ss, dsl_tests);
+		/* Cleanup and return */
+		tools_registry_fini (&ss);
+		prompts_registry_fini (&ss);
+		r2mcp_state_fini (&ss);
+		free (ss.baseurl);
+		free (ss.sandbox);
+		free (ss.logfile);
+		if (ss.enabled_tools) r_list_free (ss.enabled_tools);
+		return r == 0 ? 0 : 2;
 	}
 
 	RListIter *iter;
