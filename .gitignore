@@ -1,5 +1,8 @@
-Makefile
 .DS_Store
-config.h
+src/r2mcp
+src/config.h
+src/Makefile
 r2mcp
+src/r2mcp
+src/*.o
 *.o
