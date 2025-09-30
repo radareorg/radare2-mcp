@@ -18,8 +18,11 @@ static int run_statement(ServerState *ss, char *stmt) {
 	if (R_STR_ISEMPTY (stmt)) {
 		return 0;
 	}
-	// extract tool name
-	char *p = (char *)r_str_trim_head_ro (stmt);
+	// extract tool name (first token up to whitespace)
+	char *p = stmt;
+	while (*p && !isspace ((unsigned char)*p)) {
+		p++;
+	}
 	char saved = *p;
 	if (saved) {
 		*p++ = '\0';
@@ -35,7 +38,7 @@ static int run_statement(ServerState *ss, char *stmt) {
 		}
 		// key
 		char *key = p;
-		p = (char *)r_str_trim_head_ro (p);
+		// advance to '=' or whitespace
 		while (*p && *p != '=' && !isspace ((unsigned char)*p)) {
 			p++;
 		}
@@ -98,19 +101,16 @@ static int run_statement(ServerState *ss, char *stmt) {
 			free (esc);
 		}
 	}
-	// restore original separator char if needed
-	if (saved) {
-		*(--p) = saved; // best-effort restore (p may be at end)
-	}
+	// no need to restore the separator char
 	r_strbuf_append (sb, "}");
 	char *jsonbuf = r_strbuf_drain (sb);
+	// debug: built args JSON (left commented intentionally)
+	// printf("[DSL] args json: %s\n", jsonbuf);
 
 	RJson *args = NULL;
 	if (strlen (jsonbuf) > 2) {
-		// parse it
-		char *dup = strdup (jsonbuf);
-		args = r_json_parse (dup);
-		free (dup);
+		// parse it (parser does not take ownership; keep jsonbuf alive until free)
+		args = r_json_parse (jsonbuf);
 		if (!args) {
 			printf ("[DSL] Failed to parse arguments for tool %s\n", tool);
 			free (jsonbuf);
@@ -153,4 +153,3 @@ int r2mcp_run_dsl_tests(ServerState *ss, const char *dsl) {
 	free (copy);
 	return rc;
 }
-

@@ -68,7 +68,7 @@ int r2mcp_main(int argc, const char **argv) {
 	bool list_tools = false;
     RList *cmds = r_list_new ();
 	/* Whitelist of enabled tool names (populated via repeated -e flags) */
-	RList *enabled_tools = r_list_newf (free);
+	RList *enabled_tools = NULL;
 	bool loadplugins = true;
 	const char *deco = NULL;
 	bool http_mode = false;
@@ -132,6 +132,9 @@ int r2mcp_main(int argc, const char **argv) {
 			break;
 		case 'e':
 			if (opt.arg) {
+				if (!enabled_tools) {
+					enabled_tools = r_list_newf (free);
+				}
 				r_list_append (enabled_tools, strdup (opt.arg));
 			}
 			break;
