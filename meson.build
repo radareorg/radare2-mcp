@@ -10,10 +10,10 @@ cc = meson.get_compiler('c')
 # radare2 core dependency: use pkg-config when available. Do not fall back
 # to CMake-based dependency discovery; instead, if pkg-config fails, try
 # locating the library under user-provided prefixes (see -Dr2_prefix).
-pkg = find_program('pkg-config', required: false)
-if pkg.found()
-  r_core_dep = dependency('r_core', method: 'pkg-config', required: false)
-endif
+r_core_dep = dependency('r_core', method: 'pkg-config', required: false)
+
+# If pkg-config didn't yield an r_core dependency, fall back to manual
+# discovery logic below (search common prefixes / extracted zips).
 if not r_core_dep.found()
   # On Windows prefer explicit discovery like other third_party projects do:
   # 1) ask an installed `radare2` binary for its lib/include/plugin dirs
@@ -49,7 +49,6 @@ if not r_core_dep.found()
         p = get_option('r2_prefix')
         incdirs += [ join_paths(p, 'include', 'libr'), join_paths(p, 'include') ]
       endif
-      incdirs += [ meson.current_source_dir() + '/radare2/include/libr' ]
       rcore_inc = include_directories(incdirs)
       r_core_dep = declare_dependency(link_with: rcore_lib, include_directories: rcore_inc)
     else
@@ -63,6 +62,7 @@ if not r_core_dep.found()
       r2_prefixes += [get_option('r2_prefix')]
     endif
 
+    found = false
     foreach p : r2_prefixes
       # Common library/include locations under a provided prefix.
       libdirs = [

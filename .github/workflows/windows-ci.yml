@@ -58,6 +58,34 @@ jobs:
           Write-Output "Listing contents of $prefix"
           Get-ChildItem -Path $prefix -Recurse -Depth 2 | Select-Object FullName, Mode, Length | Format-Table -AutoSize
 
+      - name: Show radare2 candidate include/lib dirs
+        shell: powershell
+        run: |
+          $prefix = 'C:\\radare2'
+          $posix = $prefix -replace '\\','/'
+          Write-Output "Normalized r2_prefix (posix): $posix"
+          $candidates = @(
+            Join-Path $prefix 'include',
+            Join-Path $prefix 'include\libr',
+            Join-Path $prefix 'radare2\include',
+            Join-Path $prefix 'lib',
+            Join-Path $prefix 'radare2\lib',
+            Join-Path $prefix 'bin'
+          )
+          foreach ($d in $candidates) {
+            if (Test-Path $d) {
+              Write-Output "Contents of $d:"
+              Get-ChildItem -Path $d -Recurse -Depth 1 | Select-Object FullName, Mode, Length | Format-Table -AutoSize
+            } else {
+              Write-Output "Not found: $d"
+            }
+          }
+          Write-Output "Looking for likely radare2 artifacts (libs/dlls/headers):"
+          Get-ChildItem -Path (Join-Path $prefix 'lib') -Filter 'r_core*' -ErrorAction SilentlyContinue | Select-Object FullName, Mode | Format-Table -AutoSize
+          Get-ChildItem -Path (Join-Path $prefix 'lib') -Filter 'libr_core*' -ErrorAction SilentlyContinue | Select-Object FullName, Mode | Format-Table -AutoSize
+          Get-ChildItem -Path (Join-Path $prefix 'bin') -Filter 'r_core*' -ErrorAction SilentlyContinue | Select-Object FullName, Mode | Format-Table -AutoSize
+          Get-ChildItem -Path (Join-Path $prefix 'include') -Filter '*r_core*' -Recurse -ErrorAction SilentlyContinue | Select-Object FullName | Format-Table -AutoSize
+
       - name: Configure Meson
         shell: powershell
         run: |

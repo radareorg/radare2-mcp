@@ -48,13 +48,40 @@ jobs:
           Expand-Archive -Path $tmp -DestinationPath $dest -Force
           Write-Host "Extracted radare2 to $dest"
 
+      - name: Show radare2 candidate include/lib dirs (MSVC job)
+        shell: pwsh
+        run: |
+          $prefix = 'C:\\radare2'
+          $posix = $prefix -replace '\\','/'
+          Write-Host "Normalized r2_prefix (posix): $posix"
+          $candidates = @(
+            Join-Path $prefix 'include',
+            Join-Path $prefix 'include\libr',
+            Join-Path $prefix 'radare2\include',
+            Join-Path $prefix 'lib',
+            Join-Path $prefix 'radare2\lib',
+            Join-Path $prefix 'bin'
+          )
+          foreach ($d in $candidates) {
+            if (Test-Path $d) {
+              Write-Host "Contents of $d:"
+              Get-ChildItem -Path $d -Recurse -Depth 1 | Select-Object FullName, Mode, Length | Format-Table -AutoSize
+            } else {
+              Write-Host "Not found: $d"
+            }
+          }
+
       - name: Meson configure (MSVC/cl)
         shell: pwsh
         run: |
           # Configure Meson to generate a Visual Studio solution and prefer the
           # MSVC toolchain (cl). Meson will auto-detect MSVC on the GitHub
           # runner; pass the extracted radare2 prefix via -Dr2_prefix.
-          meson setup builddir --reconfigure --backend vs -Dr2_prefix=C:\\radare2
+          # Normalize the prefix to forward-slash form for Meson and pass it
+          $prefix = 'C:\\radare2'
+          $posix = $prefix -replace '\\','/'
+          Write-Host "Passing -Dr2_prefix=$posix"
+          meson setup builddir --reconfigure --backend vs -Dr2_prefix=$posix
 
       - name: Build with Meson (MSVC)
         shell: pwsh
