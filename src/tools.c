@@ -35,9 +35,6 @@ static inline ToolMode current_mode(const ServerState *ss) {
 
 static ToolSpec *tool(const char *name, const char *desc, const char *schema, int modes) {
 	ToolSpec *t = R_NEW0 (ToolSpec);
-	if (!t) {
-		return NULL;
-	}
 	t->name = name;
 	t->description = desc;
 	t->schema_json = schema;
@@ -63,7 +60,7 @@ void tools_registry_init(ServerState *ss) {
 	r_list_append (ss->tools, tool ("openFile", "Opens a binary file with radare2 for analysis <think>Call this tool before any other one from r2mcp. Use an absolute filePath</think>", "{\"type\":\"object\",\"properties\":{\"filePath\":{\"type\":\"string\",\"description\":\"Path to the file to open\"}},\"required\":[\"filePath\"]}", TOOL_MODE_NORMAL | M_MINI));
 
 	if (ss->enable_run_command_tool) {
-		r_list_append(ss->tools, tool("runCommand", "Executes a raw radare2 command directly", "{\"type\":\"object\",\"properties\":{\"command\":{\"type\":\"string\",\"description\":\"The radare2 command to execute\"}},\"required\":[\"command\"]}", TOOL_MODE_NORMAL | M_MINI | M_HTTP));
+		r_list_append (ss->tools, tool ("runCommand", "Executes a raw radare2 command directly", "{\"type\":\"object\",\"properties\":{\"command\":{\"type\":\"string\",\"description\":\"The radare2 command to execute\"}},\"required\":[\"command\"]}", TOOL_MODE_NORMAL | M_MINI | M_HTTP));
 	}
 
 	r_list_append ( ss->tools, tool ("closeFile", "Close the currently open file", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL));
@@ -410,14 +407,14 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 			return jsonrpc_error_response (-32603, "Relative paths are not allowed. Use an absolute path", NULL, NULL);
 		}
 		if (strstr (path, "/../") != NULL) {
-			return jsonrpc_error_response(-32603, "Path traversal is not allowed (contains '/../')", NULL, NULL);
+			return jsonrpc_error_response (-32603, "Path traversal is not allowed (contains '/../')", NULL, NULL);
 		}
 		if (ss->sandbox && *ss->sandbox) {
-			size_t plen = strlen(path);
-			size_t slen = strlen(ss->sandbox);
-			if (slen == 0 || slen > plen || strncmp(path, ss->sandbox, slen) != 0 ||
+			size_t plen = strlen (path);
+			size_t slen = strlen (ss->sandbox);
+			if (slen == 0 || slen > plen || strncmp (path, ss->sandbox, slen) != 0 ||
 					(plen > slen && path[slen] != '/')) {
-				return jsonrpc_error_response(-32603, "Access denied: path is outside of the sandbox", NULL, NULL);
+				return jsonrpc_error_response (-32603, "Access denied: path is outside of the sandbox", NULL, NULL);
 			}
 		}
 
@@ -733,21 +730,19 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 		return response;
 	}
 
-	if (!strcmp(tool_name, "runCommand")) {
-		const char *command = r_json_get_str(tool_args, "command");
+	if (!strcmp (tool_name, "runCommand")) {
+		const char *command = r_json_get_str (tool_args, "command");
 		if (!command) {
-			return jsonrpc_error_response(-32602, "Missing required parameter: command", NULL, NULL);
+			return jsonrpc_error_response (-32602, "Missing required parameter: command", NULL, NULL);
 		}
-		char *res = r2mcp_cmd(ss, command);
-		char *o = jsonrpc_tooltext_response(res);
-		free(res);
+		char *res = r2mcp_cmd (ss, command);
+		char *o = jsonrpc_tooltext_response (res);
+		free (res);
 		return o;
 	}
 
-	{
-		char *tmp = r_str_newf ("Unknown tool: %s", tool_name);
-		char *err = jsonrpc_error_response (-32602, tmp, NULL, NULL);
-		free (tmp);
-		return err;
-	}
+	char *tmp = r_str_newf ("Unknown tool: %s", tool_name);
+	char *err = jsonrpc_error_response (-32602, tmp, NULL, NULL);
+	free (tmp);
+	return err;
 }
