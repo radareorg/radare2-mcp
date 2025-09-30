@@ -410,8 +410,9 @@ static void process_mcp_message(ServerState *ss, const char *msg) {
 			} else {
 				write (STDOUT_FILENO, response, resp_len);
 			}
-
+#if R2__UNIX__
 			fsync (STDOUT_FILENO);
+#endif
 			free (response);
 		}
 	} else {
