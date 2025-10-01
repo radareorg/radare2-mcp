@@ -91,6 +91,7 @@ void tools_registry_init(ServerState *ss) {
 	r_list_append ( ss->tools, tool ("listDecompilers", "Shows all available decompiler backends", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | M_RO));
 
 	r_list_append ( ss->tools, tool ("renameFunction", "Renames the function at the specified address", "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"New function name\"},\"address\":{\"type\":\"string\",\"description\":\"Address of the function to rename\"}},\"required\":[\"name\",\"address\"]}", TOOL_MODE_NORMAL));
+	r_list_append ( ss->tools, tool ("renameFlag", "Renames a local variable or data reference within the specified address", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the flag containing the variable or data reference\"},\"name\":{\"type\":\"string\",\"description\":\"Current variable name or data reference\"},\"newName\":{\"type\":\"string\",\"description\":\"New variable name or data reference\"}},\"required\":[\"address\",\"name\",\"newName\"]}", TOOL_MODE_NORMAL | M_HTTP));
 
 	r_list_append ( ss->tools, tool ("useDecompiler", "Selects which decompiler backend to use (default: pdc)", "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"Name of the decompiler\"}},\"required\":[\"name\"]}", TOOL_MODE_NORMAL));
 
@@ -708,6 +709,29 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 		char *response = jsonrpc_tooltext_response (disasm);
 		free (disasm);
 		return response;
+	}
+
+	if (!strcmp (tool_name, "renameFlag")) {
+		const char *address = r_json_get_str (tool_args, "address");
+		if (!address) {
+			return jsonrpc_error_response (-32602, "Missing required parameter: address", NULL, NULL);
+		}
+		const char *name = r_json_get_str (tool_args, "name");
+		if (!name) {
+			return jsonrpc_error_response (-32602, "Missing required parameter: name", NULL, NULL);
+		}
+		const char *newName = r_json_get_str (tool_args, "newName");
+		if (!newName) {
+			return jsonrpc_error_response (-32602, "Missing required parameter: newName", NULL, NULL);
+		}
+		char *remove_res = r2mcp_cmdf (ss, "'@%s'fr %s %s", address, name, newName);
+		if (R_STR_ISNOTEMPTY (remove_res)) {
+			char *response = jsonrpc_tooltext_response (remove_res);
+			free (remove_res);
+			return response;
+		}
+		free (remove_res);
+		return jsonrpc_tooltext_response ("ok");
 	}
 
 	if (!strcmp (tool_name, "renameFunction")) {
