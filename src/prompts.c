@@ -216,7 +216,6 @@ typedef struct {
 void prompts_registry_init(ServerState *ss) {
 	if (ss->prompts) return;
 	PromptRegistry *reg = R_NEW0 (PromptRegistry);
-	if (!reg) return;
 	reg->list = r_list_new ();
 	if (!reg->list) {
 		free (reg);
