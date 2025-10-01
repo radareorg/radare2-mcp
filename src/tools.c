@@ -724,7 +724,7 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 			return jsonrpc_error_response (-32602, "Missing required parameter: newName", NULL, NULL);
 		}
 		char *remove_res = r2mcp_cmdf (ss, "'@%s'fr %s %s", address, name, newName);
-		if (remove_res && R_STR_ISNOTEMPTY (remove_res)) {
+		if (R_STR_ISNOTEMPTY (remove_res)) {
 			char *response = jsonrpc_tooltext_response (remove_res);
 			free (remove_res);
 			return response;
