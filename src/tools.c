@@ -60,6 +60,7 @@ void tools_registry_init(ServerState *ss) {
 	r_list_append (ss->tools, tool ("openFile", "Opens a binary file with radare2 for analysis <think>Call this tool before any other one from r2mcp. Use an absolute filePath</think>", "{\"type\":\"object\",\"properties\":{\"filePath\":{\"type\":\"string\",\"description\":\"Path to the file to open\"}},\"required\":[\"filePath\"]}", TOOL_MODE_NORMAL | M_MINI));
 
 	if (ss->enable_run_command_tool) {
+		r_list_append (ss->tools, tool ("runJavascript", "Executes JavaScript code using radare2's qjs runtime", "{\"type\":\"object\",\"properties\":{\"script\":{\"type\":\"string\",\"description\":\"The JavaScript code to execute\"}},\"required\":[\"script\"]}", TOOL_MODE_NORMAL | M_MINI | M_HTTP));
 		r_list_append (ss->tools, tool ("runCommand", "Executes a raw radare2 command directly", "{\"type\":\"object\",\"properties\":{\"command\":{\"type\":\"string\",\"description\":\"The radare2 command to execute\"}},\"required\":[\"command\"]}", TOOL_MODE_NORMAL | M_MINI | M_HTTP));
 	}
 
@@ -758,15 +759,34 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 		return response;
 	}
 
-	if (!strcmp (tool_name, "runCommand")) {
-		const char *command = r_json_get_str (tool_args, "command");
-		if (!command) {
-			return jsonrpc_error_response (-32602, "Missing required parameter: command", NULL, NULL);
+	if (ss->enable_run_command_tool) {
+		if (!strcmp (tool_name, "runCommand")) {
+			const char *command = r_json_get_str (tool_args, "command");
+			if (!command) {
+				return jsonrpc_error_response (-32602, "Missing required parameter: command", NULL, NULL);
+			}
+			char *res = r2mcp_cmd (ss, command);
+			char *o = jsonrpc_tooltext_response (res);
+			free (res);
+			return o;
 		}
-		char *res = r2mcp_cmd (ss, command);
-		char *o = jsonrpc_tooltext_response (res);
-		free (res);
-		return o;
+		if (!strcmp (tool_name, "runJavascript")) {
+			const char *script = r_json_get_str (tool_args, "script");
+			if (!script) {
+				return jsonrpc_error_response (-32602, "Missing required parameter: script", NULL, NULL);
+			}
+			char *encoded = r_base64_encode_dyn ((const ut8 *)script, strlen (script));
+			if (!encoded) {
+				return jsonrpc_error_response (-32603, "Failed to encode script", NULL, NULL);
+			}
+			char *cmd = r_str_newf ("js base64:%s", encoded);
+			char *res = r2mcp_cmd (ss, cmd);
+			char *o = jsonrpc_tooltext_response (res);
+			free (res);
+			free (cmd);
+			free (encoded);
+			return o;
+		}
 	}
 
 	char *tmp = r_str_newf ("Unknown tool: %s", tool_name);
