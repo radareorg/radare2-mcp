@@ -3,22 +3,27 @@
 [![ci](https://github.com/radareorg/radare2-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/radareorg/radare2-mcp/actions/workflows/ci.yml)
 [![radare2](https://img.shields.io/badge/radare2-6.0.4-green)](https://github.com/radareorg/radare2)
 
-<img width="400" alt="Screenshot_2025-03-22_at_5 34 47_PM" src="https://github.com/user-attachments/assets/5322c3fc-fc07-4770-96a3-5a6d82d439c2" />
-<img width="400" alt="Screenshot_2025-03-22_at_5 36 17_PM" src="https://github.com/user-attachments/assets/132a1de0-6978-4202-8dce-aa3d60551b9a" />
+<img width="400" alt="r2mcp logo" src="./r2mcp.png" />
 
-An MCP server for using radare2 with AI assistants such as Claude, VSCode, CLION, Mai, OpenCode, ...
+An MCP server to use **radare2** with AI agents such as OpenCode, Mai, VSCode, Claude, CLION, ...
 
 ## Features
 
-This implementation provides a simple MCP server that:
+This implementation provides:
 
-- Uses a direct stdin/stdout communication model
-- Provides basic tool capabilities
-- Allows seamless binary analysis with radare2
-- Integrates radare2 directly with AI assistants
-- Enables file exploration and inspection
+- 💻 Fully written in C using the native r2 APIs
+- 🧩 Works from the CLI, as an r2 plugin and as an MCP server
+- 🔍 Seamless binary analysis with radare2
+- 🔗 Connect to any local or remote r2/iaito session via r2pipe
+- 🔒 Supports readonly mode, sandbox lock and restrict tools
+- 🔩 Fine grained tools configuration
+- 🔁 Direct stdin/stdout communication model
+- 🛠️ Optional raw access to run r2 commands or r2js scripts
 
 ## Installation
+
+<img width="400" alt="Screenshot_2025-03-22_at_5 34 47_PM" src="https://github.com/user-attachments/assets/5322c3fc-fc07-4770-96a3-5a6d82d439c2" />
+<img width="400" alt="Screenshot_2025-03-22_at_5 36 17_PM" src="https://github.com/user-attachments/assets/132a1de0-6978-4202-8dce-aa3d60551b9a" />
 
 ### Using r2pm
 
@@ -31,7 +36,20 @@ $ r2pm -Uci r2mcp
 The `r2mcp` executable will be copied into r2pm's bindir in your home directory. However, this binary is not supposed to be executed directly from the shell; it will only work when launched by the MCP service handler of your language model of choice.
 
 ```bash
-$ r2pm -r mcp
+$ r2pm -r r2mcp
+```
+
+That's the common mcpServer JSON configuration file:
+
+```json
+{
+  "mcpServers": {
+    "radare2": {
+      "command": "r2pm",
+      "args": ["-r", "r2mcp"]
+    }
+  }
+}
 ```
 
 ### Using Docker
