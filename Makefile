@@ -6,4 +6,7 @@ $(SRC_TARGETS): src/Makefile
 src/Makefile:
 	./configure
 
-.PHONY: $(SRC_TARGETS) help
+doc:
+	cat INSTALL.md
+
+.PHONY: $(SRC_TARGETS) help doc
