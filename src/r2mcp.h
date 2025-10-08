@@ -10,6 +10,10 @@
 #define R2MCP_VERSION "1.3.0"
 #endif
 
+/* Pagination limits for tool responses */
+#define R2MCP_DEFAULT_PAGE_SIZE 1000
+#define R2MCP_MAX_PAGE_SIZE 10000
+
 typedef struct {
 	const char *name;
 	const char *version;

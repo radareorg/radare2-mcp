@@ -102,19 +102,19 @@ void tools_registry_init(ServerState *ss) {
 
 	r_list_append ( ss->tools, tool ("setComment", "Adds a comment at the specified address", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address to put the comment in\"},\"message\":{\"type\":\"string\",\"description\":\"Comment text to use\"}},\"required\":[\"address\",\"message\"]}", TOOL_MODE_NORMAL | M_HTTP));
 
-	r_list_append ( ss->tools, tool ("listStrings", "Lists strings from data sections with optional regex filter", "{\"type\":\"object\",\"properties\":{\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"}}}", TOOL_MODE_NORMAL | M_MINI | M_HTTP | M_RO));
+	r_list_append ( ss->tools, tool ("listStrings", "Lists strings from data sections with optional regex filter", "{\"type\":\"object\",\"properties\":{\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"},\"cursor\":{\"type\":\"string\",\"description\":\"Cursor for pagination (line number to start from)\"},\"pageSize\":{\"type\":\"integer\",\"description\":\"Number of lines per page (default: 1000, max: 10000)\"}}}", TOOL_MODE_NORMAL | M_MINI | M_HTTP | M_RO));
 
-	r_list_append ( ss->tools, tool ("listAllStrings", "Scans the entire binary for strings with optional regex filter", "{\"type\":\"object\",\"properties\":{\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"}}}", TOOL_MODE_NORMAL | M_RO));
+	r_list_append ( ss->tools, tool ("listAllStrings", "Scans the entire binary for strings with optional regex filter", "{\"type\":\"object\",\"properties\":{\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"},\"cursor\":{\"type\":\"string\",\"description\":\"Cursor for pagination (line number to start from)\"},\"pageSize\":{\"type\":\"integer\",\"description\":\"Number of lines per page (default: 1000, max: 10000)\"}}}", TOOL_MODE_NORMAL | M_RO));
 
 r_list_append ( ss->tools, tool ("analyze", "Runs binary analysis with optional depth level", "{\"type\":\"object\",\"properties\":{\"level\":{\"type\":\"number\",\"description\":\"Analysis level (0-4, higher is more thorough)\"}},\"required\":[]}", TOOL_MODE_NORMAL | M_MINI | M_HTTP));
 
 	r_list_append ( ss->tools, tool ("xrefsTo", "Finds all code references to the specified address", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address to check for cross-references\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | M_MINI | M_HTTP | M_RO));
 
-	r_list_append ( ss->tools, tool ("decompileFunction", "Show C-like pseudocode of the function in the given address. <think>Use this to inspect the code in a function, do not run multiple times in the same offset</think>", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the function to decompile\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | M_MINI | M_HTTP | M_RO));
+	r_list_append ( ss->tools, tool ("decompileFunction", "Show C-like pseudocode of the function in the given address. <think>Use this to inspect the code in a function, do not run multiple times in the same offset</think>", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the function to decompile\"},\"cursor\":{\"type\":\"string\",\"description\":\"Cursor for pagination (line number to start from)\"},\"pageSize\":{\"type\":\"integer\",\"description\":\"Number of lines per page (default: 1000, max: 10000)\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | M_MINI | M_HTTP | M_RO));
 
 	r_list_append (ss->tools, tool ("listFiles", "Lists files in the specified path using radare2's ls -q command. Files ending with / are directories, otherwise they are files.", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"Path to list files from\"}},\"required\":[\"path\"]}", TOOL_MODE_NORMAL | M_MINI | M_HTTP | M_RO));
 
-	r_list_append ( ss->tools, tool ("disassembleFunction", "Shows assembly listing of the function at the specified address", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the function to disassemble\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | M_RO));
+	r_list_append ( ss->tools, tool ("disassembleFunction", "Shows assembly listing of the function at the specified address", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the function to disassemble\"},\"cursor\":{\"type\":\"string\",\"description\":\"Cursor for pagination (line number to start from)\"},\"pageSize\":{\"type\":\"integer\",\"description\":\"Number of lines per page (default: 1000, max: 10000)\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | M_RO));
 
 	r_list_append ( ss->tools, tool ("disassemble", "Disassembles a specific number of instructions from an address <think>Use this tool to inspect a portion of memory as code without depending on function analysis boundaries. Use this tool when functions are large and you are only interested on few instructions</think>", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address to start disassembly\"},\"numInstructions\":{\"type\":\"integer\",\"description\":\"Number of instructions to disassemble (default: 10)\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | M_RO));
 
@@ -605,6 +605,14 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 
 	if (!strcmp (tool_name, "listStrings") || !strcmp (tool_name, "listAllStrings")) {
 		const char *filter = r_json_get_str (tool_args, "filter");
+		const char *cursor = r_json_get_str (tool_args, "cursor");
+		int page_size = (int)r_json_get_num (tool_args, "pageSize");
+		if (page_size <= 0) {
+			page_size = R2MCP_DEFAULT_PAGE_SIZE;
+		}
+		if (page_size > R2MCP_MAX_PAGE_SIZE) {
+			page_size = R2MCP_MAX_PAGE_SIZE;
+		}
 
 		char *result = r2mcp_cmd (ss, (!strcmp (tool_name, "listStrings") ? "izqq" : "izzzqq"));
 		if (R_STR_ISNOTEMPTY (filter)) {
@@ -616,8 +624,13 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 			free (result);
 			result = r_str_newf ("Error: No strings with regex %s", filter);
 		}
-		char *response = jsonrpc_tooltext_response (result);
+		bool has_more = false;
+		char *next_cursor = NULL;
+		char *paginated = paginate_text_by_lines (result, cursor, page_size, &has_more, &next_cursor);
 		free (result);
+		char *response = jsonrpc_tooltext_response_paginated (paginated, has_more, next_cursor);
+		free (paginated);
+		free (next_cursor);
 		return response;
 	}
 
@@ -706,9 +719,22 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 		if (!address) {
 			return jsonrpc_error_response (-32602, "Missing required parameter: address", NULL, NULL);
 		}
+		const char *cursor = r_json_get_str (tool_args, "cursor");
+		int page_size = (int)r_json_get_num (tool_args, "pageSize");
+		if (page_size <= 0) {
+			page_size = R2MCP_DEFAULT_PAGE_SIZE;
+		}
+		if (page_size > R2MCP_MAX_PAGE_SIZE) {
+			page_size = R2MCP_MAX_PAGE_SIZE;
+		}
 		char *disasm = r2mcp_cmdf (ss, "'@%s'pdf", address);
-		char *response = jsonrpc_tooltext_response (disasm);
+		bool has_more = false;
+		char *next_cursor = NULL;
+		char *paginated = paginate_text_by_lines (disasm, cursor, page_size, &has_more, &next_cursor);
 		free (disasm);
+		char *response = jsonrpc_tooltext_response_paginated (paginated, has_more, next_cursor);
+		free (paginated);
+		free (next_cursor);
 		return response;
 	}
 
@@ -753,9 +779,22 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 		if (!address) {
 			return jsonrpc_error_response (-32602, "Missing required parameter: address", NULL, NULL);
 		}
+		const char *cursor = r_json_get_str (tool_args, "cursor");
+		int page_size = (int)r_json_get_num (tool_args, "pageSize");
+		if (page_size <= 0) {
+			page_size = R2MCP_DEFAULT_PAGE_SIZE;
+		}
+		if (page_size > R2MCP_MAX_PAGE_SIZE) {
+			page_size = R2MCP_MAX_PAGE_SIZE;
+		}
 		char *disasm = r2mcp_cmdf (ss, "'@%s'pdc", address);
-		char *response = jsonrpc_tooltext_response (disasm);
+		bool has_more = false;
+		char *next_cursor = NULL;
+		char *paginated = paginate_text_by_lines (disasm, cursor, page_size, &has_more, &next_cursor);
 		free (disasm);
+		char *response = jsonrpc_tooltext_response_paginated (paginated, has_more, next_cursor);
+		free (paginated);
+		free (next_cursor);
 		return response;
 	}
 
