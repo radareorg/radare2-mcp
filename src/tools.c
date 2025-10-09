@@ -1,7 +1,51 @@
 #include <r_core.h>
 #include "r2mcp.h"
 #include "tools.h"
+#include <r_util/pj.h>
 #include "utils.inc.c" // bring in shared helpers like jsonrpc_tooltext_response
+
+static void pj_append_rjson(PJ *pj, RJson *j) {
+	if (!j) {
+		pj_null(pj);
+		return;
+	}
+	switch (j->type) {
+	case R_JSON_NULL:
+		pj_null(pj);
+		break;
+	case R_JSON_BOOLEAN:
+		pj_b(pj, j->num.u_value);
+		break;
+	case R_JSON_INTEGER:
+		pj_n(pj, j->num.s_value);
+		break;
+	case R_JSON_DOUBLE:
+		pj_d(pj, j->num.dbl_value);
+		break;
+	case R_JSON_STRING:
+		pj_s(pj, j->str_value);
+		break;
+	case R_JSON_ARRAY:
+		pj_a(pj);
+		RJson *child = j->children.first;
+		while (child) {
+			pj_append_rjson(pj, child);
+			child = child->next;
+		}
+		pj_end(pj);
+		break;
+	case R_JSON_OBJECT:
+		pj_o(pj);
+		child = j->children.first;
+		while (child) {
+			pj_k(pj, child->key);
+			pj_append_rjson(pj, child);
+			child = child->next;
+		}
+		pj_end(pj);
+		break;
+	}
+}
 
 // Check an optional whitelist of enabled tool names. If ss->enabled_tools is
 // NULL, all tools are considered allowed. Otherwise only names present in the
@@ -363,6 +407,46 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 	// Enforce tool availability per mode unless permissive is enabled
 	if (!tools_is_tool_allowed (ss, tool_name)) {
 		return jsonrpc_error_response (-32611, "Tool not available in current mode (use -p for permissive)", NULL, NULL);
+	}
+
+	// Supervisor control check
+	if (ss->svc_baseurl) {
+		PJ *pj = pj_new();
+		pj_o(pj);
+		pj_ks(pj, "tool", tool_name);
+		pj_k(pj, "arguments");
+		pj_append_rjson(pj, tool_args);
+		pj_k(pj, "available_tools");
+		pj_a(pj);
+		RListIter *iter;
+		ToolSpec *ts;
+		r_list_foreach(ss->tools, iter, ts) pj_s(pj, ts->name);
+		pj_end(pj);
+		pj_end(pj);
+		char *req = pj_drain(pj);
+		int rc;
+		char *resp = curl_post_capture(ss->svc_baseurl, req, &rc);
+		free(req);
+		if (resp && rc == 0) {
+			RJson *rj = r_json_parse(resp);
+			free(resp);
+			if (rj) {
+				const char *err = r_json_get_str(rj, "error");
+				if (err) {
+					r_json_free(rj);
+					return jsonrpc_error_response(-32000, err, NULL, NULL);
+				}
+				const char *new_tool = r_json_get_str(rj, "tool");
+				RJson *new_args = r_json_get(rj, "arguments");
+				if (new_tool && strcmp(new_tool, tool_name)) {
+					tool_name = new_tool;
+				}
+				if (new_args) {
+					tool_args = new_args;
+				}
+				r_json_free(rj);
+			}
+		}
 	}
 
 	// Special-case: openFile

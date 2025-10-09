@@ -2,10 +2,55 @@
 
 #include <r_core.h>
 #include <r_util/r_json.h>
+#include <r_util/pj.h>
+#include <r_util.h>
 #include <r_util/r_print.h>
 #include <stdio.h>
 #include <stdarg.h>
 #include <errno.h>
+
+static void pj_append_rjson(PJ *pj, RJson *j) {
+	if (!j) {
+		pj_null(pj);
+		return;
+	}
+	switch (j->type) {
+	case R_JSON_NULL:
+		pj_null(pj);
+		break;
+	case R_JSON_BOOLEAN:
+		pj_b(pj, j->num.u_value);
+		break;
+	case R_JSON_INTEGER:
+		pj_n(pj, j->num.s_value);
+		break;
+	case R_JSON_DOUBLE:
+		pj_d(pj, j->num.dbl_value);
+		break;
+	case R_JSON_STRING:
+		pj_s(pj, j->str_value);
+		break;
+	case R_JSON_ARRAY:
+		pj_a(pj);
+		RJson *child = j->children.first;
+		while (child) {
+			pj_append_rjson(pj, child);
+			child = child->next;
+		}
+		pj_end(pj);
+		break;
+	case R_JSON_OBJECT:
+		pj_o(pj);
+		child = j->children.first;
+		while (child) {
+			pj_k(pj, child->key);
+			pj_append_rjson(pj, child);
+			child = child->next;
+		}
+		pj_end(pj);
+		break;
+	}
+}
 
 #if defined(R2__UNIX__)
 #include <unistd.h>
@@ -308,15 +353,7 @@ static char *handle_get_prompt(ServerState *ss, RJson *params) {
 
 // Thin wrapper that delegates to the tools module. This keeps r2mcp.c small
 // and moves the tool-specific logic into tools.c where it belongs.
-static char *handle_call_tool(ServerState *ss, RJson *params) {
-	const char *tool_name = r_json_get_str (params, "name");
-	if (!tool_name) {
-		tool_name = r_json_get_str (params, "tool");
-	}
-	RJson *tool_args = (RJson *)r_json_get (params, "arguments");
-	if (!tool_args) {
-		tool_args = (RJson *)r_json_get (params, "args");
-	}
+static char *handle_call_tool(ServerState *ss, const char *tool_name, RJson *tool_args) {
 	return tools_call (ss, tool_name, tool_args);
 }
 
@@ -347,7 +384,74 @@ static char *handle_mcp_request(ServerState *ss, const char *method, RJson *para
 	} else if (!strcmp (method, "tools/list") || !strcmp (method, "tool/list")) {
 		result = handle_list_tools (ss, params);
 	} else if (!strcmp (method, "tools/call") || !strcmp (method, "tool/call")) {
-		result = handle_call_tool (ss, params);
+		const char *tool_name = r_json_get_str (params, "name");
+		if (!tool_name) {
+			tool_name = r_json_get_str (params, "tool");
+		}
+		RJson *tool_args = (RJson *)r_json_get (params, "arguments");
+		if (!tool_args) {
+			tool_args = (RJson *)r_json_get (params, "args");
+		}
+		if (ss->svc_baseurl) {
+			PJ *pj = pj_new ();
+			pj_o (pj);
+			pj_ks (pj, "tool", tool_name);
+			pj_k (pj, "arguments");
+			pj_append_rjson(pj, tool_args);
+			pj_k (pj, "available_tools");
+			pj_a (pj);
+			RListIter *iter;
+			ToolSpec *ts;
+			r_list_foreach (ss->tools, iter, ts) {
+				pj_s (pj, ts->name);
+			}
+			pj_end (pj);
+			pj_end (pj);
+			char *req = pj_drain (pj);
+			int rc;
+			char *resp = curl_post_capture (ss->svc_baseurl, req, &rc);
+			free (req);
+			if (resp && rc == 0) {
+				RJson *rj = r_json_parse (resp);
+				free (resp);
+				if (rj) {
+					const char *err = r_json_get_str (rj, "error");
+					if (err) {
+						r_json_free (rj);
+						return jsonrpc_error_response (-32000, err, id, NULL);
+					}
+					const char *r2cmd = r_json_get_str (rj, "r2cmd");
+					if (r2cmd) {
+						char *cmd_out = r2mcp_cmd (ss, r2cmd);
+						PJ *pj_res = pj_new ();
+						pj_o (pj_res);
+						pj_ks (pj_res, "result", cmd_out ? cmd_out : "");
+						pj_end (pj_res);
+						char *res = pj_drain (pj_res);
+						free (cmd_out);
+						r_json_free (rj);
+						result = res;
+					} else {
+						const char *new_tool = r_json_get_str (rj, "tool");
+						RJson *new_args = r_json_get (rj, "arguments");
+						if (new_tool && strcmp (new_tool, tool_name)) {
+							tool_name = new_tool;
+						}
+						if (new_args) {
+							tool_args = new_args;
+						}
+						r_json_free (rj);
+						result = handle_call_tool (ss, tool_name, tool_args);
+					}
+				} else {
+					result = handle_call_tool (ss, tool_name, tool_args);
+				}
+			} else {
+				result = handle_call_tool (ss, tool_name, tool_args);
+			}
+		} else {
+			result = handle_call_tool (ss, tool_name, tool_args);
+		}
 	} else if (!strcmp (method, "prompts/list") || !strcmp (method, "prompt/list")) {
 		result = handle_list_prompts (ss, params);
 	} else if (!strcmp (method, "prompts/get") || !strcmp (method, "prompt/get")) {

@@ -45,6 +45,8 @@ typedef struct {
 	bool http_mode;
 	/* Base URL of the remote r2 webserver (if http_mode is true) */
 	char *baseurl;
+	/* Base URL of the supervisor control service (if set) */
+	char *svc_baseurl;
 	/* Optional sandbox path. When set, only allow opening files under this dir */
 	char *sandbox;
 	/* Optional path to append debug logs when set via -l */
@@ -93,3 +95,6 @@ char *r2mcp_analyze(ServerState *ss, int level);
 // prints their results. If core is provided, output goes to r2 console, else stdout.
 // Returns 0 on success, non-zero on failure.
 int r2mcp_run_dsl_tests(ServerState *ss, const char *dsl, RCore *core);
+
+// HTTP POST helper for svc communication
+char *curl_post_capture(const char *url, const char *msg, int *exit_code_out);

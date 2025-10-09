@@ -45,9 +45,11 @@ void r2mcp_help(void) {
 		" -R         enable read-only mode (expose only non-mutating tools)\n"
 		" -m         expose minimum amount of tools\n"
 		" -t         list available tools and exit\n"
+		" -T [tests] run DSL tests and exit\n"
 		" -p         permissive tools: allow calling non-listed tools\n"
 		" -n         do not load any plugin or radare2rc\n"
 		" -i         ignore analysis level specified in analyze calls\n"
+		" -S [url]   enable supervisor control; connect to svc at [url]\n"
 		" -v         show version\n";
 	printf ("%s", help_text);
 }
@@ -74,12 +76,13 @@ int r2mcp_main(int argc, const char **argv) {
 	bool http_mode = false;
 	bool permissive = false;
 	char *baseurl = NULL;
+	char *svc_baseurl = NULL;
 	char *sandbox = NULL;
 	char *logfile = NULL;
 	bool ignore_analysis_level = false;
 	const char *dsl_tests = NULL;
 	RGetopt opt;
-	r_getopt_init (&opt, argc, argv, "hmvpd:nc:u:l:s:rite:RT:");
+	r_getopt_init (&opt, argc, argv, "hmvpd:nc:u:l:s:rite:RT:S:");
 	int c;
 	while ((c = r_getopt_next (&opt)) != -1) {
 		switch (c) {
@@ -130,6 +133,15 @@ int r2mcp_main(int argc, const char **argv) {
 		case 'T':
 			dsl_tests = opt.arg;
 			break;
+		case 'S':
+			if (opt.arg) {
+				if (strspn (opt.arg, "0123456789") == strlen (opt.arg)) {
+					svc_baseurl = r_str_newf ("http://localhost:%s", opt.arg);
+				} else {
+					svc_baseurl = strdup (opt.arg);
+				}
+			}
+			break;
 		case 'e':
 			if (opt.arg) {
 				if (!enabled_tools) {
@@ -156,6 +168,7 @@ int r2mcp_main(int argc, const char **argv) {
 		.enable_run_command_tool = enable_run_command_tool,
 		.http_mode = http_mode,
 		.baseurl = baseurl,
+		.svc_baseurl = svc_baseurl,
 		.sandbox = sandbox,
 		.logfile = logfile,
 		.ignore_analysis_level = ignore_analysis_level,
@@ -207,6 +220,7 @@ int r2mcp_main(int argc, const char **argv) {
 		prompts_registry_fini (&ss);
 		r2mcp_state_fini (&ss);
 		free (ss.baseurl);
+		free (ss.svc_baseurl);
 		free (ss.sandbox);
 		free (ss.logfile);
 		if (ss.enabled_tools) {
