@@ -5,7 +5,8 @@ $(SRC_TARGETS): src/Makefile
 	$(MAKE) -C svc $@
 
 format fmt indent:
-	clang-format -i src/*.c svc/*.c
+	radare2-format src/*.c svc/*.c
+	#clang-format -i src/*.c svc/*.c
 
 src/Makefile:
 	./configure
