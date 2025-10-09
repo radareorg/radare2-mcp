@@ -2,6 +2,10 @@ SRC_TARGETS=all clean install user-install uninstall user-uninstall
 
 $(SRC_TARGETS): src/Makefile
 	$(MAKE) -C src $@
+	$(MAKE) -C svc $@
+
+format fmt indent:
+	clang-format -i src/*.c svc/*.c
 
 src/Makefile:
 	./configure

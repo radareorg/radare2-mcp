@@ -26,22 +26,24 @@ int main(int argc, char **argv) {
 
 	RSocket *server = r_socket_new(false);
 	if (!server) {
-		fprintf(stderr, "Cannot create socket\n");
+		R_LOG_ERROR("Cannot create socket");
 		return 1;
 	}
 
 	if (!r_socket_listen(server, argv[port_index], NULL)) {
-		fprintf(stderr, "Cannot listen on port %s\n", argv[port_index]);
+		R_LOG_ERROR("Cannot listen on port %s", argv[port_index]);
 		r_socket_free(server);
 		return 1;
 	}
 
-	printf("R2 MCP-SBC listening on port %s\n", argv[port_index]);
+	R_LOG_INFO("R2 MCP-SBC listening on port %s", argv[port_index]);
 
 	RSocketHTTPOptions so = { 0 };
 	so.timeout = 3;
 
 	while (true) {
+		eprintf("[r2mcp-supervisor]> ");
+		fflush(stderr);
 		RSocketHTTPRequest *rs = r_socket_http_accept(server, &so);
 		if (!rs) {
 			continue;

@@ -2,8 +2,8 @@
 #include "readbuffer.h"
 
 ReadBuffer *read_buffer_new(void) {
-	ReadBuffer *buf = R_NEW (ReadBuffer);
-	buf->data = malloc (BUFFER_SIZE);
+	ReadBuffer *buf = R_NEW(ReadBuffer);
+	buf->data = malloc(BUFFER_SIZE);
 	buf->size = 0;
 	buf->capacity = BUFFER_SIZE;
 	return buf;
@@ -11,15 +11,15 @@ ReadBuffer *read_buffer_new(void) {
 
 void read_buffer_free(ReadBuffer *buf) {
 	if (buf) {
-		free (buf->data);
-		free (buf);
+		free(buf->data);
+		free(buf);
 	}
 }
 
 void read_buffer_append(ReadBuffer *buf, const char *data, size_t len) {
 	if (buf->size + len > buf->capacity) {
 		size_t new_capacity = buf->capacity * 2;
-		char *new_data = realloc (buf->data, new_capacity);
+		char *new_data = realloc(buf->data, new_capacity);
 		if (!new_data) {
 			// R_LOG_ERROR ("Failed to resize buffer");
 			return;
@@ -27,7 +27,7 @@ void read_buffer_append(ReadBuffer *buf, const char *data, size_t len) {
 		buf->data = new_data;
 		buf->capacity = new_capacity;
 	}
-	memcpy (buf->data + buf->size, data, len);
+	memcpy(buf->data + buf->size, data, len);
 	buf->size += len;
 }
 
@@ -45,7 +45,7 @@ char *read_buffer_get_message(ReadBuffer *buf) {
 	} else {
 		// Expand capacity if needed
 		buf->capacity += 1;
-		buf->data = realloc (buf->data, buf->capacity);
+		buf->data = realloc(buf->data, buf->capacity);
 		buf->data[buf->size] = '\0';
 	}
 
@@ -75,14 +75,14 @@ char *read_buffer_get_message(ReadBuffer *buf) {
 				if (brace_count == 0) {
 					// We have a complete message from start_pos to i (inclusive)
 					size_t msg_len = i - start_pos + 1;
-					char *msg = malloc (msg_len + 1);
-					memcpy (msg, buf->data + start_pos, msg_len);
+					char *msg = malloc(msg_len + 1);
+					memcpy(msg, buf->data + start_pos, msg_len);
 					msg[msg_len] = '\0';
 
 					// Move any remaining data to the beginning of the buffer
 					size_t remaining = buf->size - (i + 1);
 					if (remaining > 0) {
-						memmove (buf->data, buf->data + i + 1, remaining);
+						memmove(buf->data, buf->data + i + 1, remaining);
 					}
 					buf->size = remaining;
 
