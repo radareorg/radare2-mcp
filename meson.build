@@ -160,6 +160,21 @@ if not r_config_dep.found()
   warning('r_config dependency not found via pkg-config or same paths as r_core; console helpers may be unavailable')
 endif
 
+r_socket_dep = dependency('r_socket', method: 'pkg-config', required: false)
+if not r_socket_dep.found() and r2_libdirs.length() > 0
+  foreach name : ['r_socket', 'libr_socket']
+    slib = cc.find_library(name, dirs: r2_libdirs, required: false)
+    if slib.found()
+      sinc = include_directories(r2_incdirs)
+      r_socket_dep = declare_dependency(dependencies: [slib], include_directories: sinc)
+      break
+    endif
+  endforeach
+endif
+if not r_socket_dep.found()
+  warning('r_socket dependency not found via pkg-config or same paths as r_core; svc may not build')
+endif
+
 # Match Makefile warning flags when using gcc/clang
 c_args = []
 if cc.get_id() == 'gcc' or cc.get_id() == 'clang'
@@ -231,4 +246,14 @@ plugin_lib = shared_library(
   c_args: c_args,
   link_args: link_args,
   install: false,  # We'll install manually to r2pm plugin directory
+)
+
+# Build the r2mcp-svc executable
+executable(
+  'r2mcp-svc',
+  'svc/r2mcp-svc.c',
+  dependencies: [r_socket_dep, r_util_dep],
+  c_args: c_args,
+  link_args: link_args,
+  install: true,
 )
