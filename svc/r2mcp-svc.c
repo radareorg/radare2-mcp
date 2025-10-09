@@ -38,12 +38,14 @@ int main(int argc, char **argv) {
 
 	printf("R2 MCP-SBC listening on port %s\n", argv[port_index]);
 
-	RSocketHTTPOptions so = {0};
+	RSocketHTTPOptions so = { 0 };
 	so.timeout = 3;
 
 	while (true) {
 		RSocketHTTPRequest *rs = r_socket_http_accept(server, &so);
-		if (!rs) continue;
+		if (!rs) {
+			continue;
+		}
 
 		// Only accept POST requests
 		if (strcmp(rs->method, "POST")) {
@@ -59,7 +61,7 @@ int main(int argc, char **argv) {
 		}
 
 		// Parse JSON
-		char *body_copy = strdup((char*)rs->data); // r_json_parse modifies the string
+		char *body_copy = strdup((char *)rs->data); // r_json_parse modifies the string
 		RJson *j = r_json_parse(body_copy);
 		if (!j) {
 			free(body_copy);
@@ -74,18 +76,19 @@ int main(int argc, char **argv) {
 
 		if (yolo_mode) {
 			// Auto accept
-			printf("YOLO: Received message: %s\n", (char*)rs->data);
+			printf("YOLO: Received message: %s\n", (char *)rs->data);
 			printf("YOLO: Tool executed: %s\n", tool ? tool : "unknown");
-			response_body = strdup((char*)rs->data);
+			response_body = strdup((char *)rs->data);
 		} else {
 			printf("\n=== Tool Call ===\n");
 			printf("Tool: %s\n", tool ? tool : "unknown");
-			printf("Request: %s\n", (char*)rs->data);
+			printf("Request: %s\n", (char *)rs->data);
 			printf("\nOptions:\n");
 			printf("1. Accept\n");
 			printf("2. Reject\n");
 			printf("3. Accept all (YOLO mode)\n");
 			printf("4. Modify tool\n");
+			printf("5. Run r2 command\n");
 			printf("Choice: ");
 			fflush(stdout);
 
@@ -96,14 +99,14 @@ int main(int argc, char **argv) {
 				int choice = atoi(input);
 				switch (choice) {
 				case 1: // Accept
-					response_body = strdup((char*)rs->data);
+					response_body = strdup((char *)rs->data);
 					break;
 				case 2: // Reject
 					response_body = strdup("{\"error\":\"rejected by user\"}");
 					break;
 				case 3: // YOLO
 					yolo_mode = true;
-					response_body = strdup((char*)rs->data);
+					response_body = strdup((char *)rs->data);
 					break;
 				case 4: // Modify
 					printf("Enter new tool name: ");
@@ -112,12 +115,12 @@ int main(int argc, char **argv) {
 					if (fgets(new_tool, sizeof(new_tool), stdin)) {
 						new_tool[strcspn(new_tool, "\n")] = 0;
 						char *tool_key = "\"tool\":\"";
-						char *pos = strstr((char*)rs->data, tool_key);
+						char *pos = strstr((char *)rs->data, tool_key);
 						if (pos) {
 							char *start = pos + strlen(tool_key);
 							char *end = strchr(start, '"');
 							if (end) {
-								size_t prefix_len = start - (char*)rs->data;
+								size_t prefix_len = start - (char *)rs->data;
 								size_t suffix_len = strlen(end);
 								response_body = malloc(prefix_len + strlen(new_tool) + suffix_len + 1);
 								if (response_body) {
@@ -133,6 +136,20 @@ int main(int argc, char **argv) {
 						} else {
 							response_body = strdup("{\"error\":\"no tool field\"}");
 						}
+					} else {
+						response_body = strdup("{\"error\":\"input failed\"}");
+					}
+					break;
+				case 5: // Run r2 command
+					printf("Enter r2 command: ");
+					fflush(stdout);
+					char r2cmd[1024];
+					if (fgets(r2cmd, sizeof(r2cmd), stdin)) {
+						r2cmd[strcspn(r2cmd, "\n")] = 0;
+						// Simple JSON escape: replace " with \"
+						char *escaped = r_str_replace(strdup(r2cmd), "\"", "\\\"", 1);
+						response_body = r_str_newf("{\"r2cmd\":\"%s\"}", escaped);
+						free(escaped);
 					} else {
 						response_body = strdup("{\"error\":\"input failed\"}");
 					}
