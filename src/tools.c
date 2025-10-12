@@ -4,6 +4,46 @@
 #include <r_util/pj.h>
 #include "utils.inc.c" // bring in shared helpers like jsonrpc_tooltext_response
 
+// Standardized error response helpers for consistent error handling
+static inline char *jsonrpc_error_missing_param(const char *param_name) {
+	char *msg = r_str_newf ("Missing required parameter: %s", param_name);
+	char *err = jsonrpc_error_response (-32602, msg, NULL, NULL);
+	free (msg);
+	return err;
+}
+
+static inline char *jsonrpc_error_invalid_param(const char *param_name, const char *reason) {
+	char *msg = r_str_newf ("Invalid parameter '%s': %s", param_name, reason);
+	char *err = jsonrpc_error_response (-32602, msg, NULL, NULL);
+	free (msg);
+	return err;
+}
+
+static inline char *jsonrpc_error_tool_not_allowed(const char *tool_name) {
+	char *msg = r_str_newf ("Tool '%s' not available in current mode (use -p for permissive)", tool_name);
+	char *err = jsonrpc_error_response (-32611, msg, NULL, NULL);
+	free (msg);
+	return err;
+}
+
+static inline char *jsonrpc_error_file_required(void) {
+	return jsonrpc_error_response (-32611, "Use the openFile method before calling any other method", NULL, NULL);
+}
+
+// Parameter validation helpers
+static inline bool validate_required_string_param(RJson *args, const char *param_name, const char **out_value) {
+	const char *value = r_json_get_str (args, param_name);
+	if (!value) {
+		return false;
+	}
+	*out_value = value;
+	return true;
+}
+
+static inline bool validate_address_param(RJson *args, const char *param_name, const char **out_address) {
+	return validate_required_string_param (args, param_name, out_address);
+}
+
 static void pj_append_rjson(PJ *pj, RJson *j) {
 	if (!j) {
 		pj_null (pj);
@@ -408,11 +448,11 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 		tool_args = &nil;
 	}
 	if (!tool_name) {
-		return jsonrpc_error_response (-32602, "Missing required parameter: name", NULL, NULL);
+		return jsonrpc_error_missing_param ("name");
 	}
 	// Enforce tool availability per mode unless permissive is enabled
 	if (!tools_is_tool_allowed (ss, tool_name)) {
-		return jsonrpc_error_response (-32611, "Tool not available in current mode (use -p for permissive)", NULL, NULL);
+		return jsonrpc_error_tool_not_allowed (tool_name);
 	}
 
 	// Supervisor control check
@@ -484,9 +524,9 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 			free (foo);
 			return out;
 		}
-		const char *filepath = r_json_get_str (tool_args, "filePath");
-		if (!filepath) {
-			return jsonrpc_error_response (-32602, "Missing required parameter: filePath", NULL, NULL);
+		const char *filepath;
+		if (!validate_required_string_param (tool_args, "filePath", &filepath)) {
+			return jsonrpc_error_missing_param ("filePath");
 		}
 
 		char *filteredpath = strdup (filepath);
@@ -497,14 +537,14 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 	}
 
 	if (!ss->http_mode && !ss->rstate.file_opened) {
-		return jsonrpc_error_response (-32611, "Use the openFile method before calling any other method", NULL, NULL);
+		return jsonrpc_error_file_required ();
 	}
 
 	// Map simple tools to commands or handlers
 	if (!strcmp (tool_name, "listMethods")) {
-		const char *classname = r_json_get_str (tool_args, "classname");
-		if (!classname) {
-			return jsonrpc_tooltext_response ("Missing classname parameter");
+		const char *classname;
+		if (!validate_required_string_param (tool_args, "classname", &classname)) {
+			return jsonrpc_error_missing_param ("classname");
 		}
 		char *res = r2mcp_cmdf (ss, "'ic %s", classname);
 		char *o = jsonrpc_tooltext_response (res);
@@ -512,9 +552,9 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 		return o;
 	}
 	if (!strcmp (tool_name, "listFiles")) {
-		const char *path = r_json_get_str (tool_args, "path");
-		if (!path) {
-			return jsonrpc_error_response (-32602, "Missing required parameter: path", NULL, NULL);
+		const char *path;
+		if (!validate_required_string_param (tool_args, "path", &path)) {
+			return jsonrpc_error_missing_param ("path");
 		}
 
 		// Security checks
@@ -647,9 +687,9 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 	}
 
 	if (!strcmp (tool_name, "calculate")) {
-		const char *expression = r_json_get_str (tool_args, "expression");
-		if (!expression) {
-			return jsonrpc_error_response (-32602, "Missing required parameter: expression", NULL, NULL);
+		const char *expression;
+		if (!validate_required_string_param (tool_args, "expression", &expression)) {
+			return jsonrpc_error_missing_param ("expression");
 		}
 		if (!ss->rstate.core || !ss->rstate.core->num) {
 			return jsonrpc_error_response (-32611, "Core or number parser unavailable (open a file first)", NULL, NULL);
@@ -675,10 +715,10 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 	}
 
 	if (!strcmp (tool_name, "setComment")) {
-		const char *address = r_json_get_str (tool_args, "address");
-		const char *message = r_json_get_str (tool_args, "message");
-		if (!address || !message) {
-			return jsonrpc_error_response (-32602, "Missing required parameters: address and message", NULL, NULL);
+		const char *address, *message;
+		if (!validate_address_param (tool_args, "address", &address) ||
+			!validate_required_string_param (tool_args, "message", &message)) {
+			return jsonrpc_error_missing_param ("address and message");
 		}
 
 		char *cmd_cc = r_str_newf ("'@%s'CC %s", address, message);
@@ -689,10 +729,10 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 	}
 
 	if (!strcmp (tool_name, "setFunctionPrototype")) {
-		const char *address = r_json_get_str (tool_args, "address");
-		const char *prototype = r_json_get_str (tool_args, "prototype");
-		if (!address || !prototype) {
-			return jsonrpc_error_response (-32602, "Missing required parameters: address and prototype", NULL, NULL);
+		const char *address, *prototype;
+		if (!validate_address_param (tool_args, "address", &address) ||
+			!validate_required_string_param (tool_args, "prototype", &prototype)) {
+			return jsonrpc_error_missing_param ("address and prototype");
 		}
 		char *cmd_afs = r_str_newf ("'@%s'afs %s", address, prototype);
 		char *tmpres_afs = r2mcp_cmd (ss, cmd_afs);
@@ -702,9 +742,9 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 	}
 
 	if (!strcmp (tool_name, "getFunctionPrototype")) {
-		const char *address = r_json_get_str (tool_args, "address");
-		if (!address) {
-			return jsonrpc_error_response (-32602, "Missing required parameters: address", NULL, NULL);
+		const char *address;
+		if (!validate_address_param (tool_args, "address", &address)) {
+			return jsonrpc_error_missing_param ("address");
 		}
 		char *s = r_str_newf ("'@%s'afs", address);
 		char *res = r2mcp_cmd (ss, s);
@@ -763,9 +803,9 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 	}
 
 	if (!strcmp (tool_name, "disassemble")) {
-		const char *address = r_json_get_str (tool_args, "address");
-		if (!address) {
-			return jsonrpc_error_response (-32602, "Missing required parameter: address", NULL, NULL);
+		const char *address;
+		if (!validate_address_param (tool_args, "address", &address)) {
+			return jsonrpc_error_missing_param ("address");
 		}
 
 		RJson *num_instr_json = (RJson *)r_json_get (tool_args, "numInstructions");
@@ -781,9 +821,9 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 	}
 
 	if (!strcmp (tool_name, "useDecompiler")) {
-		const char *deco = r_json_get_str (tool_args, "name");
-		if (!deco) {
-			return jsonrpc_error_response (-32602, "Missing required parameter: name", NULL, NULL);
+		const char *deco;
+		if (!validate_required_string_param (tool_args, "name", &deco)) {
+			return jsonrpc_error_missing_param ("name");
 		}
 		char *decompilersAvailable = r2mcp_cmd (ss, "e cmd.pdc=?");
 		const char *response = "ok";
@@ -813,9 +853,9 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 	}
 
 	if (!strcmp (tool_name, "xrefsTo")) {
-		const char *address = r_json_get_str (tool_args, "address");
-		if (!address) {
-			return jsonrpc_error_response (-32602, "Missing required parameter: address", NULL, NULL);
+		const char *address;
+		if (!validate_address_param (tool_args, "address", &address)) {
+			return jsonrpc_error_missing_param ("address");
 		}
 		char *disasm = r2mcp_cmdf (ss, "'@%s'axt", address);
 		char *response = jsonrpc_tooltext_response (disasm);
@@ -824,9 +864,9 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 	}
 
 	if (!strcmp (tool_name, "disassembleFunction")) {
-		const char *address = r_json_get_str (tool_args, "address");
-		if (!address) {
-			return jsonrpc_error_response (-32602, "Missing required parameter: address", NULL, NULL);
+		const char *address;
+		if (!validate_address_param (tool_args, "address", &address)) {
+			return jsonrpc_error_missing_param ("address");
 		}
 		const char *cursor = r_json_get_str (tool_args, "cursor");
 		int page_size = (int)r_json_get_num (tool_args, "pageSize");
@@ -848,17 +888,11 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 	}
 
 	if (!strcmp (tool_name, "renameFlag")) {
-		const char *address = r_json_get_str (tool_args, "address");
-		if (!address) {
-			return jsonrpc_error_response (-32602, "Missing required parameter: address", NULL, NULL);
-		}
-		const char *name = r_json_get_str (tool_args, "name");
-		if (!name) {
-			return jsonrpc_error_response (-32602, "Missing required parameter: name", NULL, NULL);
-		}
-		const char *newName = r_json_get_str (tool_args, "newName");
-		if (!newName) {
-			return jsonrpc_error_response (-32602, "Missing required parameter: newName", NULL, NULL);
+		const char *address, *name, *newName;
+		if (!validate_address_param (tool_args, "address", &address) ||
+			!validate_required_string_param (tool_args, "name", &name) ||
+			!validate_required_string_param (tool_args, "newName", &newName)) {
+			return jsonrpc_error_missing_param ("address, name, and newName");
 		}
 		char *remove_res = r2mcp_cmdf (ss, "'@%s'fr %s %s", address, name, newName);
 		if (R_STR_ISNOTEMPTY (remove_res)) {
@@ -871,22 +905,19 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 	}
 
 	if (!strcmp (tool_name, "renameFunction")) {
-		const char *address = r_json_get_str (tool_args, "address");
-		if (!address) {
-			return jsonrpc_error_response (-32602, "Missing required parameter: address", NULL, NULL);
-		}
-		const char *name = r_json_get_str (tool_args, "name");
-		if (!name) {
-			return jsonrpc_error_response (-32602, "Missing required parameter: name", NULL, NULL);
+		const char *address, *name;
+		if (!validate_address_param (tool_args, "address", &address) ||
+			!validate_required_string_param (tool_args, "name", &name)) {
+			return jsonrpc_error_missing_param ("address and name");
 		}
 		free (r2mcp_cmdf (ss, "'@%s'afn %s", address, name));
 		return jsonrpc_tooltext_response ("ok");
 	}
 
 	if (!strcmp (tool_name, "decompileFunction")) {
-		const char *address = r_json_get_str (tool_args, "address");
-		if (!address) {
-			return jsonrpc_error_response (-32602, "Missing required parameter: address", NULL, NULL);
+		const char *address;
+		if (!validate_address_param (tool_args, "address", &address)) {
+			return jsonrpc_error_missing_param ("address");
 		}
 		const char *cursor = r_json_get_str (tool_args, "cursor");
 		int page_size = (int)r_json_get_num (tool_args, "pageSize");
@@ -909,9 +940,9 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 
 	if (ss->enable_run_command_tool) {
 		if (!strcmp (tool_name, "runCommand")) {
-			const char *command = r_json_get_str (tool_args, "command");
-			if (!command) {
-				return jsonrpc_error_response (-32602, "Missing required parameter: command", NULL, NULL);
+			const char *command;
+			if (!validate_required_string_param (tool_args, "command", &command)) {
+				return jsonrpc_error_missing_param ("command");
 			}
 			char *res = r2mcp_cmd (ss, command);
 			char *o = jsonrpc_tooltext_response (res);
@@ -919,9 +950,9 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 			return o;
 		}
 		if (!strcmp (tool_name, "runJavascript")) {
-			const char *script = r_json_get_str (tool_args, "script");
-			if (!script) {
-				return jsonrpc_error_response (-32602, "Missing required parameter: script", NULL, NULL);
+			const char *script;
+			if (!validate_required_string_param (tool_args, "script", &script)) {
+				return jsonrpc_error_missing_param ("script");
 			}
 			char *encoded = r_base64_encode_dyn ((const ut8 *)script, strlen (script));
 			if (!encoded) {
