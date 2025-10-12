@@ -373,6 +373,8 @@ static char *handle_mcp_request(ServerState *ss, const char *method, RJson *para
 		return NULL; // No response for notifications
 	} else if (!strcmp (method, "ping")) {
 		result = strdup ("{}");
+#if 0
+		// TODO: At some point maybe we want to provide templates and resources, no need to error at this point
 	} else if (!strcmp (method, "resources/templates/list")) {
 		return jsonrpc_error_response (-32601, "Method not implemented: templates are not supported", id, NULL);
 	} else if (!strcmp (method, "resources/list")) {
@@ -381,6 +383,7 @@ static char *handle_mcp_request(ServerState *ss, const char *method, RJson *para
 		return jsonrpc_error_response (-32601, "Method not implemented: resources are not supported", id, NULL);
 	} else if (!strcmp (method, "resources/subscribe") || !strcmp (method, "resource/subscribe")) {
 		return jsonrpc_error_response (-32601, "Method not implemented: subscriptions are not supported", id, NULL);
+#endif
 	} else if (!strcmp (method, "tools/list") || !strcmp (method, "tool/list")) {
 		result = handle_list_tools (ss, params);
 	} else if (!strcmp (method, "tools/call") || !strcmp (method, "tool/call")) {
