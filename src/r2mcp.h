@@ -22,6 +22,7 @@ typedef struct {
 typedef struct {
 	bool tools;
 	bool prompts;
+	bool resources;
 } ServerCapabilities;
 
 typedef struct {

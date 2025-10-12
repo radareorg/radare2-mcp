@@ -197,6 +197,9 @@ static bool check_server_capability(ServerState *ss, const char *capability) {
 	if (!strcmp (capability, "prompts")) {
 		return ss->capabilities.prompts;
 	}
+	if (!strcmp (capability, "resources")) {
+		return ss->capabilities.resources;
+	}
 	return false;
 }
 
@@ -229,6 +232,11 @@ static bool assert_request_handler_capability(ServerState *ss, const char *metho
 	} else if (r_str_startswith (method, "tools/")) {
 		if (!check_server_capability (ss, "tools")) {
 			*error = strdup ("Server does not support tools");
+			return false;
+		}
+	} else if (r_str_startswith (method, "resources/")) {
+		if (!check_server_capability (ss, "resources")) {
+			*error = strdup ("Server does not support resources");
 			return false;
 		}
 	}
@@ -270,8 +278,13 @@ static char *handle_initialize(ServerState *ss, RJson *params) {
 	pj_kb (pj, "listChanged", false);
 	pj_end (pj);
 
+	// Resources capability - empty object since we only support list
+	pj_k (pj, "resources");
+	pj_o (pj);
+	pj_end (pj);
+
 	// For any capability we don't support, don't include it at all
-	// Don't add: roots, resources, notifications, sampling
+	// Don't add: roots, notifications, sampling
 
 	pj_end (pj); // End capabilities
 
@@ -437,6 +450,10 @@ static char *handle_mcp_request(ServerState *ss, const char *method, RJson *para
 		result = handle_list_prompts (ss, params);
 	} else if (!strcmp (method, "prompts/get") || !strcmp (method, "prompt/get")) {
 		result = handle_get_prompt (ss, params);
+	} else if (!strcmp (method, "resources/list")) {
+		result = strdup ("{\"resources\":[]}");
+	} else if (!strcmp (method, "resources/templates/list")) {
+		result = strdup ("{\"resourceTemplates\":[]}");
 	} else {
 		return jsonrpc_error_response (-32601, "Unknown method", id, NULL);
 	}
