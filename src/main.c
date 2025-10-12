@@ -159,7 +159,7 @@ int r2mcp_main(int argc, const char **argv) {
 		.info = {
 			.name = "Radare2 MCP Connector",
 			.version = R2MCP_VERSION },
-		.capabilities = { .logging = true, .tools = true, .prompts = true },
+		.capabilities = { .tools = true, .prompts = true },
 		.instructions = "Use this server to analyze binaries with radare2",
 		.initialized = false,
 		.minimode = minimode,

@@ -20,7 +20,6 @@ typedef struct {
 } ServerInfo;
 
 typedef struct {
-	bool logging;
 	bool tools;
 	bool prompts;
 } ServerCapabilities;

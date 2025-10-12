@@ -191,9 +191,6 @@ static bool check_client_capability(ServerState *ss, const char *capability) {
 }
 
 static bool check_server_capability(ServerState *ss, const char *capability) {
-	if (!strcmp (capability, "logging")) {
-		return ss->capabilities.logging;
-	}
 	if (!strcmp (capability, "tools")) {
 		return ss->capabilities.tools;
 	}
@@ -222,11 +219,6 @@ static bool assert_request_handler_capability(ServerState *ss, const char *metho
 	if (!strcmp (method, "sampling/createMessage")) {
 		if (!check_server_capability (ss, "sampling")) {
 			*error = strdup ("Server does not support sampling");
-			return false;
-		}
-	} else if (!strcmp (method, "logging/setLevel")) {
-		if (!check_server_capability (ss, "logging")) {
-			*error = strdup ("Server does not support logging");
 			return false;
 		}
 	} else if (r_str_startswith (method, "prompts/")) {
@@ -279,7 +271,7 @@ static char *handle_initialize(ServerState *ss, RJson *params) {
 	pj_end (pj);
 
 	// For any capability we don't support, don't include it at all
-	// Don't add: prompts, roots, resources, notifications, logging, sampling
+	// Don't add: roots, resources, notifications, sampling
 
 	pj_end (pj); // End capabilities
 
@@ -373,17 +365,7 @@ static char *handle_mcp_request(ServerState *ss, const char *method, RJson *para
 		return NULL; // No response for notifications
 	} else if (!strcmp (method, "ping")) {
 		result = strdup ("{}");
-#if 0
-		// TODO: At some point maybe we want to provide templates and resources, no need to error at this point
-	} else if (!strcmp (method, "resources/templates/list")) {
-		return jsonrpc_error_response (-32601, "Method not implemented: templates are not supported", id, NULL);
-	} else if (!strcmp (method, "resources/list")) {
-		return jsonrpc_error_response (-32601, "Method not implemented: resources are not supported", id, NULL);
-	} else if (!strcmp (method, "resources/read") || !strcmp (method, "resource/read")) {
-		return jsonrpc_error_response (-32601, "Method not implemented: resources are not supported", id, NULL);
-	} else if (!strcmp (method, "resources/subscribe") || !strcmp (method, "resource/subscribe")) {
-		return jsonrpc_error_response (-32601, "Method not implemented: subscriptions are not supported", id, NULL);
-#endif
+
 	} else if (!strcmp (method, "tools/list") || !strcmp (method, "tool/list")) {
 		result = handle_list_tools (ss, params);
 	} else if (!strcmp (method, "tools/call") || !strcmp (method, "tool/call")) {
