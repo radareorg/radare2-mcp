@@ -75,7 +75,6 @@ In the Claude Desktop app, press `CMD + ,` to open the Developer settings. Edit 
 
    - macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
    - Windows: `%APPDATA%\Claude\claude_desktop_config.json`
-   - Linux: `~/.config/Claude/claude_desktop_config.json`
 
 2. Add the following to your configuration file:
 
