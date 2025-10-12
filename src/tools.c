@@ -12,12 +12,14 @@ static inline char *jsonrpc_error_missing_param(const char *param_name) {
 	return err;
 }
 
+#if 0
 static inline char *jsonrpc_error_invalid_param(const char *param_name, const char *reason) {
 	char *msg = r_str_newf ("Invalid parameter '%s': %s", param_name, reason);
 	char *err = jsonrpc_error_response (-32602, msg, NULL, NULL);
 	free (msg);
 	return err;
 }
+#endif
 
 static inline char *jsonrpc_error_tool_not_allowed(const char *tool_name) {
 	char *msg = r_str_newf ("Tool '%s' not available in current mode (use -p for permissive)", tool_name);
