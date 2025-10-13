@@ -1,7 +1,8 @@
+---
 name: ci
 
 env:
-  R2V: 6.0.2
+  R2V: 6.0.4
   ZIP_PREFIX: radare2-mcp-
 
 on:
@@ -11,6 +12,8 @@ on:
     tags:
       - "[0-9]*"
   pull_request:
+    branches:
+      - main
 
 jobs:
   r2git:
@@ -18,50 +21,55 @@ jobs:
     strategy:
       fail-fast: false
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-    - name: Installing radare2 from git
-      run: ( git clone --depth=1 https://github.com/radareorg/radare2 && cd radare2 && sys/install.sh /usr )
-    - name: Building radare2-mcp
-      run: ./configure && make
-    - name: Create Linux zip archive
-      if: startsWith(github.ref, 'refs/tags/')
-      run: |
-        mkdir -p release
-        zip -j release/${ZIP_PREFIX}${{ github.ref_name }}-linux-x64.zip src/r2mcp
-    - name: Upload Linux binary
-      if: startsWith(github.ref, 'refs/tags/')
-      uses: actions/upload-artifact@v4
-      with:
-        name: linux-x64-binary
-        path: release/${ZIP_PREFIX}${{ github.ref_name }}-linux-x64.zip
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Installing radare2 from git
+        run: |
+          git clone --depth=1 https://github.com/radareorg/radare2
+          cd radare2
+          sys/install.sh /usr > /dev/null
+      - name: Building radare2-mcp
+        run: ./configure && make
+      - name: Create Linux zip archive
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          mkdir -p release
+          FILENAME="${ZIP_PREFIX}${{ github.ref_name }}-linux-x64.zip"
+          zip -j "release/$FILENAME" src/r2mcp
+      - name: Upload Linux binary
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-x64-binary
+          path: "release/${ZIP_PREFIX}${{ github.ref_name }}-linux-x64.zip"
 
   linux-deb:
     runs-on: ubuntu-22.04
     strategy:
       fail-fast: false
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-    - name: Installing radare2 from deb
-      run: |
-        wget https://github.com/radareorg/radare2/releases/download/${{env.R2V}}/radare2_${{env.R2V}}_amd64.deb
-        wget https://github.com/radareorg/radare2/releases/download/${{env.R2V}}/radare2-dev_${{env.R2V}}_amd64.deb
-        sudo dpkg -i *.deb
-    - name: Building radare2-mcp
-      run: ./configure && make
-    - name: Building Debian package
-      if: startsWith(github.ref, 'refs/tags/')
-      run: make -C dist/debian
-    - name: List Debian package files
-      if: startsWith(github.ref, 'refs/tags/')
-      run: ls -la dist/debian/*.deb
-    - name: Upload Debian package
-      if: startsWith(github.ref, 'refs/tags/')
-      uses: actions/upload-artifact@v4
-      with:
-        name: debian-package
-        path: dist/debian/*.deb
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Installing radare2 from deb
+        run: |
+          BASE_URL="https://github.com/radareorg/radare2/releases/download/${{env.R2V}}"
+          wget "${BASE_URL}/radare2_${{env.R2V}}_amd64.deb"
+          wget "${BASE_URL}/radare2-dev_${{env.R2V}}_amd64.deb"
+          sudo dpkg -i *.deb
+      - name: Building radare2-mcp
+        run: ./configure && make
+      - name: Building Debian package
+        if: startsWith(github.ref, 'refs/tags/')
+        run: make -C dist/debian
+      - name: List Debian package files
+        if: startsWith(github.ref, 'refs/tags/')
+        run: ls -la dist/debian/*.deb
+      - name: Upload Debian package
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@v4
+        with:
+          name: debian-package
+          path: dist/debian/*.deb
 
   macos:
     runs-on: macos-latest
@@ -72,30 +80,121 @@ jobs:
     env:
       ARCH: ${{ matrix.arch }}
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-    - name: Cloning radare2
-      run: git clone --depth=1 --branch "${{env.R2V}}" https://github.com/radareorg/radare2
-    - name: Building and installing radare2
-      run: |
-        cd radare2
-        sys/install.sh
-    - name: Building radare2-mcp
-      run: ./configure && make
-    - name: Create macOS zip archive
-      if: startsWith(github.ref, 'refs/tags/')
-      run: |
-        mkdir -p release
-        zip -j release/${ZIP_PREFIX}${{ github.ref_name }}-macos-${{ matrix.arch }}.zip src/r2mcp
-    - name: Upload macOS binary
-      if: startsWith(github.ref, 'refs/tags/')
-      uses: actions/upload-artifact@v4
-      with:
-        name: macos-${{ matrix.arch }}-binary
-        path: release/${ZIP_PREFIX}${{ github.ref_name }}-macos-${{ matrix.arch }}.zip
-        
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Cloning radare2
+        run: git clone --depth=1 --branch "${{env.R2V}}" https://github.com/radareorg/radare2
+      - name: Building and installing radare2
+        run: |
+          cd radare2
+          sys/install.sh > /dev/null
+      - name: Building radare2-mcp
+        run: ./configure && make
+      - name: Check build output
+        run: ls -la src/
+      - name: Create macOS zip archive
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          mkdir -p release
+          if [ -f src/r2mcp ]; then
+            FILENAME="${ZIP_PREFIX}${{ github.ref_name }}-macos-${{ matrix.arch }}.zip"
+          zip -j "release/$FILENAME" src/r2mcp
+          else
+            echo "Binary src/r2mcp not found, checking for alternatives..."
+            find . -name "r2mcp*" -type f
+            exit 1
+          fi
+      - name: Upload macOS binary
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-${{ matrix.arch }}-binary
+          path: "release/${ZIP_PREFIX}${{ github.ref_name }}-macos-${{ matrix.arch }}.zip"
+
+  windows:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python (for Meson)
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      - name: Install Meson
+        shell: powershell
+        run: |
+          python -m pip install --upgrade pip
+          pip install meson
+
+      - name: Download and extract radare2 release
+        shell: powershell
+        run: |
+          $R2V = '${{ env.R2V }}'
+          $baseUrl = "https://github.com/radareorg/radare2/releases/download/$R2V"
+          $url = "$baseUrl/radare2-$R2V-w64.zip"
+          $dest = "$env:TEMP\radare2.zip"
+          Write-Output "Downloading $url"
+          Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing
+          $prefix = 'C:\\radare2'
+          if (Test-Path $prefix) { Remove-Item -Path $prefix -Recurse -Force }
+          New-Item -ItemType Directory -Force -Path $prefix | Out-Null
+          Expand-Archive -Path $dest -DestinationPath $prefix -Force
+          # Some zips include a top-level folder; move its contents up if needed
+          $inner = Get-ChildItem -Path $prefix | Where-Object { $_.PSIsContainer } | Select-Object -First 1
+            if ($inner -and (Get-ChildItem -Path $inner.FullName |
+                Measure-Object).Count -gt 0) {
+              Get-ChildItem -Path $inner.FullName -Force | Move-Item -Destination $prefix -Force
+            Remove-Item -Path $inner.FullName -Recurse -Force
+          }
+          Write-Output "Extracted radare2 contents to $prefix"
+
+      - name: Configure Meson
+        shell: powershell
+        run: |
+          $R2V = '${{ env.R2V }}'
+          $prefix = 'C:\\radare2'
+          Write-Output "Using radare2 prefix: $prefix"
+          $posix = $prefix -replace '\\','/'
+          Write-Output "Passing r2_prefix as: $posix"
+          meson setup --reconfigure builddir --backend ninja `
+                  --prefix="$posix" --buildtype=release -Dr2_prefix="$posix"
+
+      - name: Compile
+        shell: powershell
+        run: |
+          meson compile -C builddir -v
+
+      - name: Create Windows zip archive
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Force -Path output
+          $src = ''
+          if (Test-Path builddir/r2mcp.exe) {
+            Copy-Item builddir/r2mcp.exe output/
+            $src = 'builddir/r2mcp.exe'
+          }
+          if (Test-Path builddir/src/r2mcp.exe) {
+            Copy-Item builddir/src/r2mcp.exe output/
+            $src = 'builddir/src/r2mcp.exe'
+          }
+          if ($src -eq '') { Write-Output "Warning: r2mcp.exe not found after build" }
+          Compress-Archive -Path output/* `
+                  -DestinationPath r2mcp-windows.zip -Force
+
+      - name: Upload Windows binary
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-binary
+          path: r2mcp-windows.zip
+
   release:
-    needs: [r2git, linux-deb, macos]
+    needs: [r2git, linux-deb, macos, windows]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     permissions:
@@ -103,15 +202,15 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
           path: release-artifacts
-      
+
       - name: List downloaded artifacts
         run: find release-artifacts -type f
-      
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
