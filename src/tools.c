@@ -152,12 +152,12 @@ void tools_registry_init(ServerState *ss) {
 
 	r_list_append (ss->tools, tool ("close_file", "Close the currently open file", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL));
 
-	r_list_append (ss->tools, tool ("list_functions", "Lists all functions discovered during analysis", "{\"type\":\"object\",\"properties\":{\"only_named\":{\"type\":\"boolean\",\"description\":\"If true, only list functions with named symbols (excludes functions with numeric suffixes like sym.func.1000016c8)\"}}}", TOOL_MODE_NORMAL | M_MINI | M_HTTP | M_RO));
+	r_list_append (ss->tools, tool ("list_functions", "Lists all functions discovered during analysis", "{\"type\":\"object\",\"properties\":{\"only_named\":{\"type\":\"boolean\",\"description\":\"If true, only list functions with named symbols (excludes functions with numeric suffixes like sym.func.1000016c8)\"},\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"}}}", TOOL_MODE_NORMAL | M_MINI | M_HTTP | M_RO));
 	r_list_append (ss->tools, tool ("list_functions_tree", "Lists functions and successors (aflmu)", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | M_MINI | M_HTTP | M_RO));
 
 	r_list_append (ss->tools, tool ("list_libraries", "Lists all shared libraries linked to the binary", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | M_MINI | M_HTTP | M_RO));
 
-	r_list_append (ss->tools, tool ("list_imports", "Lists imported symbols (note: use list_symbols for addresses with sym.imp. prefix)", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | M_MINI | M_HTTP | M_RO));
+	r_list_append (ss->tools, tool ("list_imports", "Lists imported symbols (note: use list_symbols for addresses with sym.imp. prefix)", "{\"type\":\"object\",\"properties\":{\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"}}}", TOOL_MODE_NORMAL | M_MINI | M_HTTP | M_RO));
 
 	r_list_append (ss->tools, tool ("list_sections", "Displays memory sections and segments from the binary", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | M_RO));
 
@@ -167,7 +167,7 @@ void tools_registry_init(ServerState *ss) {
 
 	r_list_append (ss->tools, tool ("show_headers", "Displays binary headers and file information", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | M_MINI | M_HTTP | M_RO));
 
-	r_list_append (ss->tools, tool ("list_symbols", "Shows all symbols (functions, variables, imports) with addresses", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | M_MINI | M_HTTP | M_RO));
+	r_list_append (ss->tools, tool ("list_symbols", "Shows all symbols (functions, variables, imports) with addresses", "{\"type\":\"object\",\"properties\":{\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"}}}", TOOL_MODE_NORMAL | M_MINI | M_HTTP | M_RO));
 
 	r_list_append (ss->tools, tool ("list_entrypoints", "Displays program entrypoints, constructors and main function", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | M_MINI | M_HTTP | M_RO));
 
@@ -608,6 +608,7 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 				only_named = only_named_parameter->num.u_value;
 			}
 		}
+		const char *filter = r_json_get_str (tool_args, "filter");
 		char *res = r2mcp_cmd (ss, "afl,addr/cols/name");
 		r_str_trim (res);
 		if (R_STR_ISEMPTY (res)) {
@@ -628,6 +629,12 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 				res = filtered;
 			}
 		}
+		// Apply regex filter if provided
+		if (R_STR_ISNOTEMPTY (filter) && res && !R_STR_ISEMPTY (res)) {
+			char *r = filter_lines_by_regex (res, filter);
+			free (res);
+			res = r;
+		}
 		char *o = jsonrpc_tooltext_response (res);
 		free (res);
 		return o;
@@ -640,7 +647,13 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 		return o;
 	}
 	if (!strcmp (tool_name, "list_imports")) {
+		const char *filter = r_json_get_str (tool_args, "filter");
 		char *res = r2mcp_cmd (ss, "iiq");
+		if (R_STR_ISNOTEMPTY (filter)) {
+			char *r = filter_lines_by_regex (res, filter);
+			free (res);
+			res = r;
+		}
 		char *o = jsonrpc_tooltext_response (res);
 		free (res);
 		return o;
@@ -670,7 +683,13 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 		return o;
 	}
 	if (!strcmp (tool_name, "list_symbols")) {
+		const char *filter = r_json_get_str (tool_args, "filter");
 		char *res = r2mcp_cmd (ss, "isq~!func.,!imp.");
+		if (R_STR_ISNOTEMPTY (filter)) {
+			char *r = filter_lines_by_regex (res, filter);
+			free (res);
+			res = r;
+		}
 		char *o = jsonrpc_tooltext_response (res);
 		free (res);
 		return o;
