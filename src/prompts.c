@@ -45,7 +45,7 @@ static const char *arg_str(RJson *arguments, const char *key, const char *dflt) 
 // crackme solver
 static char *render_crackme(const PromptSpec *spec, RJson *arguments) {
 	(void)spec;
-	const char *filePath = r_json_get_str (arguments, "filePath");
+	const char *file_path = r_json_get_str (arguments, "file_path");
 	const char *goal = arg_str (arguments, "goal", "Recover the correct input or bypass check");
 
 	const char *sys =
@@ -57,18 +57,18 @@ static char *render_crackme(const PromptSpec *spec, RJson *arguments) {
 		"3) Read/Decompile only the most relevant functions (avoid dumping huge outputs).\n"
 		"4) Derive the key/logic and propose inputs or patches.\n"
 		"5) Summarize findings and next actions.\n"
-		"Prefer afl listing with addresses, selective pdc/pdf on key functions, and xrefsTo for checks.\n";
+		"Prefer afl listing with addresses, selective pdc/pdf on key functions, and xrefs_to for checks.\n";
 
 	RStrBuf *user = r_strbuf_new ("");
 	r_strbuf_appendf (user, "Task: %s.\n", goal);
-	if (filePath && *filePath) {
-		r_strbuf_appendf (user, "Open file: %s (use tools/call openFile).\n", filePath);
+	if (file_path && *file_path) {
+		r_strbuf_appendf (user, "Open file: %s (use tools/call open_file).\n", file_path);
 	} else {
 		r_strbuf_append (user, "Ask for or confirm file path if unknown.\n");
 	}
 	r_strbuf_append (user,
-		"Plan your steps, then call: analyze (level=2), listEntrypoints, listFunctions, listImports, listStrings (filter optional).\n"
-		"Use decompileFunction or disassembleFunction on candidate functions only.\n");
+		"Plan your steps, then call: analyze (level=2), list_entrypoints, list_functions, list_imports, list_strings (filter optional).\n"
+		"Use decompile_function or disassemble_function on candidate functions only.\n");
 
 	char *m1 = json_text_msg ("system", sys);
 	char *m2 = json_text_msg ("user", r_strbuf_get (user));
@@ -92,7 +92,7 @@ static char *render_crypto(const PromptSpec *spec, RJson *arguments) {
 	RStrBuf *user = r_strbuf_new ("");
 	r_strbuf_appendf (user, "Focus: %s.\n", hint);
 	r_strbuf_append (user,
-		"Use: listImports, listStrings (filter to crypto keywords), listFunctions (scan for suspicious names), and xrefsTo (address).\n"
+		"Use: list_imports, list_strings (filter to crypto keywords), list_functions (scan for suspicious names), and xrefs_to (address).\n"
 		"If needed, disassemble/decompile only tight regions where material is assigned.\n");
 
 	char *m1 = json_text_msg ("system", sys);
@@ -122,7 +122,7 @@ static char *render_document_function(const PromptSpec *spec, RJson *arguments) 
 		r_strbuf_append (user, "Ask for an address to document.\n");
 	}
 	r_strbuf_appendf (user,
-		"Detail level: %s.\nUse: getCurrentAddress (to verify), disassembleFunction (address), decompileFunction (address), getFunctionPrototype (address).\n",
+		"Detail level: %s.\nUse: get_current_address (to verify), disassemble_function (address), decompile_function (address), get_function_prototype (address).\n",
 		depth);
 
 	char *m1 = json_text_msg ("system", sys);
@@ -135,13 +135,13 @@ static char *render_document_function(const PromptSpec *spec, RJson *arguments) 
 // find control-flow path between two addresses (for exploit dev or reachability)
 static char *render_cfg_path(const PromptSpec *spec, RJson *arguments) {
 	(void)spec;
-	const char *src = r_json_get_str (arguments, "sourceAddress");
-	const char *dst = r_json_get_str (arguments, "targetAddress");
+	const char *src = r_json_get_str (arguments, "source_address");
+	const char *dst = r_json_get_str (arguments, "target_address");
 	const char *sys =
 		"Find and explain a feasible control-flow path between two addresses.\n"
 		"Approach:\n"
 		"- Identify function boundaries for source/target.\n"
-		"- Use xrefsTo and selective disassembly to traverse edges.\n"
+		"- Use xrefs_to and selective disassembly to traverse edges.\n"
 		"- Summarize the path as a sequence of blocks with conditions.\n";
 
 	RStrBuf *user = r_strbuf_new ("");
@@ -152,7 +152,7 @@ static char *render_cfg_path(const PromptSpec *spec, RJson *arguments) {
 	if (dst) {
 		r_strbuf_appendf (user, "Target: %s. ", dst);
 	}
-	r_strbuf_append (user, "Use: getCurrentAddress, disassembleFunction, disassemble, xrefsTo.\n");
+	r_strbuf_append (user, "Use: get_current_address, disassemble_function, disassemble, xrefs_to.\n");
 
 	char *m1 = json_text_msg ("system", sys);
 	char *m2 = json_text_msg ("user", r_strbuf_get (user));
@@ -164,7 +164,7 @@ static char *render_cfg_path(const PromptSpec *spec, RJson *arguments) {
 // ---------- Registry ----------
 
 static PromptArg ARGS_CRACKME[] = {
-	{ "filePath", "Absolute path to target binary", false },
+	{ "file_path", "Absolute path to target binary", false },
 	{ "goal", "What success looks like (e.g., recover password)", false },
 };
 
@@ -174,8 +174,8 @@ static PromptArg ARGS_DOCUMENT_FUNCTION[] = {
 };
 
 static PromptArg ARGS_CFG_PATH[] = {
-	{ "sourceAddress", "Source address or block", true },
-	{ "targetAddress", "Target address or block", true },
+	{ "source_address", "Source address or block", true },
+	{ "target_address", "Target address or block", true },
 };
 
 static PromptArg ARGS_CRYPTO[] = {

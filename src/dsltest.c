@@ -5,7 +5,7 @@
 //   stmt := TOOLNAME (WS key=val)*
 // Values may be quoted with double-quotes. Keys/values do not support
 // nested structures. Example:
-//   openFile filePath="/bin/ls"; listFunctions onlyNamed=true; closeFile
+//   open_file file_path="/bin/ls"; list_functions only_named=true; close_file
 char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args);
 // Parse a single statement of the form: toolName [key=val ...]
 // Returns 0 on success.

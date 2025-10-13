@@ -29,7 +29,7 @@ static inline char *jsonrpc_error_tool_not_allowed(const char *tool_name) {
 }
 
 static inline char *jsonrpc_error_file_required(void) {
-	return jsonrpc_error_response (-32611, "Use the openFile method before calling any other method", NULL, NULL);
+	return jsonrpc_error_response (-32611, "Use the open_file method before calling any other method", NULL, NULL);
 }
 
 // Parameter validation helpers
@@ -143,66 +143,66 @@ void tools_registry_init(ServerState *ss) {
 	const int M_RO = TOOL_MODE_RO;
 
 	// Normal mode: full set
-	r_list_append (ss->tools, tool ("openFile", "Opens a binary file with radare2 for analysis <think>Call this tool before any other one from r2mcp. Use an absolute filePath</think>", "{\"type\":\"object\",\"properties\":{\"filePath\":{\"type\":\"string\",\"description\":\"Path to the file to open\"}},\"required\":[\"filePath\"]}", TOOL_MODE_NORMAL | M_MINI));
+	r_list_append (ss->tools, tool ("open_file", "Opens a binary file with radare2 for analysis <think>Call this tool before any other one from r2mcp. Use an absolute file_path</think>", "{\"type\":\"object\",\"properties\":{\"file_path\":{\"type\":\"string\",\"description\":\"Path to the file to open\"}},\"required\":[\"file_path\"]}", TOOL_MODE_NORMAL | M_MINI));
 
 	if (ss->enable_run_command_tool) {
-		r_list_append (ss->tools, tool ("runJavascript", "Executes JavaScript code using radare2's qjs runtime", "{\"type\":\"object\",\"properties\":{\"script\":{\"type\":\"string\",\"description\":\"The JavaScript code to execute\"}},\"required\":[\"script\"]}", TOOL_MODE_NORMAL | M_MINI | M_HTTP));
-		r_list_append (ss->tools, tool ("runCommand", "Executes a raw radare2 command directly", "{\"type\":\"object\",\"properties\":{\"command\":{\"type\":\"string\",\"description\":\"The radare2 command to execute\"}},\"required\":[\"command\"]}", TOOL_MODE_NORMAL | M_MINI | M_HTTP));
+		r_list_append (ss->tools, tool ("run_javascript", "Executes JavaScript code using radare2's qjs runtime", "{\"type\":\"object\",\"properties\":{\"script\":{\"type\":\"string\",\"description\":\"The JavaScript code to execute\"}},\"required\":[\"script\"]}", TOOL_MODE_NORMAL | M_MINI | M_HTTP));
+		r_list_append (ss->tools, tool ("run_command", "Executes a raw radare2 command directly", "{\"type\":\"object\",\"properties\":{\"command\":{\"type\":\"string\",\"description\":\"The radare2 command to execute\"}},\"required\":[\"command\"]}", TOOL_MODE_NORMAL | M_MINI | M_HTTP));
 	}
 
-	r_list_append (ss->tools, tool ("closeFile", "Close the currently open file", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL));
+	r_list_append (ss->tools, tool ("close_file", "Close the currently open file", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL));
 
-	r_list_append (ss->tools, tool ("listFunctions", "Lists all functions discovered during analysis", "{\"type\":\"object\",\"properties\":{\"onlyNamed\":{\"type\":\"boolean\",\"description\":\"If true, only list functions with named symbols (excludes functions with numeric suffixes like sym.func.1000016c8)\"}}}", TOOL_MODE_NORMAL | M_MINI | M_HTTP | M_RO));
-	r_list_append (ss->tools, tool ("listFunctionsTree", "Lists functions and successors (aflmu)", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | M_MINI | M_HTTP | M_RO));
+	r_list_append (ss->tools, tool ("list_functions", "Lists all functions discovered during analysis", "{\"type\":\"object\",\"properties\":{\"only_named\":{\"type\":\"boolean\",\"description\":\"If true, only list functions with named symbols (excludes functions with numeric suffixes like sym.func.1000016c8)\"}}}", TOOL_MODE_NORMAL | M_MINI | M_HTTP | M_RO));
+	r_list_append (ss->tools, tool ("list_functions_tree", "Lists functions and successors (aflmu)", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | M_MINI | M_HTTP | M_RO));
 
-	r_list_append (ss->tools, tool ("listLibraries", "Lists all shared libraries linked to the binary", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | M_MINI | M_HTTP | M_RO));
+	r_list_append (ss->tools, tool ("list_libraries", "Lists all shared libraries linked to the binary", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | M_MINI | M_HTTP | M_RO));
 
-	r_list_append (ss->tools, tool ("listImports", "Lists imported symbols (note: use listSymbols for addresses with sym.imp. prefix)", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | M_MINI | M_HTTP | M_RO));
+	r_list_append (ss->tools, tool ("list_imports", "Lists imported symbols (note: use list_symbols for addresses with sym.imp. prefix)", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | M_MINI | M_HTTP | M_RO));
 
-	r_list_append (ss->tools, tool ("listSections", "Displays memory sections and segments from the binary", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | M_RO));
+	r_list_append (ss->tools, tool ("list_sections", "Displays memory sections and segments from the binary", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | M_RO));
 
-	r_list_append (ss->tools, tool ("showFunctionDetails", "Displays detailed information about the current function", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | M_RO));
+	r_list_append (ss->tools, tool ("show_function_details", "Displays detailed information about the current function", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | M_RO));
 
-	r_list_append (ss->tools, tool ("getCurrentAddress", "Shows the current position and function name", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | M_RO));
+	r_list_append (ss->tools, tool ("get_current_address", "Shows the current position and function name", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | M_RO));
 
-	r_list_append (ss->tools, tool ("showHeaders", "Displays binary headers and file information", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | M_MINI | M_HTTP | M_RO));
+	r_list_append (ss->tools, tool ("show_headers", "Displays binary headers and file information", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | M_MINI | M_HTTP | M_RO));
 
-	r_list_append (ss->tools, tool ("listSymbols", "Shows all symbols (functions, variables, imports) with addresses", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | M_MINI | M_HTTP | M_RO));
+	r_list_append (ss->tools, tool ("list_symbols", "Shows all symbols (functions, variables, imports) with addresses", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | M_MINI | M_HTTP | M_RO));
 
-	r_list_append (ss->tools, tool ("listEntrypoints", "Displays program entrypoints, constructors and main function", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | M_MINI | M_HTTP | M_RO));
+	r_list_append (ss->tools, tool ("list_entrypoints", "Displays program entrypoints, constructors and main function", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | M_MINI | M_HTTP | M_RO));
 
-	r_list_append (ss->tools, tool ("listMethods", "Lists all methods belonging to the specified class", "{\"type\":\"object\",\"properties\":{\"classname\":{\"type\":\"string\",\"description\":\"Name of the class to list methods for\"}},\"required\":[\"classname\"]}", TOOL_MODE_NORMAL | M_RO));
+	r_list_append (ss->tools, tool ("list_methods", "Lists all methods belonging to the specified class", "{\"type\":\"object\",\"properties\":{\"classname\":{\"type\":\"string\",\"description\":\"Name of the class to list methods for\"}},\"required\":[\"classname\"]}", TOOL_MODE_NORMAL | M_RO));
 
-	r_list_append (ss->tools, tool ("listClasses", "Lists class names from various languages (C++, ObjC, Swift, Java, Dalvik)", "{\"type\":\"object\",\"properties\":{\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"}}}", TOOL_MODE_NORMAL | M_RO));
+	r_list_append (ss->tools, tool ("list_classes", "Lists class names from various languages (C++, ObjC, Swift, Java, Dalvik)", "{\"type\":\"object\",\"properties\":{\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"}}}", TOOL_MODE_NORMAL | M_RO));
 
-	r_list_append (ss->tools, tool ("listDecompilers", "Shows all available decompiler backends", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | M_RO));
+	r_list_append (ss->tools, tool ("list_decompilers", "Shows all available decompiler backends", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | M_RO));
 
-	r_list_append (ss->tools, tool ("renameFunction", "Renames the function at the specified address", "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"New function name\"},\"address\":{\"type\":\"string\",\"description\":\"Address of the function to rename\"}},\"required\":[\"name\",\"address\"]}", TOOL_MODE_NORMAL));
-	r_list_append (ss->tools, tool ("renameFlag", "Renames a local variable or data reference within the specified address", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the flag containing the variable or data reference\"},\"name\":{\"type\":\"string\",\"description\":\"Current variable name or data reference\"},\"newName\":{\"type\":\"string\",\"description\":\"New variable name or data reference\"}},\"required\":[\"address\",\"name\",\"newName\"]}", TOOL_MODE_NORMAL | M_HTTP));
+	r_list_append (ss->tools, tool ("rename_function", "Renames the function at the specified address", "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"New function name\"},\"address\":{\"type\":\"string\",\"description\":\"Address of the function to rename\"}},\"required\":[\"name\",\"address\"]}", TOOL_MODE_NORMAL));
+	r_list_append (ss->tools, tool ("rename_flag", "Renames a local variable or data reference within the specified address", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the flag containing the variable or data reference\"},\"name\":{\"type\":\"string\",\"description\":\"Current variable name or data reference\"},\"new_name\":{\"type\":\"string\",\"description\":\"New variable name or data reference\"}},\"required\":[\"address\",\"name\",\"new_name\"]}", TOOL_MODE_NORMAL | M_HTTP));
 
-	r_list_append (ss->tools, tool ("useDecompiler", "Selects which decompiler backend to use (default: pdc)", "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"Name of the decompiler\"}},\"required\":[\"name\"]}", TOOL_MODE_NORMAL));
+	r_list_append (ss->tools, tool ("use_decompiler", "Selects which decompiler backend to use (default: pdc)", "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"Name of the decompiler\"}},\"required\":[\"name\"]}", TOOL_MODE_NORMAL));
 
-	r_list_append (ss->tools, tool ("getFunctionPrototype", "Retrieves the function signature at the specified address", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the function\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | M_RO));
+	r_list_append (ss->tools, tool ("get_function_prototype", "Retrieves the function signature at the specified address", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the function\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | M_RO));
 
-	r_list_append (ss->tools, tool ("setFunctionPrototype", "Sets the function signature (return type, name, arguments)", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the function\"},\"prototype\":{\"type\":\"string\",\"description\":\"Function signature in C-like syntax\"}},\"required\":[\"address\",\"prototype\"]}", TOOL_MODE_NORMAL));
+	r_list_append (ss->tools, tool ("set_function_prototype", "Sets the function signature (return type, name, arguments)", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the function\"},\"prototype\":{\"type\":\"string\",\"description\":\"Function signature in C-like syntax\"}},\"required\":[\"address\",\"prototype\"]}", TOOL_MODE_NORMAL));
 
-	r_list_append (ss->tools, tool ("setComment", "Adds a comment at the specified address", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address to put the comment in\"},\"message\":{\"type\":\"string\",\"description\":\"Comment text to use\"}},\"required\":[\"address\",\"message\"]}", TOOL_MODE_NORMAL | M_HTTP));
+	r_list_append (ss->tools, tool ("set_comment", "Adds a comment at the specified address", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address to put the comment in\"},\"message\":{\"type\":\"string\",\"description\":\"Comment text to use\"}},\"required\":[\"address\",\"message\"]}", TOOL_MODE_NORMAL | M_HTTP));
 
-	r_list_append (ss->tools, tool ("listStrings", "Lists strings from data sections with optional regex filter", "{\"type\":\"object\",\"properties\":{\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"},\"cursor\":{\"type\":\"string\",\"description\":\"Cursor for pagination (line number to start from)\"},\"pageSize\":{\"type\":\"integer\",\"description\":\"Number of lines per page (default: 1000, max: 10000)\"}}}", TOOL_MODE_NORMAL | M_MINI | M_HTTP | M_RO));
+	r_list_append (ss->tools, tool ("list_strings", "Lists strings from data sections with optional regex filter", "{\"type\":\"object\",\"properties\":{\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"},\"cursor\":{\"type\":\"string\",\"description\":\"Cursor for pagination (line number to start from)\"},\"page_size\":{\"type\":\"integer\",\"description\":\"Number of lines per page (default: 1000, max: 10000)\"}}}", TOOL_MODE_NORMAL | M_MINI | M_HTTP | M_RO));
 
-	r_list_append (ss->tools, tool ("listAllStrings", "Scans the entire binary for strings with optional regex filter", "{\"type\":\"object\",\"properties\":{\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"},\"cursor\":{\"type\":\"string\",\"description\":\"Cursor for pagination (line number to start from)\"},\"pageSize\":{\"type\":\"integer\",\"description\":\"Number of lines per page (default: 1000, max: 10000)\"}}}", TOOL_MODE_NORMAL | M_RO));
+	r_list_append (ss->tools, tool ("list_all_strings", "Scans the entire binary for strings with optional regex filter", "{\"type\":\"object\",\"properties\":{\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"},\"cursor\":{\"type\":\"string\",\"description\":\"Cursor for pagination (line number to start from)\"},\"page_size\":{\"type\":\"integer\",\"description\":\"Number of lines per page (default: 1000, max: 10000)\"}}}", TOOL_MODE_NORMAL | M_RO));
 
 	r_list_append (ss->tools, tool ("analyze", "Runs binary analysis with optional depth level", "{\"type\":\"object\",\"properties\":{\"level\":{\"type\":\"number\",\"description\":\"Analysis level (0-4, higher is more thorough)\"}},\"required\":[]}", TOOL_MODE_NORMAL | M_MINI | M_HTTP));
 
-	r_list_append (ss->tools, tool ("xrefsTo", "Finds all code references to the specified address", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address to check for cross-references\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | M_MINI | M_HTTP | M_RO));
+	r_list_append (ss->tools, tool ("xrefs_to", "Finds all code references to the specified address", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address to check for cross-references\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | M_MINI | M_HTTP | M_RO));
 
-	r_list_append (ss->tools, tool ("decompileFunction", "Show C-like pseudocode of the function in the given address. <think>Use this to inspect the code in a function, do not run multiple times in the same offset</think>", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the function to decompile\"},\"cursor\":{\"type\":\"string\",\"description\":\"Cursor for pagination (line number to start from)\"},\"pageSize\":{\"type\":\"integer\",\"description\":\"Number of lines per page (default: 1000, max: 10000)\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | M_MINI | M_HTTP | M_RO));
+	r_list_append (ss->tools, tool ("decompile_function", "Show C-like pseudocode of the function in the given address. <think>Use this to inspect the code in a function, do not run multiple times in the same offset</think>", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the function to decompile\"},\"cursor\":{\"type\":\"string\",\"description\":\"Cursor for pagination (line number to start from)\"},\"page_size\":{\"type\":\"integer\",\"description\":\"Number of lines per page (default: 1000, max: 10000)\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | M_MINI | M_HTTP | M_RO));
 
-	r_list_append (ss->tools, tool ("listFiles", "Lists files in the specified path using radare2's ls -q command. Files ending with / are directories, otherwise they are files.", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"Path to list files from\"}},\"required\":[\"path\"]}", TOOL_MODE_NORMAL | M_MINI | M_HTTP | M_RO));
+	r_list_append (ss->tools, tool ("list_files", "Lists files in the specified path using radare2's ls -q command. Files ending with / are directories, otherwise they are files.", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"Path to list files from\"}},\"required\":[\"path\"]}", TOOL_MODE_NORMAL | M_MINI | M_HTTP | M_RO));
 
-	r_list_append (ss->tools, tool ("disassembleFunction", "Shows assembly listing of the function at the specified address", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the function to disassemble\"},\"cursor\":{\"type\":\"string\",\"description\":\"Cursor for pagination (line number to start from)\"},\"pageSize\":{\"type\":\"integer\",\"description\":\"Number of lines per page (default: 1000, max: 10000)\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | M_RO));
+	r_list_append (ss->tools, tool ("disassemble_function", "Shows assembly listing of the function at the specified address", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the function to disassemble\"},\"cursor\":{\"type\":\"string\",\"description\":\"Cursor for pagination (line number to start from)\"},\"page_size\":{\"type\":\"integer\",\"description\":\"Number of lines per page (default: 1000, max: 10000)\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | M_RO));
 
-	r_list_append (ss->tools, tool ("disassemble", "Disassembles a specific number of instructions from an address <think>Use this tool to inspect a portion of memory as code without depending on function analysis boundaries. Use this tool when functions are large and you are only interested on few instructions</think>", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address to start disassembly\"},\"numInstructions\":{\"type\":\"integer\",\"description\":\"Number of instructions to disassemble (default: 10)\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | M_RO));
+	r_list_append (ss->tools, tool ("disassemble", "Disassembles a specific number of instructions from an address <think>Use this tool to inspect a portion of memory as code without depending on function analysis boundaries. Use this tool when functions are large and you are only interested on few instructions</think>", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address to start disassembly\"},\"num_instructions\":{\"type\":\"integer\",\"description\":\"Number of instructions to disassemble (default: 10)\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | M_RO));
 
 	r_list_append (ss->tools, tool ("calculate", "Evaluate a math expression using core->num (r_num_math). Usecases: do proper 64-bit math, resolve addresses for flag names/symbols, and avoid hallucinated results.", "{\"type\":\"object\",\"properties\":{\"expression\":{\"type\":\"string\",\"description\":\"Math expression to evaluate (eg. 0x100 + sym.flag - 4)\"}},\"required\":[\"expression\"]}", TOOL_MODE_NORMAL | M_MINI | M_RO));
 }
@@ -491,9 +491,9 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 					char *cmd_out = r2mcp_cmd (ss, r2cmd);
 					char *res = jsonrpc_tooltext_response (cmd_out? cmd_out: "");
 					free (cmd_out);
-					// If the original tool was openFile, assume the r2cmd opened the file
-					if (!strcmp (tool_name, "openFile")) {
-						const char *filepath = r_json_get_str (tool_args, "filePath");
+					// If the original tool was open_file, assume the r2cmd opened the file
+					if (!strcmp (tool_name, "open_file")) {
+						const char *filepath = r_json_get_str (tool_args, "file_path");
 						if (filepath) {
 							free (ss->rstate.current_file);
 							ss->rstate.current_file = strdup (filepath);
@@ -516,8 +516,8 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 		}
 	}
 
-	// Special-case: openFile
-	if (!strcmp (tool_name, "openFile")) {
+	// Special-case: open_file
+	if (!strcmp (tool_name, "open_file")) {
 		if (ss->http_mode) {
 			char *res = r2mcp_cmd (ss, "i");
 			char *foo = r_str_newf ("File was already opened, this are the details:\n%s", res);
@@ -527,8 +527,8 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 			return out;
 		}
 		const char *filepath;
-		if (!validate_required_string_param (tool_args, "filePath", &filepath)) {
-			return jsonrpc_error_missing_param ("filePath");
+		if (!validate_required_string_param (tool_args, "file_path", &filepath)) {
+			return jsonrpc_error_missing_param ("file_path");
 		}
 
 		char *filteredpath = strdup (filepath);
@@ -543,7 +543,7 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 	}
 
 	// Map simple tools to commands or handlers
-	if (!strcmp (tool_name, "listMethods")) {
+	if (!strcmp (tool_name, "list_methods")) {
 		const char *classname;
 		if (!validate_required_string_param (tool_args, "classname", &classname)) {
 			return jsonrpc_error_missing_param ("classname");
@@ -553,7 +553,7 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 		free (res);
 		return o;
 	}
-	if (!strcmp (tool_name, "listFiles")) {
+	if (!strcmp (tool_name, "list_files")) {
 		const char *path;
 		if (!validate_required_string_param (tool_args, "path", &path)) {
 			return jsonrpc_error_missing_param ("path");
@@ -582,7 +582,7 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 		free (res);
 		return o;
 	}
-	if (!strcmp (tool_name, "listClasses")) {
+	if (!strcmp (tool_name, "list_classes")) {
 		const char *filter = r_json_get_str (tool_args, "filter");
 		char *res = r2mcp_cmd (ss, "icqq");
 		if (R_STR_ISNOTEMPTY (filter)) {
@@ -594,14 +594,14 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 		free (res);
 		return o;
 	}
-	if (!strcmp (tool_name, "listDecompilers")) {
+	if (!strcmp (tool_name, "list_decompilers")) {
 		char *res = r2mcp_cmd (ss, "e cmd.pdc=?");
 		char *o = jsonrpc_tooltext_response (res);
 		free (res);
 		return o;
 	}
-	if (!strcmp (tool_name, "listFunctions")) {
-		const RJson *only_named_parameter = r_json_get (tool_args, "onlyNamed");
+	if (!strcmp (tool_name, "list_functions")) {
+		const RJson *only_named_parameter = r_json_get (tool_args, "only_named");
 		bool only_named = false;
 		if (only_named_parameter) {
 			if (only_named_parameter->type == R_JSON_BOOLEAN) {
@@ -620,7 +620,7 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 				res = strdup ("No functions found. Run the analysis first.");
 			}
 		}
-		// Apply filtering if onlyNamed is true
+		// Apply filtering if only_named is true
 		if (only_named && res && !R_STR_ISEMPTY (res)) {
 			char *filtered = filter_named_functions_only (res);
 			if (filtered) {
@@ -632,56 +632,56 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 		free (res);
 		return o;
 	}
-	if (!strcmp (tool_name, "listFunctionsTree")) {
+	if (!strcmp (tool_name, "list_functions_tree")) {
 		char *res = r2mcp_cmd (ss, "aflmu");
 		r_str_trim (res);
 		char *o = jsonrpc_tooltext_response (res);
 		free (res);
 		return o;
 	}
-	if (!strcmp (tool_name, "listImports")) {
+	if (!strcmp (tool_name, "list_imports")) {
 		char *res = r2mcp_cmd (ss, "iiq");
 		char *o = jsonrpc_tooltext_response (res);
 		free (res);
 		return o;
 	}
-	if (!strcmp (tool_name, "listSections")) {
+	if (!strcmp (tool_name, "list_sections")) {
 		char *res = r2mcp_cmd (ss, "iS;iSS");
 		char *o = jsonrpc_tooltext_response (res);
 		free (res);
 		return o;
 	}
-	if (!strcmp (tool_name, "showHeaders")) {
+	if (!strcmp (tool_name, "show_headers")) {
 		char *res = r2mcp_cmd (ss, "i;iH");
 		char *o = jsonrpc_tooltext_response (res);
 		free (res);
 		return o;
 	}
-	if (!strcmp (tool_name, "showFunctionDetails")) {
+	if (!strcmp (tool_name, "show_function_details")) {
 		char *res = r2mcp_cmd (ss, "afi");
 		char *o = jsonrpc_tooltext_response (res);
 		free (res);
 		return o;
 	}
-	if (!strcmp (tool_name, "getCurrentAddress")) {
+	if (!strcmp (tool_name, "get_current_address")) {
 		char *res = r2mcp_cmd (ss, "s;fd");
 		char *o = jsonrpc_tooltext_response (res);
 		free (res);
 		return o;
 	}
-	if (!strcmp (tool_name, "listSymbols")) {
+	if (!strcmp (tool_name, "list_symbols")) {
 		char *res = r2mcp_cmd (ss, "isq~!func.,!imp.");
 		char *o = jsonrpc_tooltext_response (res);
 		free (res);
 		return o;
 	}
-	if (!strcmp (tool_name, "listEntrypoints")) {
+	if (!strcmp (tool_name, "list_entrypoints")) {
 		char *res = r2mcp_cmd (ss, "ies");
 		char *o = jsonrpc_tooltext_response (res);
 		free (res);
 		return o;
 	}
-	if (!strcmp (tool_name, "listLibraries")) {
+	if (!strcmp (tool_name, "list_libraries")) {
 		char *res = r2mcp_cmd (ss, "ilq");
 		char *o = jsonrpc_tooltext_response (res);
 		free (res);
@@ -703,7 +703,7 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 		free (numstr);
 		return resp;
 	}
-	if (!strcmp (tool_name, "closeFile")) {
+	if (!strcmp (tool_name, "close_file")) {
 		if (ss->http_mode) {
 			return jsonrpc_tooltext_response ("In r2pipe mode we won't close the file.");
 		}
@@ -716,7 +716,7 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 		return jsonrpc_tooltext_response ("File closed successfully.");
 	}
 
-	if (!strcmp (tool_name, "setComment")) {
+	if (!strcmp (tool_name, "set_comment")) {
 		const char *address, *message;
 		if (!validate_address_param (tool_args, "address", &address) ||
 			!validate_required_string_param (tool_args, "message", &message)) {
@@ -730,7 +730,7 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 		return strdup ("ok");
 	}
 
-	if (!strcmp (tool_name, "setFunctionPrototype")) {
+	if (!strcmp (tool_name, "set_function_prototype")) {
 		const char *address, *prototype;
 		if (!validate_address_param (tool_args, "address", &address) ||
 			!validate_required_string_param (tool_args, "prototype", &prototype)) {
@@ -743,7 +743,7 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 		return strdup ("ok");
 	}
 
-	if (!strcmp (tool_name, "getFunctionPrototype")) {
+	if (!strcmp (tool_name, "get_function_prototype")) {
 		const char *address;
 		if (!validate_address_param (tool_args, "address", &address)) {
 			return jsonrpc_error_missing_param ("address");
@@ -754,10 +754,10 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 		return res;
 	}
 
-	if (!strcmp (tool_name, "listStrings") || !strcmp (tool_name, "listAllStrings")) {
+	if (!strcmp (tool_name, "list_strings") || !strcmp (tool_name, "list_all_strings")) {
 		const char *filter = r_json_get_str (tool_args, "filter");
 		const char *cursor = r_json_get_str (tool_args, "cursor");
-		int page_size = (int)r_json_get_num (tool_args, "pageSize");
+		int page_size = (int)r_json_get_num (tool_args, "page_size");
 		if (page_size <= 0) {
 			page_size = R2MCP_DEFAULT_PAGE_SIZE;
 		}
@@ -765,13 +765,13 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 			page_size = R2MCP_MAX_PAGE_SIZE;
 		}
 
-		char *result = r2mcp_cmd (ss, (!strcmp (tool_name, "listStrings")? "izqq": "izzzqq"));
+		char *result = r2mcp_cmd (ss, (!strcmp (tool_name, "list_strings")? "izqq": "izzzqq"));
 		if (R_STR_ISNOTEMPTY (filter)) {
 			char *r = filter_lines_by_regex (result, filter);
 			free (result);
 			result = r;
 		}
-		if (!strcmp (tool_name, "listAllStrings") && R_STR_ISEMPTY (result)) {
+		if (!strcmp (tool_name, "list_all_strings") && R_STR_ISEMPTY (result)) {
 			free (result);
 			result = r_str_newf ("Error: No strings with regex %s", filter);
 		}
@@ -810,7 +810,7 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 			return jsonrpc_error_missing_param ("address");
 		}
 
-		RJson *num_instr_json = (RJson *)r_json_get (tool_args, "numInstructions");
+		RJson *num_instr_json = (RJson *)r_json_get (tool_args, "num_instructions");
 		int num_instructions = 10;
 		if (num_instr_json && num_instr_json->type == R_JSON_INTEGER) {
 			num_instructions = (int)num_instr_json->num.u_value;
@@ -822,7 +822,7 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 		return response;
 	}
 
-	if (!strcmp (tool_name, "useDecompiler")) {
+	if (!strcmp (tool_name, "use_decompiler")) {
 		const char *deco;
 		if (!validate_required_string_param (tool_args, "name", &deco)) {
 			return jsonrpc_error_missing_param ("name");
@@ -854,7 +854,7 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 		return jsonrpc_tooltext_response (response);
 	}
 
-	if (!strcmp (tool_name, "xrefsTo")) {
+	if (!strcmp (tool_name, "xrefs_to")) {
 		const char *address;
 		if (!validate_address_param (tool_args, "address", &address)) {
 			return jsonrpc_error_missing_param ("address");
@@ -865,13 +865,13 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 		return response;
 	}
 
-	if (!strcmp (tool_name, "disassembleFunction")) {
+	if (!strcmp (tool_name, "disassemble_function")) {
 		const char *address;
 		if (!validate_address_param (tool_args, "address", &address)) {
 			return jsonrpc_error_missing_param ("address");
 		}
 		const char *cursor = r_json_get_str (tool_args, "cursor");
-		int page_size = (int)r_json_get_num (tool_args, "pageSize");
+		int page_size = (int)r_json_get_num (tool_args, "page_size");
 		if (page_size <= 0) {
 			page_size = R2MCP_DEFAULT_PAGE_SIZE;
 		}
@@ -889,14 +889,14 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 		return response;
 	}
 
-	if (!strcmp (tool_name, "renameFlag")) {
-		const char *address, *name, *newName;
+	if (!strcmp (tool_name, "rename_flag")) {
+		const char *address, *name, *new_name;
 		if (!validate_address_param (tool_args, "address", &address) ||
 			!validate_required_string_param (tool_args, "name", &name) ||
-			!validate_required_string_param (tool_args, "newName", &newName)) {
-			return jsonrpc_error_missing_param ("address, name, and newName");
+			!validate_required_string_param (tool_args, "new_name", &new_name)) {
+			return jsonrpc_error_missing_param ("address, name, and new_name");
 		}
-		char *remove_res = r2mcp_cmdf (ss, "'@%s'fr %s %s", address, name, newName);
+		char *remove_res = r2mcp_cmdf (ss, "'@%s'fr %s %s", address, name, new_name);
 		if (R_STR_ISNOTEMPTY (remove_res)) {
 			char *response = jsonrpc_tooltext_response (remove_res);
 			free (remove_res);
@@ -906,7 +906,7 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 		return jsonrpc_tooltext_response ("ok");
 	}
 
-	if (!strcmp (tool_name, "renameFunction")) {
+	if (!strcmp (tool_name, "rename_function")) {
 		const char *address, *name;
 		if (!validate_address_param (tool_args, "address", &address) ||
 			!validate_required_string_param (tool_args, "name", &name)) {
@@ -916,13 +916,13 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 		return jsonrpc_tooltext_response ("ok");
 	}
 
-	if (!strcmp (tool_name, "decompileFunction")) {
+	if (!strcmp (tool_name, "decompile_function")) {
 		const char *address;
 		if (!validate_address_param (tool_args, "address", &address)) {
 			return jsonrpc_error_missing_param ("address");
 		}
 		const char *cursor = r_json_get_str (tool_args, "cursor");
-		int page_size = (int)r_json_get_num (tool_args, "pageSize");
+		int page_size = (int)r_json_get_num (tool_args, "page_size");
 		if (page_size <= 0) {
 			page_size = R2MCP_DEFAULT_PAGE_SIZE;
 		}
@@ -941,7 +941,7 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 	}
 
 	if (ss->enable_run_command_tool) {
-		if (!strcmp (tool_name, "runCommand")) {
+		if (!strcmp (tool_name, "run_command")) {
 			const char *command;
 			if (!validate_required_string_param (tool_args, "command", &command)) {
 				return jsonrpc_error_missing_param ("command");
@@ -951,7 +951,7 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 			free (res);
 			return o;
 		}
-		if (!strcmp (tool_name, "runJavascript")) {
+		if (!strcmp (tool_name, "run_javascript")) {
 			const char *script;
 			if (!validate_required_string_param (tool_args, "script", &script)) {
 				return jsonrpc_error_missing_param ("script");

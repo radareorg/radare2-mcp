@@ -9,15 +9,15 @@ BIN="src/r2mcp"
 echo "== List tools =="
 ${BIN} -t | sed -n '1,10p'
 
-echo "== DSL: openFile + listFunctions (no -p) =="
-${BIN} -T 'openFile filePath="/bin/ls"; listFunctions onlyNamed=true; closeFile' | sed -n '1,8p'
+echo "== DSL: open_file + listFunctions (no -p) =="
+${BIN} -T 'open_file file_path="/bin/ls"; list_functions only_named=true; close_file' | sed -n '1,8p'
 
 echo "== DSL: unquoted value and multiple tools =="
-${BIN} -T 'openFile filePath=/bin/ls; showHeaders; getCurrentAddress; closeFile' | sed -n '1,12p'
+${BIN} -T 'open_file file_path=/bin/ls; show_headers; get_current_address; close_file' | sed -n '1,12p'
 
-echo "== DSL: ensure error when missing openFile =="
+echo "== DSL: ensure error when missing open_file =="
 set +e
-${BIN} -T 'listFunctions onlyNamed=true' | grep -q "openFile" && echo "(expected) tool enforces openFile first" || echo "(warning) missing expected openFile hint"
+${BIN} -T 'list_functions only_named=true' | grep -q "open_file" && echo "(expected) tool enforces open_file first" || echo "(warning) missing expected open_file hint"
 set -e
 
 echo "== OK =="

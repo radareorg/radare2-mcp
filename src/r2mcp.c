@@ -150,7 +150,7 @@ char *r2mcp_cmd(ServerState *ss, const char *cmd) {
 	}
 	RCore *core = ss->rstate.core;
 	if (!core || !ss->rstate.file_opened) {
-		return strdup ("Use the openFile method before calling any other method");
+		return strdup ("Use the open_file method before calling any other method");
 	}
 	bool changed = false;
 	char *filteredCommand = r2_cmd_filter (cmd, &changed);
