@@ -176,9 +176,9 @@ static bool r2_open_file(ServerState *ss, const char *filepath) {
 		}
 	}
 	/* In HTTP mode we do not touch the local r2 core. Just set the state
-	* so subsequent calls to r2mcp_cmd will be allowed (they will be handled
-	* by the HTTP helper).
-	*/
+	 * so subsequent calls to r2mcp_cmd will be allowed (they will be handled
+	 * by the HTTP helper).
+	 */
 	if (ss && ss->http_mode) {
 		free (ss->rstate.current_file);
 		ss->rstate.current_file = strdup (filepath);

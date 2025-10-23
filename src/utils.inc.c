@@ -39,6 +39,28 @@ static inline char *jsonrpc_tooltext_response_paginated(const char *text, bool h
 	return pj_drain (pj);
 }
 
+// Render tool output as a JSON array of lines for frontend filtering compatibility
+static inline char *jsonrpc_tooltext_response_lines(const char *text) {
+	PJ *pj = pj_new ();
+	pj_o (pj);
+	pj_k (pj, "content");
+	pj_a (pj);
+	if (text) {
+		RList *lines = r_str_split_list ((char *)text, "\n", 0);
+		if (lines) {
+			RListIter *it;
+			char *line;
+			r_list_foreach (lines, it, line) {
+				pj_s (pj, line);
+			}
+			r_list_free (lines);
+		}
+	}
+	pj_end (pj);
+	pj_end (pj);
+	return pj_drain (pj);
+}
+
 #if R2_VERSION_NUMBER < 50909
 static st64 r_json_get_num(const RJson *json, const char *key) {
 	if (!json || !key) {

@@ -696,7 +696,7 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 	}
 	if (!strcmp (tool_name, "list_entrypoints")) {
 		char *res = r2mcp_cmd (ss, "ies");
-		char *o = jsonrpc_tooltext_response (res);
+		char *o = jsonrpc_tooltext_response_lines (res);
 		free (res);
 		return o;
 	}

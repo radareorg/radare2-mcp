@@ -80,8 +80,7 @@ user-uninstall:
 	rm -f $(R2_BINDIR)/bin/r2mcp
 
 indent fmt:
-	python indent.py
-	# clang-format -i r2mcp.c
+	clang-format-radare2 *.c
 
 help:
 	@echo "Available targets:"
