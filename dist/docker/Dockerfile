@@ -23,6 +23,7 @@ RUN git clone --depth 1 https://github.com/radareorg/radare2.git && \
 
 RUN git clone --depth 1 https://github.com/radareorg/radare2-mcp.git && \
     cd radare2-mcp && \
+    ./configure && \
     make && \
     cp -f src/r2mcp /usr/local/bin/
 
