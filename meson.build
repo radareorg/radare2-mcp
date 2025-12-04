@@ -193,6 +193,7 @@ srcs = [
   'src/tools.c',
   'src/dsltest.c',
   'src/prompts.c',
+  'src/jsonrpc.c',
 ]
 
 plugin_srcs = [
@@ -202,6 +203,7 @@ plugin_srcs = [
   'src/tools.c',
   'src/dsltest.c',
   'src/prompts.c',
+  'src/jsonrpc.c',
 ]
 
 # Windows-specific configuration
@@ -252,7 +254,7 @@ plugin_lib = shared_library(
 executable(
   'r2mcp-svc',
   'svc/r2mcp-svc.c',
-  dependencies: [r_socket_dep, r_util_dep],
+  dependencies: [r_socket_dep, r_util_dep, r_cons_dep],
   c_args: c_args,
   link_args: link_args,
   install: true,
