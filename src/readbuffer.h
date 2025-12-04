@@ -4,7 +4,7 @@
 #include <string.h>
 #include <stdlib.h>
 
-#define BUFFER_SIZE     65536
+#define BUFFER_SIZE 65536
 typedef struct {
 	char *data;
 	size_t size;

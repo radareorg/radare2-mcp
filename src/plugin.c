@@ -27,7 +27,6 @@ static bool r2mcp_call(RCorePluginSession *cps, const char *input) {
 	if (!data->ss) {
 		data->ss = R_NEW0 (ServerState);
 		// Initialize the tools registry
-		tools_registry_init (data->ss);
 		// Set up the core reference
 		data->ss->rstate.core = core;
 		data->ss->rstate.file_opened = true; // We're already in r2 with a file
@@ -54,7 +53,6 @@ static bool r2mcp_fini(RCorePluginSession *cps) {
 	R2mcpData *data = cps->data;
 	if (data) {
 		if (data->ss) {
-			tools_registry_fini (data->ss);
 			free (data->ss);
 		}
 		free (data);

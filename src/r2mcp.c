@@ -9,49 +9,6 @@
 #include <stdarg.h>
 #include <errno.h>
 
-static void pj_append_rjson(PJ *pj, RJson *j) {
-	if (!j) {
-		pj_null (pj);
-		return;
-	}
-	switch (j->type) {
-	case R_JSON_NULL:
-		pj_null (pj);
-		break;
-	case R_JSON_BOOLEAN:
-		pj_b (pj, j->num.u_value);
-		break;
-	case R_JSON_INTEGER:
-		pj_n (pj, j->num.s_value);
-		break;
-	case R_JSON_DOUBLE:
-		pj_d (pj, j->num.dbl_value);
-		break;
-	case R_JSON_STRING:
-		pj_s (pj, j->str_value);
-		break;
-	case R_JSON_ARRAY:
-		pj_a (pj);
-		RJson *child = j->children.first;
-		while (child) {
-			pj_append_rjson (pj, child);
-			child = child->next;
-		}
-		pj_end (pj);
-		break;
-	case R_JSON_OBJECT:
-		pj_o (pj);
-		child = j->children.first;
-		while (child) {
-			pj_k (pj, child->key);
-			pj_append_rjson (pj, child);
-			child = child->next;
-		}
-		pj_end (pj);
-		break;
-	}
-}
-
 #if defined(R2__UNIX__)
 #include <unistd.h>
 #include <fcntl.h>
@@ -396,10 +353,8 @@ static char *handle_mcp_request(ServerState *ss, const char *method, RJson *para
 			pj_append_rjson (pj, tool_args);
 			pj_k (pj, "available_tools");
 			pj_a (pj);
-			RListIter *iter;
-			ToolSpec *ts;
-			r_list_foreach (ss->tools, iter, ts) {
-				pj_s (pj, ts->name);
+			for (size_t i = 0; tool_specs[i].name; i++) {
+				pj_s (pj, tool_specs[i].name);
 			}
 			pj_end (pj);
 			pj_end (pj);

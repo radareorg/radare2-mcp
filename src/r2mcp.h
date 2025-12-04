@@ -57,7 +57,6 @@ typedef struct {
 	const RJson *client_info;
 	RadareState rstate;
 	RStrBuf *sb;
-	RList *tools; // registry of ToolSpec* (RList*), opaque here
 	/* Optional whitelist of tool names enabled via command line -e options.
 	 * When non-NULL, only tools whose name appears in this list will be
 	 * registered in the runtime tools registry. Items are heap-allocated

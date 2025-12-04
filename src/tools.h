@@ -10,24 +10,25 @@ typedef enum {
 	TOOL_MODE_RO = 1 << 3,
 } ToolMode;
 
-typedef struct {
-	const char *name;
-	const char *description;
-	const char *schema_json;
-	int modes; // bitmask of ToolMode
-} ToolSpec;
-
 // Tool handler signature: returns heap-allocated JSON string describing
 // the tool result (typically jsonrpc_tooltext_response() content or other
 // structured JSON). Caller must free the returned string.
 typedef char *(*ToolHandler)(ServerState *ss, RJson *args);
 
+typedef struct {
+	const char *name;
+	const char *description;
+	const char *schema_json;
+	int modes; // bitmask of ToolMode
+	ToolHandler func;
+} ToolSpec;
+
+extern ToolSpec tool_specs[];
+
 // Tool flags (for future use). For now, we use one to require an open file.
 #define TOOL_FLAG_REQUIRES_OPENFILE (1 << 0)
 
-// Initialize and shutdown the tools registry stored in ServerState
-void tools_registry_init(ServerState *ss);
-void tools_registry_fini(ServerState *ss);
+
 
 // Build catalog JSON for the current server mode with optional pagination
 char *tools_build_catalog_json(const ServerState *ss, const char *cursor, int page_size);

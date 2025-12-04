@@ -175,7 +175,6 @@ int r2mcp_main(int argc, const char **argv) {
 	setup_signals ();
 #endif
 	/* Initialize registries */
-	tools_registry_init (&ss);
 	if (list_tools) {
 		/* Print tools and exit early */
 		tools_print_table (&ss);
@@ -209,7 +208,6 @@ int r2mcp_main(int argc, const char **argv) {
 	if (dsl_tests) {
 		int r = r2mcp_run_dsl_tests (&ss, dsl_tests, NULL);
 		/* Cleanup and return */
-		tools_registry_fini (&ss);
 		prompts_registry_fini (&ss);
 		r2mcp_state_fini (&ss);
 		free (ss.baseurl);
@@ -229,7 +227,6 @@ int r2mcp_main(int argc, const char **argv) {
 	r_list_free (cmds);
 	r2mcp_running_set (1);
 	r2mcp_eventloop (&ss);
-	tools_registry_fini (&ss);
 	prompts_registry_fini (&ss);
 	r2mcp_state_fini (&ss);
 	/* Cleanup */
