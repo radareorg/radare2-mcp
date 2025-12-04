@@ -1,9 +1,12 @@
 /* r2mcp - MIT - Copyright 2025 - pancake, dnakov */
 
+#include <string.h>
+
 #include "tools.h"
 #include "prompts.h"
 
 #if R2__UNIX__
+#include <signal.h>
 /* Signal handling moved from r2mcp.c */
 static void signal_handler(int signum) {
 	const char msg[] = "\nInterrupt received, shutting down...\n";

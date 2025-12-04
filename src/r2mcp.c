@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <errno.h>
+#include <string.h>
 
 #include "jsonrpc.h"
 

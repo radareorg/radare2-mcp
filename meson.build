@@ -139,22 +139,27 @@ if host_machine.system() == 'windows'
   )
 
   link_args = []
+  c_args = []
   if cc.get_id() == 'msvc' or cc.get_id() == 'clang-cl'
     link_args += ['/SUBSYSTEM:CONSOLE', '/DEFAULTLIB:setupapi.lib']
   endif
 else
+  conf_data = configuration_data()
+  conf_data.set('R2MCP_VERSION', meson.project_version())
   configure_file(
     input: 'src/config.h.acr',
     output: 'config.h',
-    configuration: configuration_data()
+    configuration: conf_data
   )
   link_args = []
+  c_args = ['-D_GNU_SOURCE', '-D_POSIX_C_SOURCE=200809L']
 endif
 
 executable(
   'r2mcp',
   srcs,
   dependencies: [r_core_dep, r_util_dep, r_cons_dep, r_config_dep],
+  c_args: c_args,
   link_args: link_args,
   install: true,
 )
@@ -163,6 +168,7 @@ plugin_lib = shared_library(
   'core_r2mcp',
   plugin_srcs,
   dependencies: [r_core_dep, r_util_dep, r_cons_dep, r_config_dep],
+  c_args: c_args,
   link_args: link_args,
   install: false,
 )
@@ -171,6 +177,7 @@ executable(
   'r2mcp-svc',
   'svc/r2mcp-svc.c',
   dependencies: [r_socket_dep, r_util_dep, r_cons_dep],
+  c_args: c_args,
   link_args: link_args,
   install: true,
 )
