@@ -300,6 +300,7 @@ static char *handle_initialize(ServerState *ss, RJson *params) {
 
 // Create a proper success response
 static char *jsonrpc_success_response(ServerState *ss, const char *result, const char *id) {
+	(void)ss; // unused now, kept for API consistency
 	PJ *pj = pj_new ();
 	pj_o (pj);
 	pj_ks (pj, "jsonrpc", "2.0");
@@ -325,10 +326,7 @@ static char *jsonrpc_success_response(ServerState *ss, const char *result, const
 	}
 
 	pj_end (pj);
-	char *s = pj_drain (pj);
-	r2mcp_log (ss, ">>>");
-	r2mcp_log (ss, s);
-	return s;
+	return pj_drain (pj);
 }
 
 static char *handle_list_tools(ServerState *ss, RJson *params) {
@@ -463,63 +461,70 @@ static char *handle_mcp_request(ServerState *ss, const char *method, RJson *para
 	return response;
 }
 
-// Modified process_mcp_message to handle the protocol correctly
+// Send a JSON-RPC response to stdout with proper framing
+static void send_response(ServerState *ss, const char *response) {
+	if (!response) {
+		return;
+	}
+	r2mcp_log (ss, ">>>");
+	r2mcp_log (ss, response);
+	size_t len = strlen (response);
+	write (STDOUT_FILENO, response, len);
+	if (len == 0 || response[len - 1] != '\n') {
+		write (STDOUT_FILENO, "\n", 1);
+	}
+#if R2__UNIX__
+	fsync (STDOUT_FILENO);
+#endif
+}
+
+// Process a JSON-RPC message from the client
 static void process_mcp_message(ServerState *ss, const char *msg) {
 	r2mcp_log (ss, "<<<");
 	r2mcp_log (ss, msg);
 
 	RJson *request = r_json_parse ((char *)msg);
 	if (!request) {
-		R_LOG_ERROR ("Invalid JSON");
+		char *err = jsonrpc_error_response (-32700, "Parse error: invalid JSON", NULL, NULL);
+		send_response (ss, err);
+		free (err);
 		return;
 	}
 
+	RJson *id_json = (RJson *)r_json_get (request, "id");
 	const char *method = r_json_get_str (request, "method");
 	RJson *params = (RJson *)r_json_get (request, "params");
-	RJson *id_json = (RJson *)r_json_get (request, "id");
 
-	if (!method) {
-		R_LOG_ERROR ("Invalid JSON-RPC message: missing method");
-		r_json_free (request);
-		return;
-	}
-
-	// Proper handling of notifications vs requests
+	// Extract id for error responses (may be NULL for notifications)
+	const char *id = NULL;
+	char id_buf[32] = { 0 };
 	if (id_json) {
-		// This is a request that requires a response
-		const char *id = NULL;
-		char id_buf[32] = { 0 };
-
 		if (id_json->type == R_JSON_STRING) {
 			id = id_json->str_value;
 		} else if (id_json->type == R_JSON_INTEGER) {
 			snprintf (id_buf, sizeof (id_buf), "%lld", (long long)id_json->num.u_value);
 			id = id_buf;
 		}
+	}
 
+	if (!method) {
+		// Per JSON-RPC 2.0, missing method is an invalid request
+		char *err = jsonrpc_error_response (-32600, "Invalid Request: missing method", id, NULL);
+		send_response (ss, err);
+		free (err);
+		r_json_free (request);
+		return;
+	}
+
+	if (id_json) {
+		// Request: requires a response
 		char *response = handle_mcp_request (ss, method, params, id);
 		if (response) {
-			r2mcp_log (ss, ">>>");
-			r2mcp_log (ss, response);
-
-			// Ensure the response ends with a newline
-			size_t resp_len = strlen (response);
-			bool has_newline = (resp_len > 0 && response[resp_len - 1] == '\n');
-
-			if (!has_newline) {
-				write (STDOUT_FILENO, response, resp_len);
-				write (STDOUT_FILENO, "\n", 1);
-			} else {
-				write (STDOUT_FILENO, response, resp_len);
-			}
-#if R2__UNIX__
-			fsync (STDOUT_FILENO);
-#endif
+			send_response (ss, response);
 			free (response);
 		}
 	} else {
-		// This is a notification, don't send a response
-		// Just handle it internally
+		// Notification: no response
 		if (!strcmp (method, "notifications/cancelled")) {
 			r2mcp_log (ss, "Received cancelled notification");
 		} else if (!strcmp (method, "notifications/initialized")) {
