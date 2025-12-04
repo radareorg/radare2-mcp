@@ -21,6 +21,9 @@ void read_buffer_free(ReadBuffer *buf) {
 void read_buffer_append(ReadBuffer *buf, const char *data, size_t len) {
 	if (buf->size + len > buf->capacity) {
 		size_t new_capacity = buf->capacity * 2;
+		if (new_capacity < buf->size + len) {
+			new_capacity = buf->size + len;
+		}
 		char *new_data = realloc (buf->data, new_capacity);
 		if (!new_data) {
 			// R_LOG_ERROR ("Failed to resize buffer");
@@ -41,8 +44,8 @@ char *read_buffer_get_message(ReadBuffer *buf) {
 	}
 
 	// Ensure the buffer is null-terminated for safety
-	if (buf->size >= buf->capacity) {
-		buf->capacity = buf->size + 1;
+	if (buf->capacity <= buf->size + 1) {
+		buf->capacity = buf->size + 2;
 		buf->data = realloc (buf->data, buf->capacity);
 	}
 	buf->data[buf->size] = '\0';
