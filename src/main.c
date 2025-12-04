@@ -10,7 +10,7 @@
 /* Signal handling moved from r2mcp.c */
 static void signal_handler(int signum) {
 	const char msg[] = "\nInterrupt received, shutting down...\n";
-	write (STDERR_FILENO, msg, sizeof (msg) - 1);
+	(void) write (STDERR_FILENO, msg, sizeof (msg) - 1);
 	r2mcp_running_set (0);
 	signal (signum, SIG_DFL);
 }

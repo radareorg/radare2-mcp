@@ -10,6 +10,7 @@
 #include <errno.h>
 #include <string.h>
 
+#include "config.h"
 #include "jsonrpc.h"
 
 #if defined(R2__UNIX__)
@@ -26,7 +27,6 @@
 #else
 #error please define R2__WINDOWS__ or R2__UNIX__ for platform detection
 #endif
-#include "config.h"
 #include "r2mcp.h"
 #include "tools.h"
 #include "prompts.h"
@@ -400,9 +400,9 @@ static void send_response(ServerState *ss, const char *response) {
 	r2mcp_log (ss, ">>>");
 	r2mcp_log (ss, response);
 	size_t len = strlen (response);
-	write (STDOUT_FILENO, response, len);
+	(void) write (STDOUT_FILENO, response, len);
 	if (len == 0 || response[len - 1] != '\n') {
-		write (STDOUT_FILENO, "\n", 1);
+		(void) write (STDOUT_FILENO, "\n", 1);
 	}
 #if R2__UNIX__
 	fsync (STDOUT_FILENO);
