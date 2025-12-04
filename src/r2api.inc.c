@@ -1,3 +1,5 @@
+/* r2mcp - MIT - Copyright 2025 - pancake, dnakov */
+
 static void r2state_settings(RCore *core) {
 	r_config_set_i (core->config, "scr.color", 0);
 	r_config_set_b (core->config, "scr.utf8", false);

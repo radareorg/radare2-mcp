@@ -1,15 +1,8 @@
-#include "config.h"
-
-#include "r2mcp.h"
+/* r2mcp - MIT - Copyright 2025 - pancake, dnakov */
 
 #include "tools.h"
-
 #include "prompts.h"
-#include <signal.h>
 
-#include <unistd.h>
-
-#include <stdio.h>
 #if R2__UNIX__
 /* Signal handling moved from r2mcp.c */
 static void signal_handler(int signum) {
@@ -110,7 +103,7 @@ int r2mcp_main(int argc, const char **argv) {
 			sandbox = strdup (opt.arg);
 			break;
 		case 'n':
-			loadplugins = true;
+			loadplugins = false;
 			break;
 		case 'm':
 			minimode = true;
