@@ -71,6 +71,38 @@ jobs:
           name: debian-package
           path: dist/debian/*.deb
 
+  linux-meson:
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Installing radare2 from deb
+        run: |
+          BASE_URL="https://github.com/radareorg/radare2/releases/download/${{env.R2V}}"
+          wget "${BASE_URL}/radare2_${{env.R2V}}_amd64.deb"
+          wget "${BASE_URL}/radare2-dev_${{env.R2V}}_amd64.deb"
+          sudo dpkg -i *.deb
+      - name: Install Meson and Ninja
+        run: sudo apt update && sudo apt install -y meson ninja-build
+      - name: Configure Meson
+        run: meson setup builddir --prefix=/usr --buildtype=release -Dr2_prefix=/usr
+      - name: Compile
+        run: meson compile -C builddir
+      - name: Create Linux Meson zip archive
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          mkdir -p release
+          FILENAME="${ZIP_PREFIX}${{ github.ref_name }}-linux-x64-meson.zip"
+          zip -j "release/$FILENAME" builddir/src/r2mcp
+      - name: Upload Linux Meson binary
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-x64-meson-binary
+          path: "release/${ZIP_PREFIX}${{ github.ref_name }}-linux-x64-meson.zip"
+
   macos:
     runs-on: macos-latest
     strategy:
@@ -194,7 +226,7 @@ jobs:
           path: r2mcp-windows.zip
 
   release:
-    needs: [r2git, linux-deb, macos, windows]
+    needs: [r2git, linux-deb, linux-meson, macos, windows]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     permissions:
