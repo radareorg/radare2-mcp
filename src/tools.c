@@ -321,7 +321,7 @@ static char *tool_list_functions(ServerState *ss, RJson *tool_args) {
 		}
 	}
 	// Apply filtering if only_named is true
-	if (only_named && res && !R_STR_ISEMPTY (res)) {
+	if (only_named && R_STR_ISNOTEMPTY (res)) {
 		char *filtered = filter_named_functions_only (res);
 		if (filtered) {
 			free (res);
@@ -329,7 +329,7 @@ static char *tool_list_functions(ServerState *ss, RJson *tool_args) {
 		}
 	}
 	// Apply regex filter if provided
-	if (R_STR_ISNOTEMPTY (filter) && res && !R_STR_ISEMPTY (res)) {
+	if (R_STR_ISNOTEMPTY (filter) && R_STR_ISNOTEMPTY (res)) {
 		char *r = filter_lines_by_regex (res, filter);
 		free (res);
 		res = r;

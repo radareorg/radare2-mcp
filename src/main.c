@@ -94,7 +94,7 @@ int r2mcp_main(int argc, const char **argv) {
 		case 'u':
 			http_mode = true;
 			baseurl = strdup (opt.arg);
-			eprintf ("[R2MCP] HTTP r2pipe client mode enabled, baseurl=%s\n", baseurl);
+			R_LOG_INFO ("[R2MCP] HTTP r2pipe client mode enabled, baseurl=%s", baseurl);
 			break;
 		case 'l':
 			logfile = strdup (opt.arg);
@@ -197,7 +197,7 @@ int r2mcp_main(int argc, const char **argv) {
 				deco = "decai -d";
 			}
 			char *pdc = r_str_newf ("e cmd.pdc=%s", deco);
-			eprintf ("[R2MCP] Using Decompiler: %s\n", pdc);
+			R_LOG_INFO ("[R2MCP] Using Decompiler: %s", pdc);
 			r2mcp_cmd (&ss, pdc);
 			free (pdc);
 		}

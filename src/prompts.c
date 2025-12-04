@@ -1,5 +1,46 @@
 #include "r2mcp.h"
 #include "prompts.h"
+#include <dirent.h>
+
+static char *expand_home(const char *path) {
+	if (path[0] == '~') {
+		char *home = getenv ("HOME");
+		if (home) {
+			return r_str_newf ("%s%s", home, path + 1);
+		}
+	}
+	return strdup (path);
+}
+
+static RList *list_files(const char *path) {
+	DIR *dir = opendir (path);
+	if (!dir) {
+		return NULL;
+	}
+	RList *list = r_list_newf (free);
+	struct dirent *entry;
+	while ((entry = readdir (dir))) {
+		if (strcmp (entry->d_name, ".") && strcmp (entry->d_name, "..")) {
+			r_list_append (list, strdup (entry->d_name));
+		}
+	}
+	closedir (dir);
+	return list;
+}
+
+typedef struct {
+	char *name;
+	char *description;
+	char *required;
+} ParsedArg;
+
+typedef struct {
+	char *name;
+	char *description;
+	char *content;
+	char *user_template;
+	RList *args;
+} ParsedPrompt;
 
 static char *json_text_msg(const char *role, const char *text) {
 	PJ *pj = pj_new ();
@@ -34,184 +75,210 @@ static char *json_messages_obj2(char *m1, char *m2) {
 	return r_strbuf_drain (sb);
 }
 
-// Utility to fetch string argument value
-static const char *arg_str(RJson *arguments, const char *key, const char *dflt) {
-	const char *s = r_json_get_str (arguments, key);
-	return s? s: dflt;
+static char *expand_template(const char *template, RJson *arguments) {
+	RStrBuf *sb = r_strbuf_new ("");
+	const char *p = template;
+	while (*p) {
+		if (*p == '{') {
+			if (r_str_startswith (p, "{if ")) {
+				p += 4;
+				const char *arg_start = p;
+				char *end = strchr (p, '}');
+				if (end) {
+					char *arg = r_str_ndup (arg_start, end - arg_start);
+					const char *val = r_json_get_str (arguments, arg);
+					p = end + 1;
+					const char *if_content = p;
+					const char *else_pos = strstr (p, "{else}");
+					const char *endif_pos = strstr (p, "{/if}");
+					if (val && *val) {
+						const char *end_content = else_pos? else_pos: endif_pos;
+						if (end_content) {
+							r_strbuf_append_n (sb, if_content, end_content - if_content);
+							p = end_content + (else_pos? 6: 5);
+						}
+					} else {
+						if (else_pos) {
+							const char *else_content = else_pos + 6;
+							const char *end_content = endif_pos;
+							if (end_content) {
+								r_strbuf_append_n (sb, else_content, end_content - else_content);
+								p = end_content + 5;
+							}
+						} else {
+							if (endif_pos) {
+								p = endif_pos + 5;
+							}
+						}
+					}
+					free (arg);
+				}
+			} else {
+				char *end = strchr (p, '}');
+				if (end) {
+					char *arg = r_str_ndup (p + 1, end - p - 1);
+					const char *val = r_json_get_str (arguments, arg);
+					if (val) {
+						r_strbuf_append (sb, val);
+					}
+					p = end + 1;
+					free (arg);
+				} else {
+					r_strbuf_appendf (sb, "%c", *p);
+					p++;
+				}
+			}
+		} else {
+			r_strbuf_appendf (sb, "%c", *p);
+			p++;
+		}
+	}
+	return r_strbuf_drain (sb);
 }
 
-// ---------- Prompt renderers ----------
-
-// crackme solver
-static char *render_crackme(const PromptSpec *spec, RJson *arguments) {
-	(void)spec;
-	const char *file_path = r_json_get_str (arguments, "file_path");
-	const char *goal = arg_str (arguments, "goal", "Recover the correct input or bypass check");
-
-	const char *sys =
-		"You are an expert reverse engineer using radare2 via r2mcp.\n"
-		"Goal: plan first, then execute minimal tool calls.\n"
-		"General steps:\n"
-		"1) Open the target binary and run lightweight analysis (analyze level 2).\n"
-		"2) Identify main/entrypoints and functions referring to strcmp, strncmp, memcmp, crypto, or suspicious branches.\n"
-		"3) Read/Decompile only the most relevant functions (avoid dumping huge outputs).\n"
-		"4) Derive the key/logic and propose inputs or patches.\n"
-		"5) Summarize findings and next actions.\n"
-		"Prefer afl listing with addresses, selective pdc/pdf on key functions, and xrefs_to for checks.\n";
-
-	RStrBuf *user = r_strbuf_new ("");
-	r_strbuf_appendf (user, "Task: %s.\n", goal);
-	if (file_path && *file_path) {
-		r_strbuf_appendf (user, "Open file: %s (use tools/call open_file).\n", file_path);
-	} else {
-		r_strbuf_append (user, "Ask for or confirm file path if unknown.\n");
+static char *render_loaded(const PromptSpec *spec, RJson *arguments) {
+	ParsedPrompt *pp = (ParsedPrompt *)spec->render_data;
+	char *user = NULL;
+	if (pp->user_template) {
+		user = expand_template (pp->user_template, arguments);
 	}
-	r_strbuf_append (user,
-		"Plan your steps, then call: analyze (level=2), list_entrypoints, list_functions, list_imports, list_strings (filter optional).\n"
-		"Use decompile_function or disassemble_function on candidate functions only.\n");
-
-	char *m1 = json_text_msg ("system", sys);
-	char *m2 = json_text_msg ("user", r_strbuf_get (user));
+	char *m1 = json_text_msg ("system", pp->content);
+	char *m2 = user? json_text_msg ("user", user): NULL;
 	char *out = json_messages_obj2 (m1, m2);
-	r_strbuf_free (user);
+	free (user);
 	return out;
 }
 
-// find cryptographic material
-static char *render_crypto(const PromptSpec *spec, RJson *arguments) {
-	(void)spec;
-	const char *hint = arg_str (arguments, "hint", "Look for keys, IVs, S-boxes, constants, PRNG seeds");
-	const char *sys =
-		"You are tasked with locating cryptographic material in a binary.\n"
-		"Strategy:\n"
-		"- List imports and strings to find crypto APIs/signatures.\n"
-		"- Search for constants (AES S-box, SHA tables), base64 sets, or long random-looking blobs.\n"
-		"- Inspect xrefs to functions handling buffers just before encryption/decryption.\n"
-		"- Use selective decompilation and avoid dumping entire files.\n";
-
-	RStrBuf *user = r_strbuf_new ("");
-	r_strbuf_appendf (user, "Focus: %s.\n", hint);
-	r_strbuf_append (user,
-		"Use: list_imports, list_strings (filter to crypto keywords), list_functions (scan for suspicious names), and xrefs_to (address).\n"
-		"If needed, disassemble/decompile only tight regions where material is assigned.\n");
-
-	char *m1 = json_text_msg ("system", sys);
-	char *m2 = json_text_msg ("user", r_strbuf_get (user));
-	char *out = json_messages_obj2 (m1, m2);
-	r_strbuf_free (user);
-	return out;
-}
-
-// document assembly code for a function
-static char *render_document_function(const PromptSpec *spec, RJson *arguments) {
-	(void)spec;
-	const char *address = r_json_get_str (arguments, "address");
-	const char *depth = arg_str (arguments, "detail", "concise");
-
-	const char *sys =
-		"Produce a clear, structured explanation of a function’s behavior.\n"
-		"Guidelines:\n"
-		"- Summarize purpose, inputs/outputs, side effects.\n"
-		"- Highlight algorithms, notable constants, error paths.\n"
-		"- Provide a brief high-level pseudocode if helpful.\n";
-
-	RStrBuf *user = r_strbuf_new ("");
-	if (address && *address) {
-		r_strbuf_appendf (user, "Target function address: %s.\n", address);
-	} else {
-		r_strbuf_append (user, "Ask for an address to document.\n");
+static ParsedPrompt *parse_r2ai_md(const char *path) {
+	size_t size;
+	char *data = r_file_slurp (path, &size);
+	if (!data) {
+		return NULL;
 	}
-	r_strbuf_appendf (user,
-		"Detail level: %s.\nUse: get_current_address (to verify), disassemble_function (address), decompile_function (address), get_function_prototype (address).\n",
-		depth);
-
-	char *m1 = json_text_msg ("system", sys);
-	char *m2 = json_text_msg ("user", r_strbuf_get (user));
-	char *out = json_messages_obj2 (m1, m2);
-	r_strbuf_free (user);
-	return out;
-}
-
-// find control-flow path between two addresses (for exploit dev or reachability)
-static char *render_cfg_path(const PromptSpec *spec, RJson *arguments) {
-	(void)spec;
-	const char *src = r_json_get_str (arguments, "source_address");
-	const char *dst = r_json_get_str (arguments, "target_address");
-	const char *sys =
-		"Find and explain a feasible control-flow path between two addresses.\n"
-		"Approach:\n"
-		"- Identify function boundaries for source/target.\n"
-		"- Use xrefs_to and selective disassembly to traverse edges.\n"
-		"- Summarize the path as a sequence of blocks with conditions.\n";
-
-	RStrBuf *user = r_strbuf_new ("");
-	r_strbuf_append (user, "Compute a path with minimal output.\n");
-	if (src) {
-		r_strbuf_appendf (user, "Source: %s. ", src);
+	ParsedPrompt *pp = R_NEW0 (ParsedPrompt);
+	const char *basename = r_file_basename (path);
+	char *name_dup = strdup (basename);
+	char *dot = strstr (name_dup, ".r2ai.md");
+	if (dot) {
+		*dot = 0;
 	}
-	if (dst) {
-		r_strbuf_appendf (user, "Target: %s. ", dst);
+	pp->name = name_dup;
+	char *p = data;
+	if (size < 4 || strncmp (p, "---\n", 4)) {
+		goto fail;
 	}
-	r_strbuf_append (user, "Use: get_current_address, disassemble_function, disassemble, xrefs_to.\n");
-
-	char *m1 = json_text_msg ("system", sys);
-	char *m2 = json_text_msg ("user", r_strbuf_get (user));
-	char *out = json_messages_obj2 (m1, m2);
-	r_strbuf_free (user);
-	return out;
+	p += 4;
+	char *end = strstr (p, "\n---\n");
+	if (!end) {
+		goto fail;
+	}
+	*end = 0;
+	char *front = p;
+	p = end + 5;
+	pp->content = r_str_trim_dup (p);
+	char *front_copy = strdup (front);
+	char *line = strtok (front_copy, "\n");
+	int in_args = 0;
+	RList *args = NULL;
+	while (line) {
+		char *trimmed_line = r_str_trim_dup (line);
+		if (!*trimmed_line) {
+			free (trimmed_line);
+			line = strtok (NULL, "\n");
+			continue;
+		}
+		if (!strcmp (trimmed_line, "args:")) {
+			in_args = 1;
+			args = r_list_newf (free);
+			free (trimmed_line);
+			line = strtok (NULL, "\n");
+			continue;
+		}
+		if (in_args) {
+			if (trimmed_line[0] == '-') {
+				char *arg_line = trimmed_line + 1;
+				char *trimmed_arg = r_str_trim_dup (arg_line);
+				ParsedArg *arg = R_NEW0 (ParsedArg);
+				char *colon = strchr (trimmed_arg, ':');
+				if (colon) {
+					*colon = 0;
+					char *key = r_str_trim_dup (trimmed_arg);
+					char *value = r_str_trim_dup (colon + 1);
+					if (!strcmp (key, "name")) {
+						arg->name = value;
+					} else if (!strcmp (key, "description")) {
+						arg->description = value;
+					} else if (!strcmp (key, "required")) {
+						arg->required = value;
+					} else {
+						free (value);
+					}
+					free (key);
+				}
+				free (trimmed_arg);
+				if (arg->name) {
+					r_list_append (args, arg);
+				} else {
+					free (arg);
+				}
+			} else {
+				in_args = 0;
+			}
+		}
+		if (!in_args) {
+			char *colon = strchr (trimmed_line, ':');
+			if (colon) {
+				*colon = 0;
+				char *key = r_str_trim_dup (trimmed_line);
+				char *value = r_str_trim_dup (colon + 1);
+				if (!strcmp (key, "description")) {
+					pp->description = value;
+				} else if (!strcmp (key, "user_template")) {
+					if (value[0] == '|') {
+						RStrBuf *sb = r_strbuf_new ("");
+						free (value);
+						line = strtok (NULL, "\n");
+						while (line) {
+							char *trimmed = r_str_trim_dup (line);
+							if (!*trimmed) {
+								free (trimmed);
+								line = strtok (NULL, "\n");
+								continue;
+							}
+							r_strbuf_append (sb, trimmed);
+							r_strbuf_append (sb, "\n");
+							free (trimmed);
+							line = strtok (NULL, "\n");
+						}
+						pp->user_template = r_strbuf_drain (sb);
+					} else {
+						free (value);
+					}
+				} else {
+					free (value);
+				}
+				free (key);
+			}
+		}
+		free (trimmed_line);
+		line = strtok (NULL, "\n");
+	}
+	pp->args = args;
+	free (front_copy);
+	free (data);
+	return pp;
+fail:
+	free (pp->name);
+	free (pp->description);
+	free (pp->content);
+	free (pp->user_template);
+	r_list_free (pp->args);
+	free (pp);
+	free (data);
+	return NULL;
 }
 
 // ---------- Registry ----------
-
-static PromptArg ARGS_CRACKME[] = {
-	{ "file_path", "Absolute path to target binary", false },
-	{ "goal", "What success looks like (e.g., recover password)", false },
-};
-
-static PromptArg ARGS_DOCUMENT_FUNCTION[] = {
-	{ "address", "Function start address to document", true },
-	{ "detail", "Level of detail: concise|full", false },
-};
-
-static PromptArg ARGS_CFG_PATH[] = {
-	{ "source_address", "Source address or block", true },
-	{ "target_address", "Target address or block", true },
-};
-
-static PromptArg ARGS_CRYPTO[] = {
-	{ "hint", "Extra context (e.g., suspected algorithm)", false },
-};
-
-static PromptSpec builtin_prompts[] = {
-	{
-		.name = "crackme_solver",
-		.description = "Plan and solve a crackme using radare2 with minimal, targeted steps",
-		.args = ARGS_CRACKME,
-		.nargs = (int) (sizeof (ARGS_CRACKME) / sizeof (ARGS_CRACKME[0])),
-		.render = render_crackme,
-	},
-	{
-		.name = "find_crypto_material",
-		.description = "Locate keys, IVs, S-boxes, and crypto constants",
-		.args = ARGS_CRYPTO,
-		.nargs = (int) (sizeof (ARGS_CRYPTO) / sizeof (ARGS_CRYPTO[0])),
-		.render = render_crypto,
-	},
-	{
-		.name = "document_function",
-		.description = "Explain a function’s purpose, behavior, and pseudocode",
-		.args = ARGS_DOCUMENT_FUNCTION,
-		.nargs = (int) (sizeof (ARGS_DOCUMENT_FUNCTION) / sizeof (ARGS_DOCUMENT_FUNCTION[0])),
-		.render = render_document_function,
-	},
-	{
-		.name = "find_control_flow_path",
-		.description = "Find a control-flow path between two addresses for reachability or exploit planning",
-		.args = ARGS_CFG_PATH,
-		.nargs = (int) (sizeof (ARGS_CFG_PATH) / sizeof (ARGS_CFG_PATH[0])),
-		.render = render_cfg_path,
-	},
-};
 
 typedef struct {
 	RList *list; // of PromptSpec*(borrowed pointers to builtin entries)
@@ -227,10 +294,46 @@ void prompts_registry_init(ServerState *ss) {
 		free (reg);
 		return;
 	}
-	// Append pointers to builtin prompts
-	size_t n = sizeof (builtin_prompts) / sizeof (builtin_prompts[0]);
-	for (size_t i = 0; i < n; i++) {
-		r_list_append (reg->list, &builtin_prompts[i]);
+	// Load prompts from directories
+	char *dirs[] = { "prompts", "~/.config/r2ai/prompts", NULL };
+	for (char **dir = dirs; *dir; dir++) {
+		char *path = expand_home (*dir);
+		if (!path) {
+			continue;
+		}
+		RList *files = list_files (path);
+		if (files) {
+			RListIter *it;
+			char *file;
+			r_list_foreach (files, it, file) {
+				if (r_str_endswith (file, ".r2ai.md")) {
+					char *full_path = r_str_newf ("%s/%s", path, file);
+					ParsedPrompt *pp = parse_r2ai_md (full_path);
+					if (pp) {
+						PromptSpec *spec = R_NEW (PromptSpec);
+						spec->name = pp->name;
+						spec->description = pp->description;
+						spec->nargs = r_list_length (pp->args);
+						spec->args = calloc (spec->nargs, sizeof (PromptArg));
+						int i = 0;
+						RListIter *ait;
+						ParsedArg *pa;
+						r_list_foreach (pp->args, ait, pa) {
+							spec->args[i].name = pa->name;
+							spec->args[i].description = pa->description;
+							spec->args[i].required = !strcmp (pa->required, "true");
+							i++;
+						}
+						spec->render = render_loaded;
+						spec->render_data = pp;
+						r_list_append (reg->list, spec);
+					}
+					free (full_path);
+				}
+			}
+			r_list_free (files);
+		}
+		free (path);
 	}
 	ss->prompts = reg;
 }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdbool.h>
+#include "r2mcp.h"
 
 typedef struct {
 	const char *name;
@@ -11,13 +12,12 @@ typedef struct {
 typedef struct PromptSpec {
 	const char *name;
 	const char *description;
-	const PromptArg *args;
+	PromptArg *args;
 	int nargs;
 	// Render returns a JSON object string with { messages: [...] }
 	char *(*render)(const struct PromptSpec *spec, RJson *arguments);
+	void *render_data;
 } PromptSpec;
-
-#include "r2mcp.h"
 
 // Initialize and shutdown the prompts registry stored in ServerState
 void prompts_registry_init(ServerState *ss);

@@ -31,7 +31,7 @@ static bool logcb(void *user, int type, const char *origin, const char *msg) {
 	ServerState *ss = (ServerState *)user;
 	if (ss->sb) {
 		const char *typestr = r_log_level_tostring (type);
-		// eprintf ("[%s] from=%s message=%s\n", typestr, origin, msg);
+		// R_LOG_INFO ("[%s] from=%s message=%s\n", typestr, origin, msg);
 		r_strbuf_appendf (ss->sb, "[%s] %s\n", typestr, msg);
 		// r_strbuf_appendf (ss->sb, "[%s] from=%s message=%s\n", typestr, origin, msg);
 	}
@@ -55,7 +55,7 @@ static char *r2mcp_log_drain(ServerState *ss) {
 }
 
 static inline void r2mcp_log(ServerState *ss, const char *x) {
-	eprintf ("[R2MCP] %s\n", x);
+	R_LOG_INFO ("[R2MCP] %s", x);
 #if R2MCP_DEBUG
 	if (ss && ss->logfile && *ss->logfile) {
 		r_file_dump (ss->logfile, (const ut8 *) (x), -1, true);
