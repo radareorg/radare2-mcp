@@ -31,68 +31,79 @@ void read_buffer_append(ReadBuffer *buf, const char *data, size_t len) {
 	buf->size += len;
 }
 
-// Modified read_buffer functions to handle partial reads better
+// Extract a complete JSON message from the buffer, respecting string quoting.
+// Returns a heap-allocated message string or NULL if no complete message is available.
 char *read_buffer_get_message(ReadBuffer *buf) {
-	// Search for a complete JSON-RPC message
-	// We need to find a properly balanced set of braces {}
 	if (buf->size == 0) {
 		return NULL;
 	}
 
-	// Ensure the buffer is null-terminated for string operations
-	if (buf->size < buf->capacity) {
-		buf->data[buf->size] = '\0';
-	} else {
-		// Expand capacity if needed
-		buf->capacity += 1;
+	// Ensure the buffer is null-terminated for safety
+	if (buf->size >= buf->capacity) {
+		buf->capacity = buf->size + 1;
 		buf->data = realloc (buf->data, buf->capacity);
-		buf->data[buf->size] = '\0';
 	}
+	buf->data[buf->size] = '\0';
 
-	// Look for a complete JSON message by counting braces
 	int brace_count = 0;
 	int start_pos = -1;
+	bool in_string = false;
+	bool escape_next = false;
 	size_t i;
 
 	for (i = 0; i < buf->size; i++) {
 		const char c = buf->data[i];
 
-		// Find the first opening brace if we haven't already
-		if (start_pos == -1 && c == '{') {
-			start_pos = i;
-			brace_count = 1;
+		// Handle escape sequences inside strings
+		if (escape_next) {
+			escape_next = false;
 			continue;
 		}
 
-		// Count braces within a JSON object
-		if (start_pos != -1) {
+		if (in_string) {
+			if (c == '\\') {
+				escape_next = true;
+			} else if (c == '"') {
+				in_string = false;
+			}
+			continue;
+		}
+
+		// Outside of a string
+		if (c == '"') {
+			in_string = true;
+			continue;
+		}
+
+		if (start_pos == -1) {
 			if (c == '{') {
-				brace_count++;
-			} else if (c == '}') {
-				brace_count--;
+				start_pos = i;
+				brace_count = 1;
+			}
+			continue;
+		}
 
-				// If we've found a complete JSON object
-				if (brace_count == 0) {
-					// We have a complete message from start_pos to i (inclusive)
-					size_t msg_len = i - start_pos + 1;
-					char *msg = malloc (msg_len + 1);
-					memcpy (msg, buf->data + start_pos, msg_len);
-					msg[msg_len] = '\0';
+		if (c == '{') {
+			brace_count++;
+		} else if (c == '}') {
+			brace_count--;
+			if (brace_count == 0) {
+				// Complete message from start_pos to i (inclusive)
+				size_t msg_len = i - start_pos + 1;
+				char *msg = malloc (msg_len + 1);
+				memcpy (msg, buf->data + start_pos, msg_len);
+				msg[msg_len] = '\0';
 
-					// Move any remaining data to the beginning of the buffer
-					size_t remaining = buf->size - (i + 1);
-					if (remaining > 0) {
-						memmove (buf->data, buf->data + i + 1, remaining);
-					}
-					buf->size = remaining;
-
-					// r2mcp_log ("Extracted complete JSON message");
-					return msg;
+				// Shift remaining data to the front
+				size_t remaining = buf->size - (i + 1);
+				if (remaining > 0) {
+					memmove (buf->data, buf->data + i + 1, remaining);
 				}
+				buf->size = remaining;
+				return msg;
 			}
 		}
 	}
 
-	// If we get here, we don't have a complete message yet
 	return NULL;
 }
