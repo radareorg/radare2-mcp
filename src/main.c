@@ -61,7 +61,7 @@ int r2mcp_main(int argc, const char **argv) {
 	bool enable_run_command_tool = false;
 	bool readonly_mode = false;
 	bool list_tools = false;
-	RList *cmds = r_list_new ();
+	RList *cmds = r_list_newf (free);
 	/* Whitelist of enabled tool names (populated via repeated -e flags) */
 	RList *enabled_tools = NULL;
 	bool loadplugins = true;
@@ -83,7 +83,7 @@ int r2mcp_main(int argc, const char **argv) {
 			r2mcp_help ();
 			return 0;
 		case 'c':
-			r_list_append (cmds, (char *)opt.arg);
+			r_list_append (cmds, strdup (opt.arg));
 			break;
 		case 'v':
 			r2mcp_version ();

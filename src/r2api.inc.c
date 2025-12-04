@@ -198,6 +198,7 @@ static bool r2_open_file(ServerState *ss, const char *filepath) {
 		R_LOG_INFO ("Closing previously opened file: %s", ss->rstate.current_file);
 		r_core_cmd0 (core, "o-*");
 		ss->rstate.file_opened = false;
+		free (ss->rstate.current_file);
 		ss->rstate.current_file = NULL;
 	}
 
