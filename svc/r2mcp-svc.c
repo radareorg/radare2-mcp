@@ -27,6 +27,8 @@
 #define EMOJI_QUESTION "❓"
 #define EMOJI_WARNING "⚠️"
 
+
+
 int parse_args(int argc, char **argv, bool *yolo_mode, int *port) {
 	int port_index = 1;
 	if (argc >= 2 && !strcmp (argv[1], "-y")) {
@@ -71,28 +73,25 @@ char *handle_modify(char *data) {
 		return strdup ("{\"error\":\"input failed\"}");
 	}
 	new_tool[strcspn (new_tool, "\n")] = 0;
+	char *escaped_new_tool = r_str_replace (strdup (new_tool), "\\", "\\\\", 1);
+	escaped_new_tool = r_str_replace (escaped_new_tool, "\"", "\\\"", 1);
 	char *tool_key = "\"tool\":\"";
 	char *pos = strstr (data, tool_key);
 	if (!pos) {
+		free (escaped_new_tool);
 		free (new_tool);
 		return strdup ("{\"error\":\"no tool field\"}");
 	}
 	char *start = pos + strlen (tool_key);
 	char *end = strchr (start, '"');
 	if (!end) {
+		free (escaped_new_tool);
 		free (new_tool);
 		return strdup ("{\"error\":\"invalid json\"}");
 	}
 	size_t prefix_len = start - data;
-	size_t suffix_len = strlen (end);
-	char *response_body = malloc (prefix_len + strlen (new_tool) + suffix_len + 1);
-	if (!response_body) {
-		free (new_tool);
-		return strdup ("{\"error\":\"alloc failed\"}");
-	}
-	memcpy (response_body, data, prefix_len);
-	strcpy (response_body + prefix_len, new_tool);
-	strcpy (response_body + prefix_len + strlen (new_tool), end);
+	char *response_body = r_str_newf ("%.*s%s%s", (int)prefix_len, data, escaped_new_tool, end);
+	free (escaped_new_tool);
 	free (new_tool);
 	return response_body;
 }
