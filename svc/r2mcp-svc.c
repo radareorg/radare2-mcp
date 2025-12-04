@@ -7,36 +7,29 @@
 #include <string.h>
 #include <stdbool.h>
 
-// Additional color defines not in r_cons.h
-#define Color_BOLD "\x1b[1m"
-
-// Emojis
-#define EMOJI_ROCKET "🚀"
-#define EMOJI_WRENCH "🔧"
-#define EMOJI_CHECK "✅"
-#define EMOJI_CROSS "❌"
-#define EMOJI_LIGHTNING "⚡"
-#define EMOJI_PENCIL "✏️"
-#define EMOJI_COMPUTER "🖥️"
-#define EMOJI_QUESTION "❓"
-#define EMOJI_WARNING "⚠️"
-
 typedef struct {
 	bool yolo_mode;
+	bool quit;
+	bool single_request;
 	int port;
 } R2McpSvcContext;
 
-int parse_args(int argc, char **argv, R2McpSvcContext *ctx) {
-	int port_index = 1;
-	if (argc >= 2 && !strcmp (argv[1], "-y")) {
-		ctx->yolo_mode = true;
-		port_index = 2;
+static int parse_args(int argc, char **argv, R2McpSvcContext *ctx) {
+	int i = 1;
+	for (; i < argc; i++) {
+		if (!strcmp (argv[i], "-y")) {
+			ctx->yolo_mode = true;
+		} else if (!strcmp (argv[i], "-q")) {
+			ctx->single_request = true;
+		} else {
+			break;
+		}
 	}
-	if (argc != port_index + 1) {
-		fprintf (stderr, "Usage: %s [-y] <port>\n", argv[0]);
+	if (i != argc - 1) {
+		fprintf (stderr, "Usage: %s [-y] [-q] <port>\n", argv[0]);
 		return 1;
 	}
-	ctx->port = atoi (argv[port_index]);
+	ctx->port = atoi (argv[i]);
 	if (ctx->port <= 0) {
 		fprintf (stderr, "Invalid port\n");
 		return 1;
@@ -44,7 +37,7 @@ int parse_args(int argc, char **argv, R2McpSvcContext *ctx) {
 	return 0;
 }
 
-RSocket *setup_server(int port) {
+static RSocket *setup_server(int port) {
 	RSocket *server = r_socket_new (false);
 	if (!server) {
 		R_LOG_ERROR ("Cannot create socket");
@@ -57,12 +50,13 @@ RSocket *setup_server(int port) {
 		r_socket_free (server);
 		return NULL;
 	}
-	R_LOG_INFO (Color_GREEN EMOJI_ROCKET " R2 MCP-SBC listening on port %d" Color_RESET, port);
+	R_LOG_INFO (Color_GREEN "🚀 R2 MCP-SBC listening on port %d" Color_RESET, port);
 	return server;
 }
 
-char *handle_modify(char *data) {
-	printf (Color_MAGENTA EMOJI_PENCIL " Enter new tool name:" Color_RESET " ");
+static char *handle_modify(char *data) {
+	printf (Color_MAGENTA "✏️"
+			" Enter new tool name:" Color_RESET " ");
 	fflush (stdout);
 	char *new_tool = NULL;
 	size_t new_tool_len = 0;
@@ -93,8 +87,9 @@ char *handle_modify(char *data) {
 	return response_body;
 }
 
-char *handle_r2cmd(void) {
-	printf (Color_CYAN EMOJI_COMPUTER " Enter r2 command:" Color_RESET " ");
+static char *handle_r2cmd(void) {
+	printf (Color_CYAN "🖥️"
+			" Enter r2 command:" Color_RESET " ");
 	fflush (stdout);
 	char *r2cmd = NULL;
 	size_t r2cmd_len = 0;
@@ -109,19 +104,33 @@ char *handle_r2cmd(void) {
 	return response_body;
 }
 
-char *show_menu_and_get_response(char *data, const char *tool, R2McpSvcContext *ctx) {
-	printf ("\n" Color_BOLD Color_YELLOW "╔══════════════════════════════════════╗\n" Color_RESET);
-	printf (Color_BOLD Color_YELLOW "║" Color_RESET " " Color_CYAN EMOJI_WRENCH " Tool Call Request" Color_RESET " " Color_BOLD Color_YELLOW "║\n" Color_RESET);
-	printf (Color_BOLD Color_YELLOW "╚══════════════════════════════════════╝\n" Color_RESET);
+static char *show_menu_and_get_response(char *data, const char *tool, R2McpSvcContext *ctx) {
+	printf ("\n" Color_YELLOW "╔══════════════════════════════════════╗\n" Color_RESET);
+	printf (Color_YELLOW "║" Color_RESET " " Color_CYAN "🔧"
+			" Tool Call Request" Color_RESET " " Color_YELLOW "║\n" Color_RESET);
+	printf (Color_YELLOW "╚══════════════════════════════════════╝\n" Color_RESET);
 	printf (Color_GREEN "Tool:" Color_RESET " %s\n", tool? tool: "unknown");
 	printf (Color_BLUE "Request:" Color_RESET " %s\n", data);
-	printf ("\n" Color_BOLD "Available Actions:\n" Color_RESET);
-	printf (Color_GREEN "1. " EMOJI_CHECK " Accept" Color_RESET "\n");
-	printf (Color_RED "2. " EMOJI_CROSS " Reject" Color_RESET "\n");
-	printf (Color_YELLOW "3. " EMOJI_LIGHTNING " Accept all (YOLO mode)" Color_RESET "\n");
-	printf (Color_MAGENTA "4. " EMOJI_PENCIL " Modify tool" Color_RESET "\n");
-	printf (Color_CYAN "5. " EMOJI_COMPUTER " Run r2 command" Color_RESET "\n");
-	printf (Color_BOLD EMOJI_QUESTION " Your choice:" Color_RESET " ");
+	printf ("\n"
+	"Available Actions:\n" Color_RESET);
+	printf (Color_GREEN "1. "
+			"✅"
+			" Accept" Color_RESET "\n");
+	printf (Color_RED "2. "
+			"❌"
+			" Reject" Color_RESET "\n");
+	printf (Color_YELLOW "3. "
+			"⚡"
+			" Accept all (YOLO mode)" Color_RESET "\n");
+	printf (Color_MAGENTA "4. "
+			"✏️"
+			" Modify tool" Color_RESET "\n");
+	printf (Color_CYAN "5. "
+			"🖥️"
+			" Run r2 command" Color_RESET "\n");
+	printf (Color_RED "6. Quit server" Color_RESET "\n");
+	printf ("❓"
+	" Your choice:" Color_RESET " ");
 	fflush (stdout);
 
 	char *input = NULL;
@@ -144,12 +153,15 @@ char *show_menu_and_get_response(char *data, const char *tool, R2McpSvcContext *
 		return handle_modify (data);
 	case 5: // Run r2 command
 		return handle_r2cmd ();
+	case 6: // Quit
+		ctx->quit = true;
+		return strdup ("{\"error\":\"server quit\"}");
 	default:
 		return strdup ("{\"error\":\"invalid choice\"}");
 	}
 }
 
-void handle_request(RSocket *server, R2McpSvcContext *ctx) {
+static void handle_request(RSocket *server, R2McpSvcContext *ctx) {
 	RSocketHTTPOptions so = { 0 };
 	so.timeout = 3;
 	eprintf (Color_CYAN "🛡️ [r2mcp-supervisor]> " Color_RESET);
@@ -194,8 +206,12 @@ void handle_request(RSocket *server, R2McpSvcContext *ctx) {
 
 	if (ctx->yolo_mode) {
 		// Auto accept
-		printf (Color_YELLOW EMOJI_LIGHTNING " YOLO: Received message:" Color_RESET " %s\n", (char *)rs->data);
-		printf (Color_YELLOW EMOJI_LIGHTNING " YOLO: Tool executed:" Color_RESET " %s\n", tool? tool: "unknown");
+		printf (Color_YELLOW "⚡"
+				" YOLO: Received message:" Color_RESET " %s\n",
+			(char *)rs->data);
+		printf (Color_YELLOW "⚡"
+				" YOLO: Tool executed:" Color_RESET " %s\n",
+			tool? tool: "unknown");
 		response_body = strdup ((char *)rs->data);
 	} else {
 		response_body = show_menu_and_get_response ((char *)rs->data, tool, ctx);
@@ -209,10 +225,13 @@ void handle_request(RSocket *server, R2McpSvcContext *ctx) {
 	r_json_free (j);
 	free (body_copy);
 	r_socket_http_free (rs);
+	if (ctx->single_request) {
+		ctx->quit = true;
+	}
 }
 
 int main(int argc, char **argv) {
-	R2McpSvcContext ctx = {0};
+	R2McpSvcContext ctx = { 0 };
 	if (parse_args (argc, argv, &ctx)) {
 		return 1;
 	}
@@ -221,7 +240,7 @@ int main(int argc, char **argv) {
 		return 1;
 	}
 
-	while (true) {
+	while (!ctx.quit) {
 		handle_request (server, &ctx);
 	}
 
