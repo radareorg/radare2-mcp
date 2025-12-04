@@ -4,6 +4,13 @@
 #include <r_util/pj.h>
 #include "utils.inc.c" // bring in shared helpers like jsonrpc_tooltext_response
 
+typedef char *(*ToolFunc)(ServerState *ss, RJson *tool_args);
+
+typedef struct {
+	const char *name;
+	ToolFunc func;
+} ToolEntry;
+
 // Standardized error response helpers for consistent error handling
 static inline char *jsonrpc_error_missing_param(const char *param_name) {
 	char *msg = r_str_newf ("Missing required parameter: %s", param_name);
@@ -87,6 +94,27 @@ static void pj_append_rjson(PJ *pj, RJson *j) {
 		pj_end (pj);
 		break;
 	}
+}
+
+static inline char *tool_open_file(ServerState *ss, RJson *tool_args) {
+	if (ss->http_mode) {
+		char *res = r2mcp_cmd (ss, "i");
+		char *foo = r_str_newf ("File was already opened, this are the details:\n%s", res);
+		char *out = jsonrpc_tooltext_response (foo);
+		free (res);
+		free (foo);
+		return out;
+	}
+	const char *filepath;
+	if (!validate_required_string_param (tool_args, "file_path", &filepath)) {
+		return jsonrpc_error_missing_param ("file_path");
+	}
+
+	char *filteredpath = strdup (filepath);
+	r_str_replace_ch (filteredpath, '`', 0, true);
+	bool success = r2mcp_open_file (ss, filteredpath);
+	free (filteredpath);
+	return jsonrpc_tooltext_response (success? "File opened successfully.": "Failed to open file.");
 }
 
 // Check an optional whitelist of enabled tool names. If ss->enabled_tools is
@@ -442,6 +470,597 @@ static char *filter_named_functions_only(const char *input) {
 	return r_strbuf_drain (sb);
 }
 
+static inline char *tool_close_file(ServerState *ss, RJson *tool_args) {
+	if (ss->http_mode) {
+		return jsonrpc_tooltext_response ("In r2pipe mode we won't close the file.");
+	}
+	if (ss->rstate.core) {
+		free (r2mcp_cmd (ss, "o-*"));
+		ss->rstate.file_opened = false;
+		free (ss->rstate.current_file);
+		ss->rstate.current_file = NULL;
+	}
+	return jsonrpc_tooltext_response ("File closed successfully.");
+}
+
+static inline char *tool_list_functions(ServerState *ss, RJson *tool_args) {
+	const RJson *only_named_parameter = r_json_get (tool_args, "only_named");
+	bool only_named = false;
+	if (only_named_parameter) {
+		if (only_named_parameter->type == R_JSON_BOOLEAN) {
+			only_named = only_named_parameter->num.u_value;
+		}
+	}
+	const char *filter = r_json_get_str (tool_args, "filter");
+	char *res = r2mcp_cmd (ss, "afl,addr/cols/name");
+	r_str_trim (res);
+	if (R_STR_ISEMPTY (res)) {
+		free (res);
+		free (r2mcp_cmd (ss, "aaa"));
+		res = r2mcp_cmd (ss, "afl,addr/cols/name");
+		r_str_trim (res);
+		if (R_STR_ISEMPTY (res)) {
+			free (res);
+			res = strdup ("No functions found. Run the analysis first.");
+		}
+	}
+	// Apply filtering if only_named is true
+	if (only_named && res && !R_STR_ISEMPTY (res)) {
+		char *filtered = filter_named_functions_only (res);
+		if (filtered) {
+			free (res);
+			res = filtered;
+		}
+	}
+	// Apply regex filter if provided
+	if (R_STR_ISNOTEMPTY (filter) && res && !R_STR_ISEMPTY (res)) {
+		char *r = filter_lines_by_regex (res, filter);
+		free (res);
+		res = r;
+	}
+	char *o = jsonrpc_tooltext_response (res);
+	free (res);
+	return o;
+}
+
+static inline char *tool_list_files(ServerState *ss, RJson *tool_args) {
+	const char *path;
+	if (!validate_required_string_param (tool_args, "path", &path)) {
+		return jsonrpc_error_missing_param ("path");
+	}
+
+	// Security checks
+	if (!path || path[0] != '/') {
+		return jsonrpc_error_response (-32603, "Relative paths are not allowed. Use an absolute path", NULL, NULL);
+	}
+	if (strstr (path, "/../") != NULL) {
+		return jsonrpc_error_response (-32603, "Path traversal is not allowed (contains '/../')", NULL, NULL);
+	}
+	if (ss->sandbox && *ss->sandbox) {
+		size_t plen = strlen (path);
+		size_t slen = strlen (ss->sandbox);
+		if (slen == 0 || slen > plen || strncmp (path, ss->sandbox, slen) != 0 ||
+			(plen > slen && path[slen] != '/')) {
+			return jsonrpc_error_response (-32603, "Access denied: path is outside of the sandbox", NULL, NULL);
+		}
+	}
+
+	char *cmd = r_str_newf ("ls -q %s", path);
+	char *res = r2mcp_cmd (ss, cmd);
+	free (cmd);
+	char *o = jsonrpc_tooltext_response (res);
+	free (res);
+	return o;
+}
+
+static inline char *tool_list_classes(ServerState *ss, RJson *tool_args) {
+	const char *filter = r_json_get_str (tool_args, "filter");
+	char *res = r2mcp_cmd (ss, "icqq");
+	if (R_STR_ISNOTEMPTY (filter)) {
+		char *r = filter_lines_by_regex (res, filter);
+		free (res);
+		res = r;
+	}
+	char *o = jsonrpc_tooltext_response (res);
+	free (res);
+	return o;
+}
+
+static inline char *tool_list_methods(ServerState *ss, RJson *tool_args) {
+	const char *classname;
+	if (!validate_required_string_param (tool_args, "classname", &classname)) {
+		return jsonrpc_error_missing_param ("classname");
+	}
+	char *res = r2mcp_cmdf (ss, "'ic %s", classname);
+	char *o = jsonrpc_tooltext_response (res);
+	free (res);
+	return o;
+}
+
+static inline char *tool_list_decompilers(ServerState *ss, RJson *tool_args) {
+	char *res = r2mcp_cmd (ss, "e cmd.pdc=?");
+	char *o = jsonrpc_tooltext_response (res);
+	free (res);
+	return o;
+}
+
+static inline char *tool_list_functions_tree(ServerState *ss, RJson *tool_args) {
+	char *res = r2mcp_cmd (ss, "aflmu");
+	r_str_trim (res);
+	char *o = jsonrpc_tooltext_response (res);
+	free (res);
+	return o;
+}
+
+static inline char *tool_list_imports(ServerState *ss, RJson *tool_args) {
+	const char *filter = r_json_get_str (tool_args, "filter");
+	char *res = r2mcp_cmd (ss, "iiq");
+	if (R_STR_ISNOTEMPTY (filter)) {
+		char *r = filter_lines_by_regex (res, filter);
+		free (res);
+		res = r;
+	}
+	char *o = jsonrpc_tooltext_response (res);
+	free (res);
+	return o;
+}
+
+static inline char *tool_list_sections(ServerState *ss, RJson *tool_args) {
+	char *res = r2mcp_cmd (ss, "iS;iSS");
+	char *o = jsonrpc_tooltext_response (res);
+	free (res);
+	return o;
+}
+
+static inline char *tool_show_headers(ServerState *ss, RJson *tool_args) {
+	char *res = r2mcp_cmd (ss, "i;iH");
+	char *o = jsonrpc_tooltext_response (res);
+	free (res);
+	return o;
+}
+
+static inline char *tool_show_function_details(ServerState *ss, RJson *tool_args) {
+	char *res = r2mcp_cmd (ss, "afi");
+	char *o = jsonrpc_tooltext_response (res);
+	free (res);
+	return o;
+}
+
+static inline char *tool_get_current_address(ServerState *ss, RJson *tool_args) {
+	char *res = r2mcp_cmd (ss, "s;fd");
+	char *o = jsonrpc_tooltext_response (res);
+	free (res);
+	return o;
+}
+
+static inline char *tool_list_symbols(ServerState *ss, RJson *tool_args) {
+	const char *filter = r_json_get_str (tool_args, "filter");
+	char *res = r2mcp_cmd (ss, "isq~!func.,!imp.");
+	if (R_STR_ISNOTEMPTY (filter)) {
+		char *r = filter_lines_by_regex (res, filter);
+		free (res);
+		res = r;
+	}
+	char *o = jsonrpc_tooltext_response (res);
+	free (res);
+	return o;
+}
+
+static inline char *tool_list_entrypoints(ServerState *ss, RJson *tool_args) {
+	char *res = r2mcp_cmd (ss, "ies");
+	char *o = jsonrpc_tooltext_response_lines (res);
+	free (res);
+	return o;
+}
+
+static inline char *tool_list_libraries(ServerState *ss, RJson *tool_args) {
+	char *res = r2mcp_cmd (ss, "ilq");
+	char *o = jsonrpc_tooltext_response (res);
+	free (res);
+	return o;
+}
+
+static inline char *tool_calculate(ServerState *ss, RJson *tool_args) {
+	const char *expression;
+	if (!validate_required_string_param (tool_args, "expression", &expression)) {
+		return jsonrpc_error_missing_param ("expression");
+	}
+	if (!ss->rstate.core || !ss->rstate.core->num) {
+		return jsonrpc_error_response (-32611, "Core or number parser unavailable (open a file first)", NULL, NULL);
+	}
+	RCore *core = ss->rstate.core;
+	ut64 calc_result = r_num_math (core->num, expression);
+	char *numstr = r_str_newf ("0x%" PFMT64x, (ut64)calc_result);
+	char *resp = jsonrpc_tooltext_response (numstr);
+	free (numstr);
+	return resp;
+}
+
+static inline char *tool_set_comment(ServerState *ss, RJson *tool_args) {
+	const char *address, *message;
+	if (!validate_address_param (tool_args, "address", &address) ||
+		!validate_required_string_param (tool_args, "message", &message)) {
+		return jsonrpc_error_missing_param ("address and message");
+	}
+
+	char *cmd_cc = r_str_newf ("'@%s'CC %s", address, message);
+	char *tmpres_cc = r2mcp_cmd (ss, cmd_cc);
+	free (tmpres_cc);
+	free (cmd_cc);
+	return strdup ("ok");
+}
+
+static inline char *tool_set_function_prototype(ServerState *ss, RJson *tool_args) {
+	const char *address, *prototype;
+	if (!validate_address_param (tool_args, "address", &address) ||
+		!validate_required_string_param (tool_args, "prototype", &prototype)) {
+		return jsonrpc_error_missing_param ("address and prototype");
+	}
+	char *cmd_afs = r_str_newf ("'@%s'afs %s", address, prototype);
+	char *tmpres_afs = r2mcp_cmd (ss, cmd_afs);
+	free (tmpres_afs);
+	free (cmd_afs);
+	return strdup ("ok");
+}
+
+static inline char *tool_get_function_prototype(ServerState *ss, RJson *tool_args) {
+	const char *address;
+	if (!validate_address_param (tool_args, "address", &address)) {
+		return jsonrpc_error_missing_param ("address");
+	}
+	char *s = r_str_newf ("'@%s'afs", address);
+	char *res = r2mcp_cmd (ss, s);
+	free (s);
+	return res;
+}
+
+static inline char *tool_list_strings(ServerState *ss, RJson *tool_args) {
+	const char *filter = r_json_get_str (tool_args, "filter");
+	const char *cursor = r_json_get_str (tool_args, "cursor");
+	int page_size = (int)r_json_get_num (tool_args, "page_size");
+	if (page_size <= 0) {
+		page_size = R2MCP_DEFAULT_PAGE_SIZE;
+	}
+	if (page_size > R2MCP_MAX_PAGE_SIZE) {
+		page_size = R2MCP_MAX_PAGE_SIZE;
+	}
+
+	char *cmd_result = r2mcp_cmd (ss, "izqq");
+	if (R_STR_ISNOTEMPTY (filter)) {
+		char *r = filter_lines_by_regex (cmd_result, filter);
+		free (cmd_result);
+		cmd_result = r;
+	}
+	bool has_more = false;
+	char *next_cursor = NULL;
+	char *paginated = paginate_text_by_lines (cmd_result, cursor, page_size, &has_more, &next_cursor);
+	free (cmd_result);
+	char *response = jsonrpc_tooltext_response_paginated (paginated, has_more, next_cursor);
+	free (paginated);
+	free (next_cursor);
+	return response;
+}
+
+static inline char *tool_list_all_strings(ServerState *ss, RJson *tool_args) {
+	const char *filter = r_json_get_str (tool_args, "filter");
+	const char *cursor = r_json_get_str (tool_args, "cursor");
+	int page_size = (int)r_json_get_num (tool_args, "page_size");
+	if (page_size <= 0) {
+		page_size = R2MCP_DEFAULT_PAGE_SIZE;
+	}
+	if (page_size > R2MCP_MAX_PAGE_SIZE) {
+		page_size = R2MCP_MAX_PAGE_SIZE;
+	}
+
+	char *cmd_result = r2mcp_cmd (ss, "izzzqq");
+	if (R_STR_ISNOTEMPTY (filter)) {
+		char *r = filter_lines_by_regex (cmd_result, filter);
+		free (cmd_result);
+		cmd_result = r;
+	}
+	if (R_STR_ISEMPTY (cmd_result)) {
+		free (cmd_result);
+		cmd_result = r_str_newf ("Error: No strings with regex %s", filter);
+	}
+	bool has_more = false;
+	char *next_cursor = NULL;
+	char *paginated = paginate_text_by_lines (cmd_result, cursor, page_size, &has_more, &next_cursor);
+	free (cmd_result);
+	char *response = jsonrpc_tooltext_response_paginated (paginated, has_more, next_cursor);
+	free (paginated);
+	free (next_cursor);
+	return response;
+}
+
+static inline char *tool_analyze(ServerState *ss, RJson *tool_args) {
+	const int level = (int)r_json_get_num (tool_args, "level");
+	char *err = r2mcp_analyze (ss, level);
+	char *cmd_result = r2mcp_cmd (ss, "aflc");
+	char *errstr;
+	if (R_STR_ISNOTEMPTY (err)) {
+		errstr = r_str_newf ("\n\n<log>\n%s\n</log>\n", err);
+	} else {
+		errstr = strdup ("");
+	}
+	char *text = r_str_newf ("Analysis completed with level %d.\nFound %d functions.%s", level, atoi (cmd_result), errstr);
+	char *response = jsonrpc_tooltext_response (text);
+	free (err);
+	free (errstr);
+	free (cmd_result);
+	free (text);
+	return response;
+}
+
+static inline char *tool_disassemble(ServerState *ss, RJson *tool_args) {
+	const char *address;
+	if (!validate_address_param (tool_args, "address", &address)) {
+		return jsonrpc_error_missing_param ("address");
+	}
+
+	RJson *num_instr_json = (RJson *)r_json_get (tool_args, "num_instructions");
+	int num_instructions = 10;
+	if (num_instr_json && num_instr_json->type == R_JSON_INTEGER) {
+		num_instructions = (int)num_instr_json->num.u_value;
+	}
+
+	char *disasm = r2mcp_cmdf (ss, "'@%s'pd %d", address, num_instructions);
+	char *response = jsonrpc_tooltext_response (disasm);
+	free (disasm);
+	return response;
+}
+
+static inline char *tool_use_decompiler(ServerState *ss, RJson *tool_args) {
+	const char *deco;
+	if (!validate_required_string_param (tool_args, "name", &deco)) {
+		return jsonrpc_error_missing_param ("name");
+	}
+	char *decompilersAvailable = r2mcp_cmd (ss, "e cmd.pdc=?");
+	const char *response = "ok";
+	if (strstr (deco, "ghidra")) {
+		if (strstr (decompilersAvailable, "pdg")) {
+			free (r2mcp_cmd (ss, "-e cmd.pdc=pdg"));
+		} else {
+			response = "This decompiler is not available";
+		}
+	} else if (strstr (deco, "decai")) {
+		if (strstr (decompilersAvailable, "decai")) {
+			free (r2mcp_cmd (ss, "-e cmd.pdc=decai -d"));
+		} else {
+			response = "This decompiler is not available";
+		}
+	} else if (strstr (deco, "r2dec")) {
+		if (strstr (decompilersAvailable, "pdd")) {
+			free (r2mcp_cmd (ss, "-e cmd.pdc=pdd"));
+		} else {
+			response = "This decompiler is not available";
+		}
+	} else {
+		response = "Unknown decompiler";
+	}
+	free (decompilersAvailable);
+	return jsonrpc_tooltext_response (response);
+}
+
+static inline char *tool_xrefs_to(ServerState *ss, RJson *tool_args) {
+	const char *address;
+	if (!validate_address_param (tool_args, "address", &address)) {
+		return jsonrpc_error_missing_param ("address");
+	}
+	char *disasm = r2mcp_cmdf (ss, "'@%s'axt", address);
+	char *response = jsonrpc_tooltext_response (disasm);
+	free (disasm);
+	return response;
+}
+
+static inline char *tool_disassemble_function(ServerState *ss, RJson *tool_args) {
+	const char *address;
+	if (!validate_address_param (tool_args, "address", &address)) {
+		return jsonrpc_error_missing_param ("address");
+	}
+	const char *cursor = r_json_get_str (tool_args, "cursor");
+	int page_size = (int)r_json_get_num (tool_args, "page_size");
+	if (page_size <= 0) {
+		page_size = R2MCP_DEFAULT_PAGE_SIZE;
+	}
+	if (page_size > R2MCP_MAX_PAGE_SIZE) {
+		page_size = R2MCP_MAX_PAGE_SIZE;
+	}
+	char *disasm = r2mcp_cmdf (ss, "'@%s'pdf", address);
+	bool has_more = false;
+	char *next_cursor = NULL;
+	char *paginated = paginate_text_by_lines (disasm, cursor, page_size, &has_more, &next_cursor);
+	free (disasm);
+	char *response = jsonrpc_tooltext_response_paginated (paginated, has_more, next_cursor);
+	free (paginated);
+	free (next_cursor);
+	return response;
+}
+
+static inline char *tool_rename_flag(ServerState *ss, RJson *tool_args) {
+	const char *address, *name, *new_name;
+	if (!validate_address_param (tool_args, "address", &address) ||
+		!validate_required_string_param (tool_args, "name", &name) ||
+		!validate_required_string_param (tool_args, "new_name", &new_name)) {
+		return jsonrpc_error_missing_param ("address, name, and new_name");
+	}
+	char *remove_res = r2mcp_cmdf (ss, "'@%s'fr %s %s", address, name, new_name);
+	if (R_STR_ISNOTEMPTY (remove_res)) {
+		char *response = jsonrpc_tooltext_response (remove_res);
+		free (remove_res);
+		return response;
+	}
+	free (remove_res);
+	return jsonrpc_tooltext_response ("ok");
+}
+
+static inline char *tool_rename_function(ServerState *ss, RJson *tool_args) {
+	const char *address, *name;
+	if (!validate_address_param (tool_args, "address", &address) ||
+		!validate_required_string_param (tool_args, "name", &name)) {
+		return jsonrpc_error_missing_param ("address and name");
+	}
+	free (r2mcp_cmdf (ss, "'@%s'afn %s", address, name));
+	return jsonrpc_tooltext_response ("ok");
+}
+
+static inline char *tool_decompile_function(ServerState *ss, RJson *tool_args) {
+	const char *address;
+	if (!validate_address_param (tool_args, "address", &address)) {
+		return jsonrpc_error_missing_param ("address");
+	}
+	const char *cursor = r_json_get_str (tool_args, "cursor");
+	int page_size = (int)r_json_get_num (tool_args, "page_size");
+	if (page_size <= 0) {
+		page_size = R2MCP_DEFAULT_PAGE_SIZE;
+	}
+	if (page_size > R2MCP_MAX_PAGE_SIZE) {
+		page_size = R2MCP_MAX_PAGE_SIZE;
+	}
+	char *disasm = r2mcp_cmdf (ss, "'@%s'pdc", address);
+	bool has_more = false;
+	char *next_cursor = NULL;
+	char *paginated = paginate_text_by_lines (disasm, cursor, page_size, &has_more, &next_cursor);
+	free (disasm);
+	char *response = jsonrpc_tooltext_response_paginated (paginated, has_more, next_cursor);
+	free (paginated);
+	free (next_cursor);
+	return response;
+}
+
+static inline char *tool_run_command(ServerState *ss, RJson *tool_args) {
+	const char *command;
+	if (!validate_required_string_param (tool_args, "command", &command)) {
+		return jsonrpc_error_missing_param ("command");
+	}
+	char *res = r2mcp_cmd (ss, command);
+	char *o = jsonrpc_tooltext_response (res);
+	free (res);
+	return o;
+}
+
+static inline char *tool_run_javascript(ServerState *ss, RJson *tool_args) {
+	const char *script;
+	if (!validate_required_string_param (tool_args, "script", &script)) {
+		return jsonrpc_error_missing_param ("script");
+	}
+	char *encoded = r_base64_encode_dyn ((const ut8 *)script, strlen (script));
+	if (!encoded) {
+		return jsonrpc_error_response (-32603, "Failed to encode script", NULL, NULL);
+	}
+	char *cmd = r_str_newf ("js base64:%s", encoded);
+	char *res = r2mcp_cmd (ss, cmd);
+	char *o = jsonrpc_tooltext_response (res);
+	free (res);
+	free (cmd);
+	free (encoded);
+	return o;
+}
+
+static ToolEntry tool_entries[] = {
+	{ "open_file", tool_open_file },
+	{ "close_file", tool_close_file },
+	{ "list_functions", tool_list_functions },
+	{ "list_functions_tree", tool_list_functions_tree },
+	{ "list_libraries", tool_list_libraries },
+	{ "list_imports", tool_list_imports },
+	{ "list_sections", tool_list_sections },
+	{ "show_function_details", tool_show_function_details },
+	{ "get_current_address", tool_get_current_address },
+	{ "show_headers", tool_show_headers },
+	{ "list_symbols", tool_list_symbols },
+	{ "list_entrypoints", tool_list_entrypoints },
+	{ "list_methods", tool_list_methods },
+	{ "list_classes", tool_list_classes },
+	{ "list_decompilers", tool_list_decompilers },
+	{ "rename_function", tool_rename_function },
+	{ "rename_flag", tool_rename_flag },
+	{ "use_decompiler", tool_use_decompiler },
+	{ "get_function_prototype", tool_get_function_prototype },
+	{ "set_function_prototype", tool_set_function_prototype },
+	{ "set_comment", tool_set_comment },
+	{ "list_strings", tool_list_strings },
+	{ "list_all_strings", tool_list_all_strings },
+	{ "analyze", tool_analyze },
+	{ "xrefs_to", tool_xrefs_to },
+	{ "decompile_function", tool_decompile_function },
+	{ "list_files", tool_list_files },
+	{ "disassemble_function", tool_disassemble_function },
+	{ "disassemble", tool_disassemble },
+	{ "calculate", tool_calculate },
+	{ "run_command", tool_run_command },
+	{ "run_javascript", tool_run_javascript },
+	{ NULL, NULL }
+};
+
+static char *check_supervisor_permission(ServerState *ss, const char *tool_name, RJson *tool_args, char **new_tool_name_out, RJson **new_tool_args_out, RJson **parsed_json_out) {
+	if (!ss->svc_baseurl) {
+		return NULL;
+	}
+	PJ *pj = pj_new ();
+	pj_o (pj);
+	pj_ks (pj, "tool", tool_name);
+	pj_k (pj, "arguments");
+	pj_append_rjson (pj, tool_args);
+	pj_k (pj, "available_tools");
+	pj_a (pj);
+	RListIter *iter;
+	ToolSpec *ts;
+	r_list_foreach (ss->tools, iter, ts) {
+		pj_s (pj, ts->name);
+	}
+	pj_end (pj);
+	pj_end (pj);
+	char *req = pj_drain (pj);
+	int rc;
+	char *resp = curl_post_capture (ss->svc_baseurl, req, &rc);
+	free (req);
+	if (!resp || rc != 0) {
+		free (resp);
+		return NULL;
+	}
+	*parsed_json_out = r_json_parse (resp);
+	free (resp);
+	if (!*parsed_json_out) {
+		return NULL;
+	}
+	const char *err = r_json_get_str (*parsed_json_out, "error");
+	if (err) {
+		char *error_resp = jsonrpc_error_response (-32000, err, NULL, NULL);
+		r_json_free (*parsed_json_out);
+		*parsed_json_out = NULL;
+		return error_resp;
+	}
+	const char *r2cmd = r_json_get_str (*parsed_json_out, "r2cmd");
+	if (r2cmd) {
+		char *cmd_out = r2mcp_cmd (ss, r2cmd);
+		char *res = jsonrpc_tooltext_response (cmd_out? cmd_out: "");
+		free (cmd_out);
+		if (!strcmp (tool_name, "open_file")) {
+			const char *filepath = r_json_get_str (tool_args, "file_path");
+			if (filepath) {
+				free (ss->rstate.current_file);
+				ss->rstate.current_file = strdup (filepath);
+				ss->rstate.file_opened = true;
+			}
+		}
+		r_json_free (*parsed_json_out);
+		*parsed_json_out = NULL;
+		return res;
+	}
+	const char *new_tool = r_json_get_str (*parsed_json_out, "tool");
+	if (new_tool && strcmp (new_tool, tool_name)) {
+		*new_tool_name_out = strdup (new_tool);
+	}
+	const RJson *new_args = r_json_get (*parsed_json_out, "arguments");
+	if (new_args) {
+		*new_tool_args_out = (RJson *)new_args;
+	} else {
+		r_json_free (*parsed_json_out);
+		*parsed_json_out = NULL;
+	}
+	return NULL;
+}
+
 // Main dispatcher that handles tool calls. Returns heap-allocated JSON
 // string representing the tool "result" (caller must free it).
 char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
@@ -449,71 +1068,27 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 	if (!tool_args) {
 		tool_args = &nil;
 	}
+	char *result = NULL;
+	char *allocated_tool_name = NULL;
+	RJson *parsed_json = NULL;
 	if (!tool_name) {
-		return jsonrpc_error_missing_param ("name");
+		result = jsonrpc_error_missing_param ("name");
+		goto cleanup;
 	}
 	// Enforce tool availability per mode unless permissive is enabled
 	if (!tools_is_tool_allowed (ss, tool_name)) {
-		return jsonrpc_error_tool_not_allowed (tool_name);
+		result = jsonrpc_error_tool_not_allowed (tool_name);
+		goto cleanup;
 	}
 
 	// Supervisor control check
-	if (ss->svc_baseurl) {
-		PJ *pj = pj_new ();
-		pj_o (pj);
-		pj_ks (pj, "tool", tool_name);
-		pj_k (pj, "arguments");
-		pj_append_rjson (pj, tool_args);
-		pj_k (pj, "available_tools");
-		pj_a (pj);
-		RListIter *iter;
-		ToolSpec *ts;
-		r_list_foreach (ss->tools, iter, ts) {
-			pj_s (pj, ts->name);
-		}
-		pj_end (pj);
-		pj_end (pj);
-		char *req = pj_drain (pj);
-		int rc;
-		char *resp = curl_post_capture (ss->svc_baseurl, req, &rc);
-		free (req);
-		if (resp && rc == 0) {
-			RJson *rj = r_json_parse (resp);
-			free (resp);
-			if (rj) {
-				const char *err = r_json_get_str (rj, "error");
-				if (err) {
-					r_json_free (rj);
-					return jsonrpc_error_response (-32000, err, NULL, NULL);
-				}
-				const char *r2cmd = r_json_get_str (rj, "r2cmd");
-				if (r2cmd) {
-					char *cmd_out = r2mcp_cmd (ss, r2cmd);
-					char *res = jsonrpc_tooltext_response (cmd_out? cmd_out: "");
-					free (cmd_out);
-					// If the original tool was open_file, assume the r2cmd opened the file
-					if (!strcmp (tool_name, "open_file")) {
-						const char *filepath = r_json_get_str (tool_args, "file_path");
-						if (filepath) {
-							free (ss->rstate.current_file);
-							ss->rstate.current_file = strdup (filepath);
-							ss->rstate.file_opened = true;
-						}
-					}
-					r_json_free (rj);
-					return res;
-				}
-				const char *new_tool = r_json_get_str (rj, "tool");
-				const RJson *new_args = r_json_get (rj, "arguments");
-				if (new_tool && strcmp (new_tool, tool_name)) {
-					tool_name = strdup (new_tool);
-				}
-				if (new_args) {
-					tool_args = (RJson *)new_args;
-				}
-				// r_json_free (rj); // Keep alive for tool_args
-			}
-		}
+	char *supervisor_override = check_supervisor_permission (ss, tool_name, tool_args, &allocated_tool_name, &tool_args, &parsed_json);
+	if (supervisor_override) {
+		result = supervisor_override;
+		goto cleanup;
+	}
+	if (allocated_tool_name) {
+		tool_name = allocated_tool_name;
 	}
 
 	// Special-case: open_file
@@ -524,473 +1099,48 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 			char *out = jsonrpc_tooltext_response (foo);
 			free (res);
 			free (foo);
-			return out;
+			result = out;
+			goto cleanup;
 		}
 		const char *filepath;
 		if (!validate_required_string_param (tool_args, "file_path", &filepath)) {
-			return jsonrpc_error_missing_param ("file_path");
+			result = jsonrpc_error_missing_param ("file_path");
+			goto cleanup;
 		}
 
 		char *filteredpath = strdup (filepath);
 		r_str_replace_ch (filteredpath, '`', 0, true);
 		bool success = r2mcp_open_file (ss, filteredpath);
 		free (filteredpath);
-		return jsonrpc_tooltext_response (success? "File opened successfully.": "Failed to open file.");
+		result = jsonrpc_tooltext_response (success? "File opened successfully.": "Failed to open file.");
+		goto cleanup;
 	}
 
 	if (!ss->http_mode && !ss->rstate.file_opened) {
-		return jsonrpc_error_file_required ();
+		result = jsonrpc_error_file_required ();
+		goto cleanup;
 	}
 
-	// Map simple tools to commands or handlers
-	if (!strcmp (tool_name, "list_methods")) {
-		const char *classname;
-		if (!validate_required_string_param (tool_args, "classname", &classname)) {
-			return jsonrpc_error_missing_param ("classname");
-		}
-		char *res = r2mcp_cmdf (ss, "'ic %s", classname);
-		char *o = jsonrpc_tooltext_response (res);
-		free (res);
-		return o;
-	}
-	if (!strcmp (tool_name, "list_files")) {
-		const char *path;
-		if (!validate_required_string_param (tool_args, "path", &path)) {
-			return jsonrpc_error_missing_param ("path");
-		}
-
-		// Security checks
-		if (!path || path[0] != '/') {
-			return jsonrpc_error_response (-32603, "Relative paths are not allowed. Use an absolute path", NULL, NULL);
-		}
-		if (strstr (path, "/../") != NULL) {
-			return jsonrpc_error_response (-32603, "Path traversal is not allowed (contains '/../')", NULL, NULL);
-		}
-		if (ss->sandbox && *ss->sandbox) {
-			size_t plen = strlen (path);
-			size_t slen = strlen (ss->sandbox);
-			if (slen == 0 || slen > plen || strncmp (path, ss->sandbox, slen) != 0 ||
-				(plen > slen && path[slen] != '/')) {
-				return jsonrpc_error_response (-32603, "Access denied: path is outside of the sandbox", NULL, NULL);
-			}
-		}
-
-		char *cmd = r_str_newf ("ls -q %s", path);
-		char *res = r2mcp_cmd (ss, cmd);
-		free (cmd);
-		char *o = jsonrpc_tooltext_response (res);
-		free (res);
-		return o;
-	}
-	if (!strcmp (tool_name, "list_classes")) {
-		const char *filter = r_json_get_str (tool_args, "filter");
-		char *res = r2mcp_cmd (ss, "icqq");
-		if (R_STR_ISNOTEMPTY (filter)) {
-			char *r = filter_lines_by_regex (res, filter);
-			free (res);
-			res = r;
-		}
-		char *o = jsonrpc_tooltext_response (res);
-		free (res);
-		return o;
-	}
-	if (!strcmp (tool_name, "list_decompilers")) {
-		char *res = r2mcp_cmd (ss, "e cmd.pdc=?");
-		char *o = jsonrpc_tooltext_response (res);
-		free (res);
-		return o;
-	}
-	if (!strcmp (tool_name, "list_functions")) {
-		const RJson *only_named_parameter = r_json_get (tool_args, "only_named");
-		bool only_named = false;
-		if (only_named_parameter) {
-			if (only_named_parameter->type == R_JSON_BOOLEAN) {
-				only_named = only_named_parameter->num.u_value;
-			}
-		}
-		const char *filter = r_json_get_str (tool_args, "filter");
-		char *res = r2mcp_cmd (ss, "afl,addr/cols/name");
-		r_str_trim (res);
-		if (R_STR_ISEMPTY (res)) {
-			free (res);
-			free (r2mcp_cmd (ss, "aaa"));
-			res = r2mcp_cmd (ss, "afl,addr/cols/name");
-			r_str_trim (res);
-			if (R_STR_ISEMPTY (res)) {
-				free (res);
-				res = strdup ("No functions found. Run the analysis first.");
-			}
-		}
-		// Apply filtering if only_named is true
-		if (only_named && res && !R_STR_ISEMPTY (res)) {
-			char *filtered = filter_named_functions_only (res);
-			if (filtered) {
-				free (res);
-				res = filtered;
-			}
-		}
-		// Apply regex filter if provided
-		if (R_STR_ISNOTEMPTY (filter) && res && !R_STR_ISEMPTY (res)) {
-			char *r = filter_lines_by_regex (res, filter);
-			free (res);
-			res = r;
-		}
-		char *o = jsonrpc_tooltext_response (res);
-		free (res);
-		return o;
-	}
-	if (!strcmp (tool_name, "list_functions_tree")) {
-		char *res = r2mcp_cmd (ss, "aflmu");
-		r_str_trim (res);
-		char *o = jsonrpc_tooltext_response (res);
-		free (res);
-		return o;
-	}
-	if (!strcmp (tool_name, "list_imports")) {
-		const char *filter = r_json_get_str (tool_args, "filter");
-		char *res = r2mcp_cmd (ss, "iiq");
-		if (R_STR_ISNOTEMPTY (filter)) {
-			char *r = filter_lines_by_regex (res, filter);
-			free (res);
-			res = r;
-		}
-		char *o = jsonrpc_tooltext_response (res);
-		free (res);
-		return o;
-	}
-	if (!strcmp (tool_name, "list_sections")) {
-		char *res = r2mcp_cmd (ss, "iS;iSS");
-		char *o = jsonrpc_tooltext_response (res);
-		free (res);
-		return o;
-	}
-	if (!strcmp (tool_name, "show_headers")) {
-		char *res = r2mcp_cmd (ss, "i;iH");
-		char *o = jsonrpc_tooltext_response (res);
-		free (res);
-		return o;
-	}
-	if (!strcmp (tool_name, "show_function_details")) {
-		char *res = r2mcp_cmd (ss, "afi");
-		char *o = jsonrpc_tooltext_response (res);
-		free (res);
-		return o;
-	}
-	if (!strcmp (tool_name, "get_current_address")) {
-		char *res = r2mcp_cmd (ss, "s;fd");
-		char *o = jsonrpc_tooltext_response (res);
-		free (res);
-		return o;
-	}
-	if (!strcmp (tool_name, "list_symbols")) {
-		const char *filter = r_json_get_str (tool_args, "filter");
-		char *res = r2mcp_cmd (ss, "isq~!func.,!imp.");
-		if (R_STR_ISNOTEMPTY (filter)) {
-			char *r = filter_lines_by_regex (res, filter);
-			free (res);
-			res = r;
-		}
-		char *o = jsonrpc_tooltext_response (res);
-		free (res);
-		return o;
-	}
-	if (!strcmp (tool_name, "list_entrypoints")) {
-		char *res = r2mcp_cmd (ss, "ies");
-		char *o = jsonrpc_tooltext_response_lines (res);
-		free (res);
-		return o;
-	}
-	if (!strcmp (tool_name, "list_libraries")) {
-		char *res = r2mcp_cmd (ss, "ilq");
-		char *o = jsonrpc_tooltext_response (res);
-		free (res);
-		return o;
-	}
-
-	if (!strcmp (tool_name, "calculate")) {
-		const char *expression;
-		if (!validate_required_string_param (tool_args, "expression", &expression)) {
-			return jsonrpc_error_missing_param ("expression");
-		}
-		if (!ss->rstate.core || !ss->rstate.core->num) {
-			return jsonrpc_error_response (-32611, "Core or number parser unavailable (open a file first)", NULL, NULL);
-		}
-		RCore *core = ss->rstate.core;
-		ut64 result = r_num_math (core->num, expression);
-		char *numstr = r_str_newf ("0x%" PFMT64x, (ut64)result);
-		char *resp = jsonrpc_tooltext_response (numstr);
-		free (numstr);
-		return resp;
-	}
-	if (!strcmp (tool_name, "close_file")) {
-		if (ss->http_mode) {
-			return jsonrpc_tooltext_response ("In r2pipe mode we won't close the file.");
-		}
-		if (ss->rstate.core) {
-			free (r2mcp_cmd (ss, "o-*"));
-			ss->rstate.file_opened = false;
-			free (ss->rstate.current_file);
-			ss->rstate.current_file = NULL;
-		}
-		return jsonrpc_tooltext_response ("File closed successfully.");
-	}
-
-	if (!strcmp (tool_name, "set_comment")) {
-		const char *address, *message;
-		if (!validate_address_param (tool_args, "address", &address) ||
-			!validate_required_string_param (tool_args, "message", &message)) {
-			return jsonrpc_error_missing_param ("address and message");
-		}
-
-		char *cmd_cc = r_str_newf ("'@%s'CC %s", address, message);
-		char *tmpres_cc = r2mcp_cmd (ss, cmd_cc);
-		free (tmpres_cc);
-		free (cmd_cc);
-		return strdup ("ok");
-	}
-
-	if (!strcmp (tool_name, "set_function_prototype")) {
-		const char *address, *prototype;
-		if (!validate_address_param (tool_args, "address", &address) ||
-			!validate_required_string_param (tool_args, "prototype", &prototype)) {
-			return jsonrpc_error_missing_param ("address and prototype");
-		}
-		char *cmd_afs = r_str_newf ("'@%s'afs %s", address, prototype);
-		char *tmpres_afs = r2mcp_cmd (ss, cmd_afs);
-		free (tmpres_afs);
-		free (cmd_afs);
-		return strdup ("ok");
-	}
-
-	if (!strcmp (tool_name, "get_function_prototype")) {
-		const char *address;
-		if (!validate_address_param (tool_args, "address", &address)) {
-			return jsonrpc_error_missing_param ("address");
-		}
-		char *s = r_str_newf ("'@%s'afs", address);
-		char *res = r2mcp_cmd (ss, s);
-		free (s);
-		return res;
-	}
-
-	if (!strcmp (tool_name, "list_strings") || !strcmp (tool_name, "list_all_strings")) {
-		const char *filter = r_json_get_str (tool_args, "filter");
-		const char *cursor = r_json_get_str (tool_args, "cursor");
-		int page_size = (int)r_json_get_num (tool_args, "page_size");
-		if (page_size <= 0) {
-			page_size = R2MCP_DEFAULT_PAGE_SIZE;
-		}
-		if (page_size > R2MCP_MAX_PAGE_SIZE) {
-			page_size = R2MCP_MAX_PAGE_SIZE;
-		}
-
-		char *result = r2mcp_cmd (ss, (!strcmp (tool_name, "list_strings")? "izqq": "izzzqq"));
-		if (R_STR_ISNOTEMPTY (filter)) {
-			char *r = filter_lines_by_regex (result, filter);
-			free (result);
-			result = r;
-		}
-		if (!strcmp (tool_name, "list_all_strings") && R_STR_ISEMPTY (result)) {
-			free (result);
-			result = r_str_newf ("Error: No strings with regex %s", filter);
-		}
-		bool has_more = false;
-		char *next_cursor = NULL;
-		char *paginated = paginate_text_by_lines (result, cursor, page_size, &has_more, &next_cursor);
-		free (result);
-		char *response = jsonrpc_tooltext_response_paginated (paginated, has_more, next_cursor);
-		free (paginated);
-		free (next_cursor);
-		return response;
-	}
-
-	if (!strcmp (tool_name, "analyze")) {
-		const int level = (int)r_json_get_num (tool_args, "level");
-		char *err = r2mcp_analyze (ss, level);
-		char *result = r2mcp_cmd (ss, "aflc");
-		char *errstr;
-		if (R_STR_ISNOTEMPTY (err)) {
-			errstr = r_str_newf ("\n\n<log>\n%s\n</log>\n", err);
-		} else {
-			errstr = strdup ("");
-		}
-		char *text = r_str_newf ("Analysis completed with level %d.\nFound %d functions.%s", level, atoi (result), errstr);
-		char *response = jsonrpc_tooltext_response (text);
-		free (err);
-		free (errstr);
-		free (result);
-		free (text);
-		return response;
-	}
-
-	if (!strcmp (tool_name, "disassemble")) {
-		const char *address;
-		if (!validate_address_param (tool_args, "address", &address)) {
-			return jsonrpc_error_missing_param ("address");
-		}
-
-		RJson *num_instr_json = (RJson *)r_json_get (tool_args, "num_instructions");
-		int num_instructions = 10;
-		if (num_instr_json && num_instr_json->type == R_JSON_INTEGER) {
-			num_instructions = (int)num_instr_json->num.u_value;
-		}
-
-		char *disasm = r2mcp_cmdf (ss, "'@%s'pd %d", address, num_instructions);
-		char *response = jsonrpc_tooltext_response (disasm);
-		free (disasm);
-		return response;
-	}
-
-	if (!strcmp (tool_name, "use_decompiler")) {
-		const char *deco;
-		if (!validate_required_string_param (tool_args, "name", &deco)) {
-			return jsonrpc_error_missing_param ("name");
-		}
-		char *decompilersAvailable = r2mcp_cmd (ss, "e cmd.pdc=?");
-		const char *response = "ok";
-		if (strstr (deco, "ghidra")) {
-			if (strstr (decompilersAvailable, "pdg")) {
-				free (r2mcp_cmd (ss, "-e cmd.pdc=pdg"));
-			} else {
-				response = "This decompiler is not available";
-			}
-		} else if (strstr (deco, "decai")) {
-			if (strstr (decompilersAvailable, "decai")) {
-				free (r2mcp_cmd (ss, "-e cmd.pdc=decai -d"));
-			} else {
-				response = "This decompiler is not available";
-			}
-		} else if (strstr (deco, "r2dec")) {
-			if (strstr (decompilersAvailable, "pdd")) {
-				free (r2mcp_cmd (ss, "-e cmd.pdc=pdd"));
-			} else {
-				response = "This decompiler is not available";
-			}
-		} else {
-			response = "Unknown decompiler";
-		}
-		free (decompilersAvailable);
-		return jsonrpc_tooltext_response (response);
-	}
-
-	if (!strcmp (tool_name, "xrefs_to")) {
-		const char *address;
-		if (!validate_address_param (tool_args, "address", &address)) {
-			return jsonrpc_error_missing_param ("address");
-		}
-		char *disasm = r2mcp_cmdf (ss, "'@%s'axt", address);
-		char *response = jsonrpc_tooltext_response (disasm);
-		free (disasm);
-		return response;
-	}
-
-	if (!strcmp (tool_name, "disassemble_function")) {
-		const char *address;
-		if (!validate_address_param (tool_args, "address", &address)) {
-			return jsonrpc_error_missing_param ("address");
-		}
-		const char *cursor = r_json_get_str (tool_args, "cursor");
-		int page_size = (int)r_json_get_num (tool_args, "page_size");
-		if (page_size <= 0) {
-			page_size = R2MCP_DEFAULT_PAGE_SIZE;
-		}
-		if (page_size > R2MCP_MAX_PAGE_SIZE) {
-			page_size = R2MCP_MAX_PAGE_SIZE;
-		}
-		char *disasm = r2mcp_cmdf (ss, "'@%s'pdf", address);
-		bool has_more = false;
-		char *next_cursor = NULL;
-		char *paginated = paginate_text_by_lines (disasm, cursor, page_size, &has_more, &next_cursor);
-		free (disasm);
-		char *response = jsonrpc_tooltext_response_paginated (paginated, has_more, next_cursor);
-		free (paginated);
-		free (next_cursor);
-		return response;
-	}
-
-	if (!strcmp (tool_name, "rename_flag")) {
-		const char *address, *name, *new_name;
-		if (!validate_address_param (tool_args, "address", &address) ||
-			!validate_required_string_param (tool_args, "name", &name) ||
-			!validate_required_string_param (tool_args, "new_name", &new_name)) {
-			return jsonrpc_error_missing_param ("address, name, and new_name");
-		}
-		char *remove_res = r2mcp_cmdf (ss, "'@%s'fr %s %s", address, name, new_name);
-		if (R_STR_ISNOTEMPTY (remove_res)) {
-			char *response = jsonrpc_tooltext_response (remove_res);
-			free (remove_res);
-			return response;
-		}
-		free (remove_res);
-		return jsonrpc_tooltext_response ("ok");
-	}
-
-	if (!strcmp (tool_name, "rename_function")) {
-		const char *address, *name;
-		if (!validate_address_param (tool_args, "address", &address) ||
-			!validate_required_string_param (tool_args, "name", &name)) {
-			return jsonrpc_error_missing_param ("address and name");
-		}
-		free (r2mcp_cmdf (ss, "'@%s'afn %s", address, name));
-		return jsonrpc_tooltext_response ("ok");
-	}
-
-	if (!strcmp (tool_name, "decompile_function")) {
-		const char *address;
-		if (!validate_address_param (tool_args, "address", &address)) {
-			return jsonrpc_error_missing_param ("address");
-		}
-		const char *cursor = r_json_get_str (tool_args, "cursor");
-		int page_size = (int)r_json_get_num (tool_args, "page_size");
-		if (page_size <= 0) {
-			page_size = R2MCP_DEFAULT_PAGE_SIZE;
-		}
-		if (page_size > R2MCP_MAX_PAGE_SIZE) {
-			page_size = R2MCP_MAX_PAGE_SIZE;
-		}
-		char *disasm = r2mcp_cmdf (ss, "'@%s'pdc", address);
-		bool has_more = false;
-		char *next_cursor = NULL;
-		char *paginated = paginate_text_by_lines (disasm, cursor, page_size, &has_more, &next_cursor);
-		free (disasm);
-		char *response = jsonrpc_tooltext_response_paginated (paginated, has_more, next_cursor);
-		free (paginated);
-		free (next_cursor);
-		return response;
-	}
-
-	if (ss->enable_run_command_tool) {
-		if (!strcmp (tool_name, "run_command")) {
-			const char *command;
-			if (!validate_required_string_param (tool_args, "command", &command)) {
-				return jsonrpc_error_missing_param ("command");
-			}
-			char *res = r2mcp_cmd (ss, command);
-			char *o = jsonrpc_tooltext_response (res);
-			free (res);
-			return o;
-		}
-		if (!strcmp (tool_name, "run_javascript")) {
-			const char *script;
-			if (!validate_required_string_param (tool_args, "script", &script)) {
-				return jsonrpc_error_missing_param ("script");
-			}
-			char *encoded = r_base64_encode_dyn ((const ut8 *)script, strlen (script));
-			if (!encoded) {
-				return jsonrpc_error_response (-32603, "Failed to encode script", NULL, NULL);
-			}
-			char *cmd = r_str_newf ("js base64:%s", encoded);
-			char *res = r2mcp_cmd (ss, cmd);
-			char *o = jsonrpc_tooltext_response (res);
-			free (res);
-			free (cmd);
-			free (encoded);
-			return o;
+	// Dispatch to tool functions
+	for (int i = 0; tool_entries[i].name; i++) {
+		if (!strcmp (tool_name, tool_entries[i].name)) {
+			result = tool_entries[i].func (ss, tool_args);
+			goto cleanup;
 		}
 	}
 
 	char *tmp = r_str_newf ("Unknown tool: %s", tool_name);
 	char *err = jsonrpc_error_response (-32602, tmp, NULL, NULL);
 	free (tmp);
-	return err;
+	result = err;
+	goto cleanup;
+
+cleanup:
+	if (allocated_tool_name) {
+		free (allocated_tool_name);
+	}
+	if (parsed_json) {
+		r_json_free (parsed_json);
+	}
+	return result;
 }

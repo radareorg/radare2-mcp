@@ -2,6 +2,9 @@
 
 Ideas and future plans for r2mcp
 
+* Support multiple sessions
+  * The r2copilot-mcp supports having multiple clients using the same mcp at the same time
+  * This requires a hard change in the logic because we need to pass session identifiers and handle multiple instancs of core. so better dont do it until core is fully refactored to be thread safe
 * Extensions/Plugins
   * Let the user load an .r2.js script or yaml file to define new tools or prompts
   * Support loading custom plugins written in C or other languages
