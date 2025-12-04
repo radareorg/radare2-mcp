@@ -257,8 +257,6 @@ static char *handle_initialize(ServerState *ss, RJson *params) {
 	return pj_drain (pj);
 }
 
-
-
 static char *handle_list_tools(ServerState *ss, RJson *params) {
 	const char *cursor = r_json_get_str (params, "cursor");
 	int page_size = 32;

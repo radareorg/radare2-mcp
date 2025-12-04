@@ -88,8 +88,6 @@ static inline char *paginate_text_by_lines(char *text, const char *cursor, int p
 	return result;
 }
 
-
-
 static void pj_append_rjson(PJ *pj, RJson *j) {
 	if (!j) {
 		pj_null (pj);

@@ -1,6 +1,7 @@
 /* r2mcp - MIT - Copyright 2025 - pancake, dnakov */
 
 #include <r_types.h>
+#include <r_util.h>
 #include "readbuffer.h"
 
 ReadBuffer *read_buffer_new(void) {
@@ -26,7 +27,7 @@ void read_buffer_append(ReadBuffer *buf, const char *data, size_t len) {
 		}
 		char *new_data = realloc (buf->data, new_capacity);
 		if (!new_data) {
-			// R_LOG_ERROR ("Failed to resize buffer");
+			R_LOG_ERROR ("Failed to resize buffer");
 			return;
 		}
 		buf->data = new_data;
@@ -46,7 +47,11 @@ char *read_buffer_get_message(ReadBuffer *buf) {
 	// Ensure the buffer is null-terminated for safety
 	if (buf->capacity <= buf->size + 1) {
 		buf->capacity = buf->size + 2;
-		buf->data = realloc (buf->data, buf->capacity);
+		char *new_data = realloc (buf->data, buf->capacity);
+		if (!new_data) {
+			return NULL;
+		}
+		buf->data = new_data;
 	}
 	buf->data[buf->size] = '\0';
 
