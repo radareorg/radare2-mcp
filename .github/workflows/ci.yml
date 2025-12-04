@@ -90,18 +90,6 @@ jobs:
         run: meson setup builddir --prefix=/usr --buildtype=release -Dr2_prefix=/usr
       - name: Compile
         run: meson compile -C builddir
-      - name: Create Linux Meson zip archive
-        if: startsWith(github.ref, 'refs/tags/')
-        run: |
-          mkdir -p release
-          FILENAME="${ZIP_PREFIX}${{ github.ref_name }}-linux-x64-meson.zip"
-          zip -j "release/$FILENAME" builddir/src/r2mcp
-      - name: Upload Linux Meson binary
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: actions/upload-artifact@v4
-        with:
-          name: linux-x64-meson-binary
-          path: "release/${ZIP_PREFIX}${{ github.ref_name }}-linux-x64-meson.zip"
 
   macos:
     runs-on: macos-latest
