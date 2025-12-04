@@ -243,7 +243,7 @@ static char *r2_analyze(ServerState *ss, int level) {
 	}
 	RCore *core = ss->rstate.core;
 	if (!core || !ss->rstate.file_opened) {
-		return false;
+		return NULL;
 	}
 	const char *cmd = "aa";
 	if (!ss->ignore_analysis_level) {

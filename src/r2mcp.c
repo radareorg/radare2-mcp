@@ -105,7 +105,11 @@ void r2mcp_state_fini(ServerState *ss) {
 
 char *r2mcp_cmd(ServerState *ss, const char *cmd) {
 	if (ss && ss->http_mode) {
-		return r2cmd_over_http (ss, cmd);
+		char *res = r2cmd_over_http (ss, cmd);
+		if (!res) {
+			return strdup ("HTTP request failed");
+		}
+		return res;
 	}
 	RCore *core = ss->rstate.core;
 	if (!core || !ss->rstate.file_opened) {

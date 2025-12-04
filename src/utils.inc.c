@@ -42,7 +42,13 @@ static const char *r_json_get_str(const RJson *json, const char *key) {
 // Helper to paginate text by lines
 static inline char *paginate_text_by_lines(char *text, const char *cursor, int page_size, bool *has_more, char **next_cursor) {
 	if (!text) {
-		return NULL;
+		if (has_more) {
+			*has_more = false;
+		}
+		if (next_cursor) {
+			*next_cursor = NULL;
+		}
+		return strdup ("");
 	}
 	RList *lines = r_str_split_list (text, "\n", 0);
 	if (!lines) {
