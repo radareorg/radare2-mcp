@@ -1,3 +1,5 @@
+/* r2mcp - MIT - Copyright 2025 - pancake, dnakov */
+
 #include "jsonrpc.h"
 
 // Helper function to create a simple text tool result

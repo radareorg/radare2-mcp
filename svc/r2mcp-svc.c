@@ -117,10 +117,12 @@ int main(int argc, char **argv) {
 			printf (COLOR_BOLD EMOJI_QUESTION " Your choice:" COLOR_RESET " ");
 			fflush (stdout);
 
-			char input[256];
-			if (!fgets (input, sizeof (input), stdin)) {
+			char *input = NULL;
+			size_t input_len = 0;
+			if (getline (&input, &input_len, stdin) == -1) {
 				response_body = strdup ("{\"error\":\"input failed\"}");
 			} else {
+				input[strcspn (input, "\n")] = 0;
 				int choice = atoi (input);
 				switch (choice) {
 				case 1: // Accept
@@ -136,8 +138,9 @@ int main(int argc, char **argv) {
 				case 4: // Modify
 					printf (COLOR_MAGENTA EMOJI_PENCIL " Enter new tool name:" COLOR_RESET " ");
 					fflush (stdout);
-					char new_tool[256];
-					if (fgets (new_tool, sizeof (new_tool), stdin)) {
+					char *new_tool = NULL;
+					size_t new_tool_len = 0;
+					if (getline (&new_tool, &new_tool_len, stdin) != -1) {
 						new_tool[strcspn (new_tool, "\n")] = 0;
 						char *tool_key = "\"tool\":\"";
 						char *pos = strstr ((char *)rs->data, tool_key);
@@ -161,6 +164,7 @@ int main(int argc, char **argv) {
 						} else {
 							response_body = strdup ("{\"error\":\"no tool field\"}");
 						}
+						free (new_tool);
 					} else {
 						response_body = strdup ("{\"error\":\"input failed\"}");
 					}
@@ -168,13 +172,14 @@ int main(int argc, char **argv) {
 				case 5: // Run r2 command
 					printf (COLOR_CYAN EMOJI_COMPUTER " Enter r2 command:" COLOR_RESET " ");
 					fflush (stdout);
-					char r2cmd[1024];
-					if (fgets (r2cmd, sizeof (r2cmd), stdin)) {
+					char *r2cmd = NULL;
+					size_t r2cmd_len = 0;
+					if (getline (&r2cmd, &r2cmd_len, stdin) != -1) {
 						r2cmd[strcspn (r2cmd, "\n")] = 0;
-						// Simple JSON escape: replace " with \"
 						char *escaped = r_str_replace (strdup (r2cmd), "\"", "\\\"", 1);
 						response_body = r_str_newf ("{\"r2cmd\":\"%s\"}", escaped);
 						free (escaped);
+						free (r2cmd);
 					} else {
 						response_body = strdup ("{\"error\":\"input failed\"}");
 					}
@@ -182,6 +187,7 @@ int main(int argc, char **argv) {
 				default:
 					response_body = strdup ("{\"error\":\"invalid choice\"}");
 				}
+				free (input);
 			}
 		}
 

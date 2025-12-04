@@ -1,3 +1,5 @@
+/* r2mcp - MIT - Copyright 2025 - pancake */
+
 #include <r_core.h>
 #include "r2mcp.h"
 #include "tools.h"

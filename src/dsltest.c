@@ -1,3 +1,5 @@
+/* r2mcp - MIT - Copyright 2025 - pancake, dnakov */
+
 #include "r2mcp.h"
 // Simple DSL runner for invoking tools from the CLI for testing.
 // DSL grammar (very small):

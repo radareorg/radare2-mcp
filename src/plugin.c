@@ -1,4 +1,4 @@
-/* radare - Copyright 2025 - pancake */
+/* r2mcp - MIT - Copyright 2025 - pancake */
 
 #define R_LOG_ORIGIN "core.r2mcp"
 

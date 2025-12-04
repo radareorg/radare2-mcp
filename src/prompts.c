@@ -1,3 +1,5 @@
+/* r2mcp - MIT - Copyright 2025 - pancake, dnakov */
+
 #include "r2mcp.h"
 #include "prompts.h"
 #include <dirent.h>
