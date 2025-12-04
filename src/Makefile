@@ -16,6 +16,7 @@ SRC += tools.c
 SRC += dsltest.c
 SRC += prompts.c
 SRC += plugin.c
+SRC += jsonrpc.c
 INC += utils.inc.c
 INC += r2api.inc.c
 OBJS:=$(subst .c,.o,$(SRC))

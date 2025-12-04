@@ -9,6 +9,8 @@
 #include <stdarg.h>
 #include <errno.h>
 
+#include "jsonrpc.h"
+
 #if defined(R2__UNIX__)
 #include <unistd.h>
 #include <fcntl.h>
@@ -255,36 +257,7 @@ static char *handle_initialize(ServerState *ss, RJson *params) {
 	return pj_drain (pj);
 }
 
-// Create a proper success response
-static char *jsonrpc_success_response(ServerState *ss, const char *result, const char *id) {
-	(void)ss; // unused now, kept for API consistency
-	PJ *pj = pj_new ();
-	pj_o (pj);
-	pj_ks (pj, "jsonrpc", "2.0");
 
-	if (id) {
-		// If id is a number string, treat it as a number
-		char *endptr;
-		long num_id = strtol (id, &endptr, 10);
-		if (*id != '\0' && *endptr == '\0') {
-			// It's a valid number
-			pj_kn (pj, "id", num_id);
-		} else {
-			// It's a string
-			pj_ks (pj, "id", id);
-		}
-	}
-
-	pj_k (pj, "result");
-	if (result) {
-		pj_raw (pj, result);
-	} else {
-		pj_null (pj);
-	}
-
-	pj_end (pj);
-	return pj_drain (pj);
-}
 
 static char *handle_list_tools(ServerState *ss, RJson *params) {
 	const char *cursor = r_json_get_str (params, "cursor");

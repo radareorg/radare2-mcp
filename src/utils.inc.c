@@ -1,65 +1,4 @@
-// Helper function to create a simple text tool result
-static inline char *jsonrpc_tooltext_response(const char *text) {
-	PJ *pj = pj_new ();
-	pj_o (pj);
-	pj_k (pj, "content");
-	pj_a (pj);
-	pj_o (pj);
-	pj_ks (pj, "type", "text");
-	pj_ks (pj, "text", text);
-	pj_end (pj);
-	pj_end (pj);
-	pj_end (pj);
-	return pj_drain (pj);
-}
 
-// Helper function to create a paginated text tool result
-static inline char *jsonrpc_tooltext_response_paginated(const char *text, bool has_more, const char *next_cursor) {
-	PJ *pj = pj_new ();
-	pj_o (pj);
-	pj_k (pj, "content");
-	pj_a (pj);
-	pj_o (pj);
-	pj_ks (pj, "type", "text");
-	pj_ks (pj, "text", text);
-	pj_end (pj);
-	pj_end (pj);
-	if (has_more || next_cursor) {
-		pj_k (pj, "pagination");
-		pj_o (pj);
-		if (has_more) {
-			pj_kb (pj, "hasMore", true);
-		}
-		if (next_cursor) {
-			pj_ks (pj, "nextCursor", next_cursor);
-		}
-		pj_end (pj);
-	}
-	pj_end (pj);
-	return pj_drain (pj);
-}
-
-// Render tool output as a JSON array of lines for frontend filtering compatibility
-static inline char *jsonrpc_tooltext_response_lines(const char *text) {
-	PJ *pj = pj_new ();
-	pj_o (pj);
-	pj_k (pj, "content");
-	pj_a (pj);
-	if (text) {
-		RList *lines = r_str_split_list ((char *)text, "\n", 0);
-		if (lines) {
-			RListIter *it;
-			char *line;
-			r_list_foreach (lines, it, line) {
-				pj_s (pj, line);
-			}
-			r_list_free (lines);
-		}
-	}
-	pj_end (pj);
-	pj_end (pj);
-	return pj_drain (pj);
-}
 
 #if R2_VERSION_NUMBER < 50909
 static st64 r_json_get_num(const RJson *json, const char *key) {
@@ -149,28 +88,7 @@ static inline char *paginate_text_by_lines(char *text, const char *cursor, int p
 	return result;
 }
 
-// JSON-RPC error response builder. Returns heap-allocated JSON string (caller frees).
-static char *jsonrpc_error_response(int code, const char *message, const char *id, const char *uri) {
-	PJ *pj = pj_new ();
-	pj_o (pj);
-	pj_ks (pj, "jsonrpc", "2.0");
-	if (id) {
-		pj_ks (pj, "id", id);
-	}
-	pj_k (pj, "error");
-	pj_o (pj);
-	pj_ki (pj, "code", code);
-	pj_ks (pj, "message", message);
-	if (uri) {
-		pj_k (pj, "data");
-		pj_o (pj);
-		pj_ks (pj, "uri", uri);
-		pj_end (pj);
-	}
-	pj_end (pj);
-	pj_end (pj);
-	return pj_drain (pj);
-}
+
 
 static void pj_append_rjson(PJ *pj, RJson *j) {
 	if (!j) {

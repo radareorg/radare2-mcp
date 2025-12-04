@@ -2,7 +2,8 @@
 #include "r2mcp.h"
 #include "tools.h"
 #include <r_util/pj.h>
-#include "utils.inc.c" // bring in shared helpers like jsonrpc_tooltext_response
+#include "utils.inc.c"
+#include "jsonrpc.h"
 
 typedef char *(*ToolFunc)(ServerState *ss, RJson *tool_args);
 
@@ -13,24 +14,7 @@ typedef struct {
 
 extern ToolSpec tool_specs[];
 
-// Standardized error response helpers for consistent error handling
-static inline char *jsonrpc_error_missing_param(const char *param_name) {
-	char *msg = r_str_newf ("Missing required parameter: %s", param_name);
-	char *err = jsonrpc_error_response (-32602, msg, NULL, NULL);
-	free (msg);
-	return err;
-}
 
-static inline char *jsonrpc_error_tool_not_allowed(const char *tool_name) {
-	char *msg = r_str_newf ("Tool '%s' not available in current mode (use -p for permissive)", tool_name);
-	char *err = jsonrpc_error_response (-32611, msg, NULL, NULL);
-	free (msg);
-	return err;
-}
-
-static inline char *jsonrpc_error_file_required(void) {
-	return jsonrpc_error_response (-32611, "Use the open_file method before calling any other method", NULL, NULL);
-}
 
 // Parameter validation helpers
 static inline bool validate_required_string_param(RJson *args, const char *param_name, const char **out_value) {
@@ -53,27 +37,7 @@ static char *tool_cmd_response(char *res) {
 	return response;
 }
 
-static char *tool_open_file(ServerState *ss, RJson *tool_args) {
-	if (ss->http_mode) {
-		char *res = r2mcp_cmd (ss, "i");
 
-		char *foo = r_str_newf ("File was already opened, this are the details:\n%s", res);
-
-		free (res);
-
-		return tool_cmd_response (foo);
-	}
-	const char *filepath;
-	if (!validate_required_string_param (tool_args, "file_path", &filepath)) {
-		return jsonrpc_error_missing_param ("file_path");
-	}
-
-	char *filteredpath = strdup (filepath);
-	r_str_replace_ch (filteredpath, '`', 0, true);
-	bool success = r2mcp_open_file (ss, filteredpath);
-	free (filteredpath);
-	return jsonrpc_tooltext_response (success? "File opened successfully.": "Failed to open file.");
-}
 
 // Check an optional whitelist of enabled tool names. If ss->enabled_tools is
 // NULL, all tools are considered allowed. Otherwise only names present in the
@@ -105,15 +69,7 @@ static inline ToolMode current_mode(const ServerState *ss) {
 	return TOOL_MODE_NORMAL;
 }
 
-static ToolSpec *tool(const char *name, const char *desc, const char *schema, int modes, ToolHandler func) {
-	ToolSpec *t = R_NEW0 (ToolSpec);
-	t->name = name;
-	t->description = desc;
-	t->schema_json = schema;
-	t->modes = modes;
-	t->func = func;
-	return t;
-}
+
 
 
 
@@ -970,7 +926,7 @@ cleanup:
 	return result;
 }
 ToolSpec tool_specs[] = {
-	{"open_file", "Opens a binary file with radare2 for analysis <think>Call this tool before any other one from r2mcp. Use an absolute file_path</think>", "{\"type\":\"object\",\"properties\":{\"file_path\":{\"type\":\"string\",\"description\":\"Path to the file to open\"}},\"required\":[\"file_path\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI, tool_open_file},
+	{"open_file", "Opens a binary file with radare2 for analysis <think>Call this tool before any other one from r2mcp. Use an absolute file_path</think>", "{\"type\":\"object\",\"properties\":{\"file_path\":{\"type\":\"string\",\"description\":\"Path to the file to open\"}},\"required\":[\"file_path\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI, NULL},
 	{"run_javascript", "Executes JavaScript code using radare2's qjs runtime", "{\"type\":\"object\",\"properties\":{\"script\":{\"type\":\"string\",\"description\":\"The JavaScript code to execute\"}},\"required\":[\"script\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP, tool_run_javascript},
 	{"run_command", "Executes a raw radare2 command directly", "{\"type\":\"object\",\"properties\":{\"command\":{\"type\":\"string\",\"description\":\"The radare2 command to execute\"}},\"required\":[\"command\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP, tool_run_command},
 	{"close_file", "Close the currently open file", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL, tool_close_file},
