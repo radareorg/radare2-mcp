@@ -315,8 +315,8 @@ void prompts_registry_init(ServerState *ss) {
 						PromptSpec *spec = R_NEW (PromptSpec);
 						spec->name = pp->name;
 						spec->description = pp->description;
-						spec->nargs = r_list_length (pp->args);
-						spec->args = calloc (spec->nargs, sizeof (PromptArg));
+						spec->nargs = pp->args ? r_list_length (pp->args) : 0;
+						spec->args = calloc (spec->nargs + 1, sizeof (PromptArg));
 						int i = 0;
 						RListIter *ait;
 						ParsedArg *pa;
