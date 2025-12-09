@@ -766,7 +766,74 @@ static char *tool_run_javascript(ServerState *ss, RJson *tool_args) {
 
 static char *tool_list_sessions(ServerState *ss, RJson *tool_args) {
 	(void)tool_args;
-	return tool_cmd_response (r2mcp_cmd (ss, "!!r2agent -Lj"));
+	(void)ss;
+	// r2agent command doesn't require an open file, run it directly
+	char *res = NULL;
+	if (ss && ss->http_mode) {
+		// In HTTP mode, we can't run r2agent locally, return empty result
+		res = strdup ("[]");
+	} else {
+		// Run r2agent command directly using system
+		FILE *fp = popen ("r2agent -Lj 2>/dev/null", "r");
+		if (!fp) {
+			res = strdup ("[]");
+		} else {
+			char buffer[4096];
+			RStrBuf *sb = r_strbuf_new ("");
+			while (fgets (buffer, sizeof (buffer), fp)) {
+				r_strbuf_append (sb, buffer);
+			}
+			pclose (fp);
+			res = r_strbuf_drain (sb);
+			if (R_STR_ISEMPTY (res)) {
+				free (res);
+				res = strdup ("[]");
+			}
+		}
+	}
+	return tool_cmd_response (res);
+}
+
+static char *tool_open_session(ServerState *ss, RJson *tool_args) {
+	const char *url;
+	if (!validate_required_string_param (tool_args, "url", &url)) {
+		return jsonrpc_error_missing_param ("url");
+	}
+
+	// Store the current baseurl if we're not already in HTTP mode
+	char *old_baseurl = NULL;
+	bool old_http_mode = ss->http_mode;
+	if (!ss->http_mode && ss->baseurl) {
+		old_baseurl = strdup (ss->baseurl);
+	}
+
+	// Set up HTTP mode for this session
+	ss->http_mode = true;
+	free (ss->baseurl);
+	ss->baseurl = strdup (url);
+
+	// Test the connection by running a simple command
+	char *test_result = r2mcp_cmd (ss, "i");
+	if (!test_result || strstr (test_result, "HTTP request failed")) {
+		// Restore previous state if connection failed
+		ss->http_mode = old_http_mode;
+		free (ss->baseurl);
+		ss->baseurl = old_baseurl;
+		free (test_result);
+
+		char *error_msg = r_str_newf ("Failed to connect to URL: %s", url);
+		char *error_resp = jsonrpc_error_response (-32603, error_msg, NULL, NULL);
+		free (error_msg);
+		return error_resp;
+	}
+
+	free (test_result);
+	free (old_baseurl);
+
+	char *success_msg = r_str_newf ("Successfully connected to remote r2 instance at %s", url);
+	char *response = jsonrpc_tooltext_response (success_msg);
+	free (success_msg);
+	return response;
 }
 
 static char *check_supervisor_permission(ServerState *ss, const char *tool_name, RJson *tool_args, char **new_tool_name_out, RJson **new_tool_args_out, RJson **parsed_json_out) {
@@ -891,6 +958,18 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 		goto cleanup;
 	}
 
+	// Special-case: open_session
+	if (!strcmp (tool_name, "open_session")) {
+		result = tool_open_session (ss, tool_args);
+		goto cleanup;
+	}
+
+	// Special-case: list_sessions
+	if (!strcmp (tool_name, "list_sessions")) {
+		result = tool_list_sessions (ss, tool_args);
+		goto cleanup;
+	}
+
 	if (!ss->http_mode && !ss->rstate.file_opened) {
 		result = jsonrpc_error_file_required ();
 		goto cleanup;
@@ -921,6 +1000,7 @@ ToolSpec tool_specs[] = {
 	{ "run_javascript", "Executes JavaScript code using radare2's qjs runtime", "{\"type\":\"object\",\"properties\":{\"script\":{\"type\":\"string\",\"description\":\"The JavaScript code to execute\"}},\"required\":[\"script\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP, tool_run_javascript },
 	{ "run_command", "Executes a raw radare2 command directly", "{\"type\":\"object\",\"properties\":{\"command\":{\"type\":\"string\",\"description\":\"The radare2 command to execute\"}},\"required\":[\"command\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP, tool_run_command },
 	{ "list_sessions", "Lists available r2agent sessions in JSON format", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO, tool_list_sessions },
+	{ "open_session", "Connects to a remote r2 instance using r2pipe API", "{\"type\":\"object\",\"properties\":{\"url\":{\"type\":\"string\",\"description\":\"URL of the remote r2 instance to connect to\"}},\"required\":[\"url\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP, tool_open_session },
 	{ "close_file", "Close the currently open file", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL, tool_close_file },
 	{ "list_functions", "Lists all functions discovered during analysis", "{\"type\":\"object\",\"properties\":{\"only_named\":{\"type\":\"boolean\",\"description\":\"If true, only list functions with named symbols (excludes functions with numeric suffixes like sym.func.1000016c8)\"},\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"}}}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO, tool_list_functions },
 	{ "list_functions_tree", "Lists functions and successors (aflmu)", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO, tool_list_functions_tree },
