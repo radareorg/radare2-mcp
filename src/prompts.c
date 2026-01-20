@@ -297,8 +297,17 @@ void prompts_registry_init(ServerState *ss) {
 		return;
 	}
 	// Load prompts from directories
-	char *dirs[] = { "prompts", "~/.config/r2ai/prompts", NULL };
-	for (char **dir = dirs; *dir; dir++) {
+	char **dirs_to_use = NULL;
+	char *default_dirs[] = { "prompts", "~/.config/r2ai/prompts", NULL };
+	char *custom_dirs[] = { ss->prompts_dir, NULL };
+
+	if (ss->prompts_dir) {
+		dirs_to_use = custom_dirs;
+	} else {
+		dirs_to_use = default_dirs;
+	}
+
+	for (char **dir = dirs_to_use; *dir; dir++) {
 		char *path = expand_home (*dir);
 		if (!path) {
 			continue;

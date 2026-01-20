@@ -46,6 +46,8 @@ void r2mcp_help(void) {
 		" -n         do not load any plugin or radare2rc\n"
 		" -i         ignore analysis level specified in analyze calls\n"
 		" -S [url]   enable supervisor control; connect to svc at [url]\n"
+		" -P [dir]   specify custom prompts directory (default: prompts, ~/.config/r2ai/prompts)\n"
+		" -N         do not load any prompts\n"
 		" -v         show version\n";
 	printf ("%s", help_text);
 }
@@ -75,10 +77,12 @@ int r2mcp_main(int argc, const char **argv) {
 	char *svc_baseurl = NULL;
 	char *sandbox = NULL;
 	char *logfile = NULL;
+	char *prompts_dir = NULL;
+	bool load_prompts = true;
 	bool ignore_analysis_level = false;
 	const char *dsl_tests = NULL;
 	RGetopt opt;
-	r_getopt_init (&opt, argc, argv, "hmvpd:nc:u:l:s:rite:RT:S:");
+	r_getopt_init (&opt, argc, argv, "hmvpd:nc:u:l:s:rite:RT:S:P:N");
 	int c;
 	while ((c = r_getopt_next (&opt)) != -1) {
 		switch (c) {
@@ -146,16 +150,31 @@ int r2mcp_main(int argc, const char **argv) {
 				r_list_append (enabled_tools, strdup (opt.arg));
 			}
 			break;
+		case 'P':
+			prompts_dir = strdup (opt.arg);
+			break;
+		case 'N':
+			load_prompts = false;
+			break;
 		default:
 			R_LOG_ERROR ("Invalid flag -%c", c);
 			return 1;
 		}
 	}
+
+	/* Handle environment variable for prompts directory */
+	if (!prompts_dir) {
+		char *env_prompts_dir = getenv ("R2MCP_PROMPTS_DIR");
+		if (env_prompts_dir) {
+			prompts_dir = strdup (env_prompts_dir);
+		}
+	}
+
 	ServerState ss = {
 		.info = {
 			.name = "Radare2 MCP Connector",
 			.version = R2MCP_VERSION },
-		.capabilities = { .tools = true, .prompts = true, .resources = true },
+		.capabilities = { .tools = true, .prompts = load_prompts, .resources = true },
 		.instructions = "Use this server to analyze binaries with radare2",
 		.initialized = false,
 		.minimode = minimode,
@@ -167,6 +186,8 @@ int r2mcp_main(int argc, const char **argv) {
 		.svc_baseurl = svc_baseurl,
 		.sandbox = sandbox,
 		.logfile = logfile,
+		.prompts_dir = prompts_dir,
+		.load_prompts = load_prompts,
 		.ignore_analysis_level = ignore_analysis_level,
 		.client_capabilities = NULL,
 		.client_info = NULL,
@@ -183,7 +204,9 @@ int r2mcp_main(int argc, const char **argv) {
 		tools_print_table (&ss);
 		return 0;
 	}
-	prompts_registry_init (&ss);
+	if (ss.load_prompts) {
+		prompts_registry_init (&ss);
+	}
 	/* Initialize r2 (unless running in HTTP client mode) */
 	if (!ss.http_mode) {
 		if (!r2mcp_state_init (&ss)) {
@@ -211,12 +234,15 @@ int r2mcp_main(int argc, const char **argv) {
 	if (dsl_tests) {
 		int r = r2mcp_run_dsl_tests (&ss, dsl_tests, NULL);
 		/* Cleanup and return */
-		prompts_registry_fini (&ss);
+		if (ss.load_prompts) {
+			prompts_registry_fini (&ss);
+		}
 		r2mcp_state_fini (&ss);
 		free (ss.baseurl);
 		free (ss.svc_baseurl);
 		free (ss.sandbox);
 		free (ss.logfile);
+		free (ss.prompts_dir);
 		if (ss.enabled_tools) {
 			r_list_free (ss.enabled_tools);
 		}
@@ -230,12 +256,15 @@ int r2mcp_main(int argc, const char **argv) {
 	r_list_free (cmds);
 	r2mcp_running_set (1);
 	r2mcp_eventloop (&ss);
-	prompts_registry_fini (&ss);
+	if (ss.load_prompts) {
+		prompts_registry_fini (&ss);
+	}
 	r2mcp_state_fini (&ss);
 	/* Cleanup */
 	free (ss.baseurl);
 	free (ss.sandbox);
 	free (ss.logfile);
+	free (ss.prompts_dir);
 	if (ss.enabled_tools) {
 		r_list_free (ss.enabled_tools);
 	}

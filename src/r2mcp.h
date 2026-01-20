@@ -51,6 +51,10 @@ typedef struct {
 	char *sandbox;
 	/* Optional path to append debug logs when set via -l */
 	char *logfile;
+	/* Optional custom prompts directory path */
+	char *prompts_dir;
+	/* When true, load prompts (false when -N flag is used) */
+	bool load_prompts;
 	/* When true, ignore the analysis level specified in analyze calls */
 	bool ignore_analysis_level;
 	const RJson *client_capabilities;

@@ -11,10 +11,6 @@ Ideas and future plans for r2mcp
 * Resources and Templates
   * Strings, symbols, relocs, imports, libraries, ..
   * Reversing context with user comments and project memory
-* Prompts in filesystem instead of hardcoded inside the executable
-  * Easier to maintain, user-customizable prompts for different analysis scenarios
-  * Support templates (yaml definition for parameters?) to make prompts more concise
-  * Automated report generation
 * Advanced Analysis Tools
   * Find path between two points in the program
   * Progressive analysis and avoid analyzing twice (Optimized analysis for large binaries)
