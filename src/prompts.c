@@ -332,7 +332,7 @@ void prompts_registry_init(ServerState *ss) {
 						r_list_foreach (pp->args, ait, pa) {
 							spec->args[i].name = pa->name;
 							spec->args[i].description = pa->description;
-							spec->args[i].required = !strcmp (pa->required, "true");
+							spec->args[i].required = pa->required && !strcmp (pa->required, "true");
 							i++;
 						}
 						spec->render = render_loaded;
