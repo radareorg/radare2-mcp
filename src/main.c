@@ -46,7 +46,7 @@ void r2mcp_help(void) {
 		" -n         do not load any plugin or radare2rc\n"
 		" -i         ignore analysis level specified in analyze calls\n"
 		" -S [url]   enable supervisor control; connect to svc at [url]\n"
-		" -P [dir]   specify custom prompts directory (default: prompts, ~/.config/r2ai/prompts)\n"
+		" -P [dir]   specify custom prompts directory (supports colon-separated paths like r2ai)\n"
 		" -N         do not load any prompts\n"
 		" -v         show version\n";
 	printf ("%s", help_text);

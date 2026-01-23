@@ -4,16 +4,6 @@
 #include "prompts.h"
 #include <dirent.h>
 
-static char *expand_home(const char *path) {
-	if (path[0] == '~') {
-		char *home = getenv ("HOME");
-		if (home) {
-			return r_str_newf ("%s%s", home, path + 1);
-		}
-	}
-	return strdup (path);
-}
-
 static RList *list_files(const char *path) {
 	DIR *dir = opendir (path);
 	if (!dir) {
@@ -297,21 +287,47 @@ void prompts_registry_init(ServerState *ss) {
 		return;
 	}
 	// Load prompts from directories
-	char **dirs_to_use = NULL;
-	char *default_dirs[] = { "prompts", "~/.config/r2ai/prompts", NULL };
-	char *custom_dirs[] = { ss->prompts_dir, NULL };
+	// Support colon-separated paths like r2ai
+	RList *dirs_list = r_list_newf (free);
 
 	if (ss->prompts_dir) {
-		dirs_to_use = custom_dirs;
+		// Parse colon-separated custom directories using strchr
+		const char *p = ss->prompts_dir;
+		while (*p) {
+			const char *colon = strchr (p, ':');
+			const char *end = colon ? colon : p + strlen (p);
+			char *path_part = r_str_ndup (p, end - p);
+			if (path_part) {
+				char *expanded = r_file_home (path_part);
+				if (expanded) {
+					r_list_append (dirs_list, expanded);
+				} else {
+					// If r_file_home fails, try direct path
+					r_list_append (dirs_list, path_part);
+				}
+				if (!colon) {
+					break;
+				}
+				p = colon + 1;
+			} else {
+				break;
+			}
+		}
 	} else {
-		dirs_to_use = default_dirs;
+		// Default directories when no custom path specified
+		const char *default_paths[] = { "prompts", "~/.config/r2ai/prompts", "~/.config/r2mcp/prompts", NULL };
+		for (int i = 0; default_paths[i]; i++) {
+			char *expanded = r_file_home (default_paths[i]);
+			if (expanded) {
+				r_list_append (dirs_list, expanded);
+			}
+		}
 	}
 
-	for (char **dir = dirs_to_use; *dir; dir++) {
-		char *path = expand_home (*dir);
-		if (!path) {
-			continue;
-		}
+	// Iterate through all directories in the list
+	RListIter *dir_it;
+	char *path;
+	r_list_foreach (dirs_list, dir_it, path) {
 		RList *files = list_files (path);
 		if (files) {
 			RListIter *it;
@@ -344,8 +360,8 @@ void prompts_registry_init(ServerState *ss) {
 			}
 			r_list_free (files);
 		}
-		free (path);
 	}
+	r_list_free (dirs_list);
 	ss->prompts = reg;
 }
 
