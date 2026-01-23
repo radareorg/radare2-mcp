@@ -73,6 +73,8 @@ user-install: all
 	$(INSTALL_DIR) $(R2PM_BINDIR)
 	$(INSTALL_PROGRAM) $(TARGET) $(R2PM_BINDIR)/r2mcp
 	$(INSTALL_PROGRAM) $(LIBTARGET) $(R2PM_PLUGDIR)
+	$(INSTALL_DIR) $(HOME)/.config/r2ai/prompts
+	cp -f ../prompts/*.r2ai.md $(HOME)/.config/r2ai/prompts/
 
 doc:
 	cat INSTALL.md
