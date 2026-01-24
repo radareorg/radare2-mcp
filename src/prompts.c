@@ -1,24 +1,7 @@
-/* r2mcp - MIT - Copyright 2025 - pancake, dnakov */
+/* r2mcp - MIT - Copyright 2025-2026 - pancake, dnakov */
 
 #include "r2mcp.h"
 #include "prompts.h"
-#include <dirent.h>
-
-static RList *list_files(const char *path) {
-	DIR *dir = opendir (path);
-	if (!dir) {
-		return NULL;
-	}
-	RList *list = r_list_newf (free);
-	struct dirent *entry;
-	while ((entry = readdir (dir))) {
-		if (strcmp (entry->d_name, ".") && strcmp (entry->d_name, "..")) {
-			r_list_append (list, strdup (entry->d_name));
-		}
-	}
-	closedir (dir);
-	return list;
-}
 
 typedef struct {
 	char *name;
@@ -291,27 +274,23 @@ void prompts_registry_init(ServerState *ss) {
 	RList *dirs_list = r_list_newf (free);
 
 	if (ss->prompts_dir) {
-		// Parse colon-separated custom directories using strchr
-		const char *p = ss->prompts_dir;
-		while (*p) {
-			const char *colon = strchr (p, ':');
-			const char *end = colon ? colon : p + strlen (p);
-			char *path_part = r_str_ndup (p, end - p);
-			if (path_part) {
-				char *expanded = r_file_home (path_part);
-				if (expanded) {
-					r_list_append (dirs_list, expanded);
-				} else {
-					// If r_file_home fails, try direct path
-					r_list_append (dirs_list, path_part);
+		// Parse colon-separated custom directories using r_str_split_duplist
+		RList *path_parts = r_str_split_duplist (ss->prompts_dir, ":", true);
+		if (path_parts) {
+			RListIter *it;
+			char *path_part;
+			r_list_foreach (path_parts, it, path_part) {
+				if (path_part && *path_part) {
+					char *expanded = r_file_home (path_part);
+					if (expanded) {
+						r_list_append (dirs_list, expanded);
+					} else {
+						// If r_file_home fails, try direct path
+						r_list_append (dirs_list, strdup (path_part));
+					}
 				}
-				if (!colon) {
-					break;
-				}
-				p = colon + 1;
-			} else {
-				break;
 			}
+			r_list_free (path_parts);
 		}
 	} else {
 		// Default directories when no custom path specified
@@ -328,12 +307,15 @@ void prompts_registry_init(ServerState *ss) {
 	RListIter *dir_it;
 	char *path;
 	r_list_foreach (dirs_list, dir_it, path) {
-		RList *files = list_files (path);
+		RList *files = r_sys_dir (path);
 		if (files) {
 			RListIter *it;
 			char *file;
 			r_list_foreach (files, it, file) {
-				if (r_str_endswith (file, ".r2ai.md")) {
+				if (!strcmp (file, ".") || !strcmp (file, "..")) {
+					continue;
+				}
+				if (*file != '.' && r_str_endswith (file, ".r2ai.md")) {
 					char *full_path = r_str_newf ("%s/%s", path, file);
 					ParsedPrompt *pp = parse_r2ai_md (full_path);
 					if (pp) {
