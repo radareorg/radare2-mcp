@@ -142,6 +142,91 @@ static PromptSpec *spec_from_prompt(ParsedPrompt *pp) {
 	return spec;
 }
 
+static char *parse_args_block(char *line_ptr, ParsedPrompt *pp) {
+	RList *args = r_list_newf (free);
+	while (*line_ptr) {
+		char *nl = strchr (line_ptr, '\n');
+		if (!nl) {
+			break;
+		}
+		*nl = '\0';
+		char *trim_ln = r_str_ndup (line_ptr, nl - line_ptr);
+		r_str_trim (trim_ln);
+		if (trim_ln[0] != '-') {
+			free (trim_ln);
+			pp->args = args;
+			return line_ptr;
+		}
+		char *arg_ln = trim_ln + 1;
+		char *trim_arg = r_str_trim_dup (arg_ln);
+		ParsedArg *arg = R_NEW0 (ParsedArg);
+		char *colon = strchr (trim_arg, ':');
+		if (colon) {
+			*colon = 0;
+			char *key = r_str_trim_dup (trim_arg);
+			char *val = r_str_trim_dup (colon + 1);
+			if (!strcmp (key, "name")) {
+				arg->name = val;
+			} else if (!strcmp (key, "description")) {
+				arg->desc = val;
+			} else if (!strcmp (key, "required")) {
+				arg->req = val;
+			} else {
+				free (val);
+			}
+			free (key);
+		}
+		free (trim_arg);
+		if (arg->name) {
+			r_list_append (args, arg);
+		} else {
+			free (arg);
+		}
+		free (trim_ln);
+		line_ptr = nl + 1;
+	}
+	pp->args = args;
+	return line_ptr;
+}
+
+static char *parse_frontmatter_field(char *line_ptr, char *nl, char *trim_ln, ParsedPrompt *pp) {
+	char *colon = strchr (trim_ln, ':');
+	if (!colon) {
+		return nl + 1;
+	}
+	*colon = 0;
+	char *key = r_str_trim_dup (trim_ln);
+	char *val = r_str_trim_dup (colon + 1);
+	if (!strcmp (key, "description")) {
+		pp->desc = val;
+	} else if (!strcmp (key, "user_template")) {
+		if (val[0] == '|') {
+			RStrBuf *sb = r_strbuf_new ("");
+			free (val);
+			line_ptr = nl + 1;
+			while (*line_ptr) {
+				char *next_nl = strchr (line_ptr, '\n');
+				if (!next_nl) {
+					r_strbuf_append (sb, line_ptr);
+					break;
+				}
+				char *trim = r_str_ndup (line_ptr, next_nl - line_ptr);
+				r_strbuf_appendf (sb, "%s\n", trim);
+				free (trim);
+				line_ptr = next_nl + 1;
+			}
+			pp->user_template = r_strbuf_drain (sb);
+			free (key);
+			return line_ptr;
+		}
+		free (val);
+	} else {
+		free (val);
+	}
+	free (key);
+	return nl + 1;
+}
+
 static ParsedPrompt *parse_r2ai_md(const char *path) {
 	size_t sz;
 	char *data = r_file_slurp (path, &sz);
@@ -169,10 +254,9 @@ static ParsedPrompt *parse_r2ai_md(const char *path) {
 	char *front = p;
 	char *cnt_start = end + 5;
 	pp->content = r_str_trim_dup (cnt_start);
+
 	char *front_copy = strdup (front);
 	char *line_ptr = front_copy;
-	bool in_args = false;
-	RList *args = NULL;
 	while (*line_ptr) {
 		char *nl = strchr (line_ptr, '\n');
 		if (!nl) {
@@ -182,82 +266,13 @@ static ParsedPrompt *parse_r2ai_md(const char *path) {
 		char *trim_ln = r_str_ndup (line_ptr, nl - line_ptr);
 		r_str_trim (trim_ln);
 		if (!strcmp (trim_ln, "args:")) {
-			in_args = true;
-			free (args);
-			args = r_list_newf (free);
 			free (trim_ln);
-			line_ptr = nl + 1;
-			continue;
+			line_ptr = parse_args_block (nl + 1, pp);
+		} else {
+			line_ptr = parse_frontmatter_field (line_ptr, nl, trim_ln, pp);
+			free (trim_ln);
 		}
-		if (in_args) {
-			if (trim_ln[0] == '-') {
-				char *arg_ln = trim_ln + 1;
-				char *trim_arg = r_str_trim_dup (arg_ln);
-				ParsedArg *arg = R_NEW0 (ParsedArg);
-				char *colon = strchr (trim_arg, ':');
-				if (colon) {
-					*colon = 0;
-					char *key = r_str_trim_dup (trim_arg);
-					char *val = r_str_trim_dup (colon + 1);
-					if (!strcmp (key, "name")) {
-						arg->name = val;
-					} else if (!strcmp (key, "description")) {
-						arg->desc = val;
-					} else if (!strcmp (key, "required")) {
-						arg->req = val;
-					} else {
-						free (val);
-					}
-					free (key);
-				}
-				free (trim_arg);
-				if (arg->name) {
-					r_list_append (args, arg);
-				} else {
-					free (arg);
-				}
-			} else {
-				in_args = false;
-			}
-		}
-		if (!in_args) {
-			char *colon = strchr (trim_ln, ':');
-			if (colon) {
-				*colon = 0;
-				char *key = r_str_trim_dup (trim_ln);
-				char *val = r_str_trim_dup (colon + 1);
-				if (!strcmp (key, "description")) {
-					pp->desc = val;
-				} else if (!strcmp (key, "user_template")) {
-					if (val[0] == '|') {
-						RStrBuf *sb = r_strbuf_new ("");
-						free (val);
-						line_ptr = nl + 1;
-						while (*line_ptr) {
-							char *next_nl = strchr (line_ptr, '\n');
-							if (!next_nl) {
-								r_strbuf_append (sb, line_ptr);
-								break;
-							}
-							char *trim = r_str_ndup (line_ptr, next_nl - line_ptr);
-							r_strbuf_appendf (sb, "%s\n", trim);
-							free (trim);
-							line_ptr = next_nl + 1;
-						}
-						pp->user_template = r_strbuf_drain (sb);
-					} else {
-						free (val);
-					}
-				} else {
-					free (val);
-				}
-				free (key);
-			}
-		}
-		free (trim_ln);
-		line_ptr = nl + 1;
 	}
-	pp->args = args;
 	free (front_copy);
 	free (data);
 	return pp;
