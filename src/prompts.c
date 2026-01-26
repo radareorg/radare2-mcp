@@ -189,12 +189,11 @@ static char *parse_frontmatter_field(char *nl, char *trim_ln, ParsedPrompt *pp) 
 		return nl + 1;
 	}
 	*colon = 0;
-	char *key = r_str_trim_dup (trim_ln);
+	char *key = r_str_trim_dup (trim_ln); // we can just strncmp instead of strdup and null byte the colon, reduce as much as possible the memory accesses here
 	char *val = r_str_trim_dup (colon + 1);
 	if (!strcmp (key, "description")) {
 		pp->desc = val;
 	} else if (!strcmp (key, "user_template") && val[0] == '|') {
-		free (val);
 		RStrBuf *sb = r_strbuf_new ("");
 		char *p = nl + 1;
 		while (*p) {
@@ -209,11 +208,9 @@ static char *parse_frontmatter_field(char *nl, char *trim_ln, ParsedPrompt *pp) 
 			p = next_nl + 1;
 		}
 		pp->user_template = r_strbuf_drain (sb);
-		free (key);
-		return p;
-	} else {
-		free (val);
+		nl = p - 1;
 	}
+	free (val);
 	free (key);
 	return nl + 1;
 }
