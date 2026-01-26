@@ -344,18 +344,7 @@ static PromptSpec *prompts_find(const ServerState *ss, const char *nm) {
 }
 
 char *prompts_build_list_json(const ServerState *ss, const char *cursor, int pagesz) {
-	if (!ss || !ss->prompts) {
-		// AITODO: isnt that code just a short path for the code below? because if so, maybe we dont want to duplicate logic, just keep the slow path available and prefer more runtime payload than LOCs
-		PJ *pj = pj_new ();
-		pj_o (pj);
-		pj_k (pj, "prompts");
-		pj_a (pj);
-		pj_end (pj); // end array
-		pj_end (pj); // end object
-		return pj_drain (pj);
-	}
-
-	PromptRegistry *reg = (PromptRegistry *)ss->prompts;
+	PromptRegistry *reg = (ss && ss->prompts)? (PromptRegistry *)ss->prompts: NULL;
 	int sidx = 0;
 	if (cursor) {
 		sidx = atoi (cursor);
@@ -363,7 +352,7 @@ char *prompts_build_list_json(const ServerState *ss, const char *cursor, int pag
 			sidx = 0;
 		}
 	}
-	int total = r_list_length (reg->lst);
+	int total = reg? r_list_length (reg->lst): 0;
 	int eidx = sidx + pagesz;
 	if (eidx > total) {
 		eidx = total;
@@ -374,27 +363,30 @@ char *prompts_build_list_json(const ServerState *ss, const char *cursor, int pag
 	pj_k (pj, "prompts");
 	pj_a (pj);
 
-	RListIter *it;
-	PromptSpec *p;
 	int idx = 0;
-	r_list_foreach (reg->lst, it, p) {
-		if (idx >= sidx && idx < eidx) {
-			pj_o (pj);
-			pj_ks (pj, "name", p->name);
-			pj_ks (pj, "description", p->description? p->description: "");
-			pj_k (pj, "arguments");
-			pj_a (pj);
-			for (int i = 0; i < p->nargs; i++) {
+	if (reg) {
+		RListIter *it;
+		PromptSpec *p;
+		r_list_foreach (reg->lst, it, p) {
+			if (idx >= sidx && idx < eidx) {
 				pj_o (pj);
-				pj_ks (pj, "name", p->args[i].name);
-				pj_ks (pj, "description", p->args[i].description? p->args[i].description: "");
-				pj_kb (pj, "required", p->args[i].required);
+				pj_ks (pj, "name", p->name);
+				pj_ks (pj, "description", p->description? p->description: "");
+				pj_k (pj, "arguments");
+				pj_a (pj);
+				int i;
+				for (i = 0; i < p->nargs; i++) {
+					pj_o (pj);
+					pj_ks (pj, "name", p->args[i].name);
+					pj_ks (pj, "description", p->args[i].description? p->args[i].description: "");
+					pj_kb (pj, "required", p->args[i].required);
+					pj_end (pj);
+				}
+				pj_end (pj);
 				pj_end (pj);
 			}
-			pj_end (pj); // end arguments array
-			pj_end (pj); // end prompt object
+			idx++;
 		}
-		idx++;
 	}
 
 	pj_end (pj); // end prompts array
