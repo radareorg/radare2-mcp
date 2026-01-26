@@ -35,7 +35,7 @@
 
 #ifndef R2MCP_VERSION
 #warning R2MCP_VERSION is not defined
-#define R2MCP_VERSION "1.5.2"
+#define R2MCP_VERSION "1.5.4"
 #endif
 
 #define JSON_RPC_VERSION "2.0"

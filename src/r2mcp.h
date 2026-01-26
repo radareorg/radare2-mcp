@@ -7,7 +7,7 @@
 
 /* Version fallback if not provided by build */
 #ifndef R2MCP_VERSION
-#define R2MCP_VERSION "1.5.2"
+#define R2MCP_VERSION "1.5.4"
 #endif
 
 /* Pagination limits for tool responses */

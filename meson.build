@@ -1,8 +1,8 @@
 project(
   'r2mcp',
   'c',
-  version: '1.5.2',
-  default_options: ['warning_level=2', 'c_std=c11']
+version : '1.5.4',
+  default_options : ['warning_level=2', 'c_std=c11']
 )
 
 cc = meson.get_compiler('c')
