@@ -253,10 +253,8 @@ static ParsedPrompt *parse_r2ai_md(const char *path) {
 	return pp;
 }
 
-// ---------- Registry ----------
-
 typedef struct {
-	RList *lst; // of PromptSpec*(borrowed pointers to builtin entries)
+	RList /*<PromptSpec*>*/ *lst;
 } PromptRegistry;
 
 void prompts_registry_init(ServerState *ss) {
@@ -347,6 +345,7 @@ static PromptSpec *prompts_find(const ServerState *ss, const char *nm) {
 
 char *prompts_build_list_json(const ServerState *ss, const char *cursor, int pagesz) {
 	if (!ss || !ss->prompts) {
+		// AITODO: isnt that code just a short path for the code below? because if so, maybe we dont want to duplicate logic, just keep the slow path available and prefer more runtime payload than LOCs
 		PJ *pj = pj_new ();
 		pj_o (pj);
 		pj_k (pj, "prompts");
@@ -357,7 +356,6 @@ char *prompts_build_list_json(const ServerState *ss, const char *cursor, int pag
 	}
 
 	PromptRegistry *reg = (PromptRegistry *)ss->prompts;
-
 	int sidx = 0;
 	if (cursor) {
 		sidx = atoi (cursor);
@@ -411,8 +409,5 @@ char *prompts_build_list_json(const ServerState *ss, const char *cursor, int pag
 
 char *prompts_get_json(const ServerState *ss, const char *nm, RJson *args) {
 	PromptSpec *spec = prompts_find (ss, nm);
-	if (!spec) {
-		return NULL;
-	}
-	return spec->render (spec, args);
+	return spec? spec->render (spec, args): NULL;
 }
