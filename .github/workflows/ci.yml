@@ -2,7 +2,7 @@
 name: ci
 
 env:
-  R2V: 6.0.4
+  R2V: 6.0.8
   ZIP_PREFIX: radare2-mcp-
 
 on:
