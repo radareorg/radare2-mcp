@@ -32,22 +32,6 @@ static char *json_text_msg(const char *role, const char *text) {
 	return pj_drain (pj);
 }
 
-static char *json_messages_obj2(char *m1, char *m2) {
-	RStrBuf *sb = r_strbuf_new ("{");
-	r_strbuf_append (sb, "\"messages\":[");
-	if (m1) {
-		r_strbuf_append (sb, m1);
-	}
-	if (m2) {
-		const char *comma = m1? ",": "";
-		r_strbuf_appendf (sb, "%s%s", comma, m2);
-	}
-	r_strbuf_append (sb, "]}");
-	free (m1);
-	free (m2);
-	return r_strbuf_drain (sb);
-}
-
 static char *expand_template(const char *template, RJson *arguments) {
 	RStrBuf *sb = r_strbuf_new ("");
 	const char *p = template;
@@ -117,9 +101,20 @@ static char *render_loaded(const PromptSpec *spec, RJson *args) {
 	}
 	char *m1 = json_text_msg ("system", pp->content);
 	char *m2 = user? json_text_msg ("user", user): NULL;
-	char *out = json_messages_obj2 (m1, m2);
+	RStrBuf *sb = r_strbuf_new ("{");
+	r_strbuf_append (sb, "\"messages\":[");
+	if (m1) {
+		r_strbuf_append (sb, m1);
+	}
+	if (m2) {
+		const char *comma = m1? ",": "";
+		r_strbuf_appendf (sb, "%s%s", comma, m2);
+	}
+	r_strbuf_append (sb, "]}");
+	free (m1);
+	free (m2);
 	free (user);
-	return out;
+	return r_strbuf_drain (sb);
 }
 
 static PromptSpec *spec_from_prompt(ParsedPrompt *pp) {
@@ -189,10 +184,11 @@ static char *parse_frontmatter_field(char *nl, char *trim_ln, ParsedPrompt *pp) 
 		return nl + 1;
 	}
 	*colon = 0;
-	char *key = r_str_trim_dup (trim_ln); // we can just strncmp instead of strdup and null byte the colon, reduce as much as possible the memory accesses here
+	char *key = r_str_trim_dup (trim_ln); // AITODO we can just strncmp instead of strdup and null byte the colon, reduce as much as possible the memory accesses here
 	char *val = r_str_trim_dup (colon + 1);
 	if (!strcmp (key, "description")) {
 		pp->desc = val;
+		val = NULL;
 	} else if (!strcmp (key, "user_template") && val[0] == '|') {
 		RStrBuf *sb = r_strbuf_new ("");
 		char *p = nl + 1;
@@ -268,7 +264,6 @@ void prompts_registry_init(ServerState *ss) {
 		return;
 	}
 	RList *paths = r_list_newf (free);
-
 	if (ss->prompts_dir) {
 		RList *entries = r_str_split_duplist (ss->prompts_dir, ":", true);
 		if (entries) {
@@ -279,7 +274,6 @@ void prompts_registry_init(ServerState *ss) {
 				if (exp) {
 					r_list_append (paths, exp);
 				} else {
-					// If r_file_home fails, try direct path
 					r_list_append (paths, strdup (e));
 				}
 			}
@@ -345,26 +339,26 @@ static PromptSpec *prompts_find(const ServerState *ss, const char *nm) {
 
 char *prompts_build_list_json(const ServerState *ss, const char *cursor, int pagesz) {
 	PromptRegistry *reg = (ss && ss->prompts)? (PromptRegistry *)ss->prompts: NULL;
-	int sidx = 0;
-	if (cursor) {
-		sidx = atoi (cursor);
-		if (sidx < 0) {
-			sidx = 0;
-		}
-	}
-	int total = reg? r_list_length (reg->lst): 0;
-	int eidx = sidx + pagesz;
-	if (eidx > total) {
-		eidx = total;
-	}
-
+	int total = 0;
+	int eidx = 0;
 	PJ *pj = pj_new ();
 	pj_o (pj);
 	pj_k (pj, "prompts");
 	pj_a (pj);
-
-	int idx = 0;
 	if (reg) {
+		int idx = 0;
+		int total = r_list_length (reg->lst);
+		int sidx = 0;
+		if (cursor) {
+			sidx = atoi (cursor);
+			if (sidx < 0) {
+				sidx = 0;
+			}
+		}
+		eidx = sidx + pagesz;
+		if (eidx > total) {
+			eidx = total;
+		}
 		RListIter *it;
 		PromptSpec *p;
 		r_list_foreach (reg->lst, it, p) {
