@@ -178,36 +178,31 @@ static char *parse_args_block(char *line_ptr, ParsedPrompt *pp) {
 	return line_ptr;
 }
 
-static char *parse_frontmatter_field(char *nl, char *trim_ln, ParsedPrompt *pp) {
-	char *colon = strchr (trim_ln, ':');
-	if (!colon) {
-		return nl + 1;
-	}
-	*colon = 0;
-	char *key = r_str_trim_dup (trim_ln); // AITODO we can just strncmp instead of strdup and null byte the colon, reduce as much as possible the memory accesses here
-	char *val = r_str_trim_dup (colon + 1);
-	if (!strcmp (key, "description")) {
-		pp->desc = val;
-		val = NULL;
-	} else if (!strcmp (key, "user_template") && val[0] == '|') {
-		RStrBuf *sb = r_strbuf_new ("");
-		char *p = nl + 1;
-		while (*p) {
-			char *next_nl = strchr (p, '\n');
-			if (!next_nl) {
-				r_strbuf_append (sb, p);
-				p += strlen (p);
-				break;
+static char *parse_frontmatter_field(char *nl, char *line, ParsedPrompt *pp) {
+	char *colon = strchr (line, ':');
+	if (colon) {
+		size_t keylen = colon - line;
+		char *val = colon + 1;
+		if (keylen == strlen ("description") && r_str_startswith (line, "description")) {
+			pp->desc = strdup (val);
+		} else if (keylen == strlen ("user_template") && r_str_startswith (line, "user_template")) {
+			RStrBuf *sb = r_strbuf_new ("");
+			char *p = nl + 1;
+			while (*p) {
+				char *next_nl = strchr (p, '\n');
+				if (next_nl) {
+					r_strbuf_append_n (sb, p, next_nl - p);
+					r_strbuf_append (sb, "\n");
+					p = next_nl + 1;
+				} else {
+					r_strbuf_append (sb, p);
+					p += strlen (p);
+				}
 			}
-			*next_nl = '\0';
-			r_strbuf_appendf (sb, "%s\n", p);
-			p = next_nl + 1;
+			pp->user_template = r_strbuf_drain (sb);
+			nl = p - 1;
 		}
-		pp->user_template = r_strbuf_drain (sb);
-		nl = p - 1;
 	}
-	free (val);
-	free (key);
 	return nl + 1;
 }
 
