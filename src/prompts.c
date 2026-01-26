@@ -1,44 +1,17 @@
-/* r2mcp - MIT - Copyright 2025 - pancake, dnakov */
+/* r2mcp - MIT - Copyright 2025-2026 - pancake, dnakov */
 
 #include "r2mcp.h"
 #include "prompts.h"
-#include <dirent.h>
-
-static char *expand_home(const char *path) {
-	if (path[0] == '~') {
-		char *home = getenv ("HOME");
-		if (home) {
-			return r_str_newf ("%s%s", home, path + 1);
-		}
-	}
-	return strdup (path);
-}
-
-static RList *list_files(const char *path) {
-	DIR *dir = opendir (path);
-	if (!dir) {
-		return NULL;
-	}
-	RList *list = r_list_newf (free);
-	struct dirent *entry;
-	while ((entry = readdir (dir))) {
-		if (strcmp (entry->d_name, ".") && strcmp (entry->d_name, "..")) {
-			r_list_append (list, strdup (entry->d_name));
-		}
-	}
-	closedir (dir);
-	return list;
-}
 
 typedef struct {
 	char *name;
-	char *description;
-	char *required;
+	char *desc;
+	char *req;
 } ParsedArg;
 
 typedef struct {
 	char *name;
-	char *description;
+	char *desc;
 	char *content;
 	char *user_template;
 	RList *args;
@@ -59,24 +32,6 @@ static char *json_text_msg(const char *role, const char *text) {
 	return pj_drain (pj);
 }
 
-static char *json_messages_obj2(char *m1, char *m2) {
-	RStrBuf *sb = r_strbuf_new ("{");
-	r_strbuf_append (sb, "\"messages\":[");
-	if (m1) {
-		r_strbuf_append (sb, m1);
-		if (m2) {
-			r_strbuf_append (sb, ",");
-		}
-	}
-	if (m2) {
-		r_strbuf_append (sb, m2);
-	}
-	r_strbuf_append (sb, "]}");
-	free (m1);
-	free (m2);
-	return r_strbuf_drain (sb);
-}
-
 static char *expand_template(const char *template, RJson *arguments) {
 	RStrBuf *sb = r_strbuf_new ("");
 	const char *p = template;
@@ -93,7 +48,7 @@ static char *expand_template(const char *template, RJson *arguments) {
 					const char *if_content = p;
 					const char *else_pos = strstr (p, "{else}");
 					const char *endif_pos = strstr (p, "{/if}");
-					if (val && *val) {
+					if (R_STR_ISNOTEMPTY (val)) {
 						const char *end_content = else_pos? else_pos: endif_pos;
 						if (end_content) {
 							r_strbuf_append_n (sb, if_content, end_content - if_content);
@@ -138,152 +93,159 @@ static char *expand_template(const char *template, RJson *arguments) {
 	return r_strbuf_drain (sb);
 }
 
-static char *render_loaded(const PromptSpec *spec, RJson *arguments) {
+static char *render_loaded(const PromptSpec *spec, RJson *args) {
 	ParsedPrompt *pp = (ParsedPrompt *)spec->render_data;
 	char *user = NULL;
 	if (pp->user_template) {
-		user = expand_template (pp->user_template, arguments);
+		user = expand_template (pp->user_template, args);
 	}
 	char *m1 = json_text_msg ("system", pp->content);
 	char *m2 = user? json_text_msg ("user", user): NULL;
-	char *out = json_messages_obj2 (m1, m2);
+	RStrBuf *sb = r_strbuf_new ("{");
+	r_strbuf_append (sb, "\"messages\":[");
+	if (m1) {
+		r_strbuf_append (sb, m1);
+	}
+	if (m2) {
+		const char *comma = m1? ",": "";
+		r_strbuf_appendf (sb, "%s%s", comma, m2);
+	}
+	r_strbuf_append (sb, "]}");
+	free (m1);
+	free (m2);
 	free (user);
-	return out;
+	return r_strbuf_drain (sb);
+}
+
+static PromptSpec *spec_from_prompt(ParsedPrompt *pp) {
+	PromptSpec *spec = R_NEW (PromptSpec);
+	spec->name = pp->name;
+	spec->description = pp->desc;
+	spec->nargs = pp->args? r_list_length (pp->args): 0;
+	spec->args = calloc (spec->nargs + 1, sizeof (PromptArg));
+	int i = 0;
+	RListIter *it;
+	ParsedArg *pa;
+	r_list_foreach (pp->args, it, pa) {
+		spec->args[i].name = pa->name;
+		spec->args[i].description = pa->desc;
+		spec->args[i].required = pa->req && !strcmp (pa->req, "true");
+		i++;
+	}
+	spec->render = render_loaded;
+	spec->render_data = pp;
+	return spec;
+}
+
+static char *parse_args_block(char *line_ptr, ParsedPrompt *pp) {
+	RList *args = r_list_newf (free);
+	while (*line_ptr) {
+		char *nl = strchr (line_ptr, '\n');
+		if (!nl) {
+			break;
+		}
+		*nl = '\0';
+		r_str_trim (line_ptr);
+		if (line_ptr[0] != '-') {
+			pp->args = args;
+			return line_ptr;
+		}
+		char *colon = strchr (line_ptr + 1, ':');
+		if (colon) {
+			*colon = 0;
+			ParsedArg *arg = R_NEW0 (ParsedArg);
+			char *key = r_str_trim_dup (line_ptr + 1);
+			char *val = r_str_trim_dup (colon + 1);
+			if (!strcmp (key, "name")) {
+				arg->name = val;
+			} else if (!strcmp (key, "description")) {
+				arg->desc = val;
+			} else if (!strcmp (key, "required")) {
+				arg->req = val;
+			} else {
+				free (val);
+			}
+			free (key);
+			if (arg->name) {
+				r_list_append (args, arg);
+			} else {
+				free (arg);
+			}
+		}
+		line_ptr = nl + 1;
+	}
+	pp->args = args;
+	return line_ptr;
+}
+
+static char *parse_frontmatter_field(char *nl, char *line, ParsedPrompt *pp) {
+	char *colon = strchr (line, ':');
+	if (colon) {
+		size_t keylen = colon - line;
+		char *val = colon + 1;
+		if (keylen == strlen ("description") && r_str_startswith (line, "description")) {
+			pp->desc = strdup (val);
+		} else if (keylen == strlen ("user_template") && r_str_startswith (line, "user_template")) {
+			RStrBuf *sb = r_strbuf_new ("");
+			char *p = nl + 1;
+			while (*p) {
+				char *next_nl = strchr (p, '\n');
+				if (next_nl) {
+					r_strbuf_append_n (sb, p, next_nl - p);
+					r_strbuf_append (sb, "\n");
+					p = next_nl + 1;
+				} else {
+					r_strbuf_append (sb, p);
+					p += strlen (p);
+				}
+			}
+			pp->user_template = r_strbuf_drain (sb);
+			nl = p - 1;
+		}
+	}
+	return nl + 1;
 }
 
 static ParsedPrompt *parse_r2ai_md(const char *path) {
-	size_t size;
-	char *data = r_file_slurp (path, &size);
-	if (!data) {
+	size_t sz;
+	char *data = r_file_slurp (path, &sz);
+	if (!data || sz < 4 || !r_str_startswith (data, "---\n")) {
+		free (data);
+		return NULL;
+	}
+	char *end = strstr (data + 4, "\n---\n");
+	if (!end) {
+		free (data);
 		return NULL;
 	}
 	ParsedPrompt *pp = R_NEW0 (ParsedPrompt);
-	const char *basename = r_file_basename (path);
-	char *name_dup = strdup (basename);
-	char *dot = strstr (name_dup, ".r2ai.md");
+	pp->name = strdup (r_file_basename (path));
+	char *dot = strstr (pp->name, ".r2ai.md");
 	if (dot) {
 		*dot = 0;
 	}
-	pp->name = name_dup;
-	char *p = data;
-	if (size < 4 || strncmp (p, "---\n", 4)) {
-		goto fail;
-	}
-	p += 4;
-	char *end = strstr (p, "\n---\n");
-	if (!end) {
-		goto fail;
-	}
 	*end = 0;
-	char *front = p;
-	p = end + 5;
-	pp->content = r_str_trim_dup (p);
-	char *front_copy = strdup (front);
-	char *line = strtok (front_copy, "\n");
-	int in_args = 0;
-	RList *args = NULL;
-	while (line) {
-		char *trimmed_line = r_str_trim_dup (line);
-		if (!*trimmed_line) {
-			free (trimmed_line);
-			line = strtok (NULL, "\n");
-			continue;
+	pp->content = r_str_trim_dup (end + 5);
+	char *p = data + 4;
+	while (*p) {
+		char *nl = strchr (p, '\n');
+		if (!nl) {
+			break;
 		}
-		if (!strcmp (trimmed_line, "args:")) {
-			in_args = 1;
-			args = r_list_newf (free);
-			free (trimmed_line);
-			line = strtok (NULL, "\n");
-			continue;
+		*nl = '\0';
+		r_str_trim (p);
+		if (!strcmp (p, "args:")) {
+			p = parse_args_block (nl + 1, pp);
+		} else {
+			p = parse_frontmatter_field (nl, p, pp);
 		}
-		if (in_args) {
-			if (trimmed_line[0] == '-') {
-				char *arg_line = trimmed_line + 1;
-				char *trimmed_arg = r_str_trim_dup (arg_line);
-				ParsedArg *arg = R_NEW0 (ParsedArg);
-				char *colon = strchr (trimmed_arg, ':');
-				if (colon) {
-					*colon = 0;
-					char *key = r_str_trim_dup (trimmed_arg);
-					char *value = r_str_trim_dup (colon + 1);
-					if (!strcmp (key, "name")) {
-						arg->name = value;
-					} else if (!strcmp (key, "description")) {
-						arg->description = value;
-					} else if (!strcmp (key, "required")) {
-						arg->required = value;
-					} else {
-						free (value);
-					}
-					free (key);
-				}
-				free (trimmed_arg);
-				if (arg->name) {
-					r_list_append (args, arg);
-				} else {
-					free (arg);
-				}
-			} else {
-				in_args = 0;
-			}
-		}
-		if (!in_args) {
-			char *colon = strchr (trimmed_line, ':');
-			if (colon) {
-				*colon = 0;
-				char *key = r_str_trim_dup (trimmed_line);
-				char *value = r_str_trim_dup (colon + 1);
-				if (!strcmp (key, "description")) {
-					pp->description = value;
-				} else if (!strcmp (key, "user_template")) {
-					if (value[0] == '|') {
-						RStrBuf *sb = r_strbuf_new ("");
-						free (value);
-						line = strtok (NULL, "\n");
-						while (line) {
-							char *trimmed = r_str_trim_dup (line);
-							if (!*trimmed) {
-								free (trimmed);
-								line = strtok (NULL, "\n");
-								continue;
-							}
-							r_strbuf_append (sb, trimmed);
-							r_strbuf_append (sb, "\n");
-							free (trimmed);
-							line = strtok (NULL, "\n");
-						}
-						pp->user_template = r_strbuf_drain (sb);
-					} else {
-						free (value);
-					}
-				} else {
-					free (value);
-				}
-				free (key);
-			}
-		}
-		free (trimmed_line);
-		line = strtok (NULL, "\n");
 	}
-	pp->args = args;
-	free (front_copy);
 	free (data);
 	return pp;
-fail:
-	free (pp->name);
-	free (pp->description);
-	free (pp->content);
-	free (pp->user_template);
-	r_list_free (pp->args);
-	free (pp);
-	free (data);
-	return NULL;
 }
 
-// ---------- Registry ----------
-
 typedef struct {
-	RList *list; // of PromptSpec*(borrowed pointers to builtin entries)
+	RList /*<PromptSpec*>*/ *lst;
 } PromptRegistry;
 
 void prompts_registry_init(ServerState *ss) {
@@ -291,61 +253,57 @@ void prompts_registry_init(ServerState *ss) {
 		return;
 	}
 	PromptRegistry *reg = R_NEW0 (PromptRegistry);
-	reg->list = r_list_new ();
-	if (!reg->list) {
+	reg->lst = r_list_new ();
+	if (!reg->lst) {
 		free (reg);
 		return;
 	}
-	// Load prompts from directories
-	char **dirs_to_use = NULL;
-	char *default_dirs[] = { "prompts", "~/.config/r2ai/prompts", NULL };
-	char *custom_dirs[] = { ss->prompts_dir, NULL };
-
+	RList *paths = r_list_newf (free);
 	if (ss->prompts_dir) {
-		dirs_to_use = custom_dirs;
+		RList *entries = r_str_split_duplist (ss->prompts_dir, ":", true);
+		if (entries) {
+			RListIter *it;
+			char *e;
+			r_list_foreach (entries, it, e) {
+				char *exp = r_file_home (e);
+				if (exp) {
+					r_list_append (paths, exp);
+				} else {
+					r_list_append (paths, strdup (e));
+				}
+			}
+			r_list_free (entries);
+		}
 	} else {
-		dirs_to_use = default_dirs;
+		r_list_append (paths, strdup ("prompts"));
+		r_list_append (paths, r_file_home ("~/.config/r2ai/prompts"));
+		r_list_append (paths, r_file_home ("~/.config/r2mcp/prompts"));
 	}
 
-	for (char **dir = dirs_to_use; *dir; dir++) {
-		char *path = expand_home (*dir);
-		if (!path) {
-			continue;
-		}
-		RList *files = list_files (path);
+	// Iterate through all directories and load prompt files
+	char *path;
+	RListIter *it;
+	r_list_foreach (paths, it, path) {
+		RList *files = r_sys_dir (path);
 		if (files) {
-			RListIter *it;
+			RListIter *fit;
 			char *file;
-			r_list_foreach (files, it, file) {
-				if (r_str_endswith (file, ".r2ai.md")) {
-					char *full_path = r_str_newf ("%s/%s", path, file);
-					ParsedPrompt *pp = parse_r2ai_md (full_path);
-					if (pp) {
-						PromptSpec *spec = R_NEW (PromptSpec);
-						spec->name = pp->name;
-						spec->description = pp->description;
-						spec->nargs = pp->args ? r_list_length (pp->args) : 0;
-						spec->args = calloc (spec->nargs + 1, sizeof (PromptArg));
-						int i = 0;
-						RListIter *ait;
-						ParsedArg *pa;
-						r_list_foreach (pp->args, ait, pa) {
-							spec->args[i].name = pa->name;
-							spec->args[i].description = pa->description;
-							spec->args[i].required = pa->required && !strcmp (pa->required, "true");
-							i++;
-						}
-						spec->render = render_loaded;
-						spec->render_data = pp;
-						r_list_append (reg->list, spec);
-					}
-					free (full_path);
+			r_list_foreach (files, fit, file) {
+				if (*file == '.' || !r_str_endswith (file, ".r2ai.md")) {
+					continue;
 				}
+				char *full_path = r_str_newf ("%s/%s", path, file);
+				ParsedPrompt *pp = parse_r2ai_md (full_path);
+				if (pp) {
+					PromptSpec *spec = spec_from_prompt (pp);
+					r_list_append (reg->lst, spec);
+				}
+				free (full_path);
 			}
 			r_list_free (files);
 		}
-		free (path);
 	}
+	r_list_free (paths);
 	ss->prompts = reg;
 }
 
@@ -354,94 +312,83 @@ void prompts_registry_fini(ServerState *ss) {
 		return;
 	}
 	PromptRegistry *reg = (PromptRegistry *)ss->prompts;
-	r_list_free (reg->list);
+	r_list_free (reg->lst);
 	free (reg);
 	ss->prompts = NULL;
 }
 
-static PromptSpec *prompts_find(const ServerState *ss, const char *name) {
-	if (!ss || !ss->prompts || !name) {
+static PromptSpec *prompts_find(const ServerState *ss, const char *nm) {
+	if (!ss || !ss->prompts || !nm) {
 		return NULL;
 	}
 	PromptRegistry *reg = (PromptRegistry *)ss->prompts;
 	RListIter *it;
 	PromptSpec *p;
-	r_list_foreach (reg->list, it, p) {
-		if (!strcmp (p->name, name)) {
+	r_list_foreach (reg->lst, it, p) {
+		if (!strcmp (p->name, nm)) {
 			return p;
 		}
 	}
 	return NULL;
 }
 
-char *prompts_build_list_json(const ServerState *ss, const char *cursor, int page_size) {
-	if (!ss || !ss->prompts) {
-		PJ *pj = pj_new ();
-		pj_o (pj);
-		pj_k (pj, "prompts");
-		pj_a (pj);
-		pj_end (pj); // end array
-		pj_end (pj); // end object
-		return pj_drain (pj);
-	}
-
-	PromptRegistry *reg = (PromptRegistry *)ss->prompts;
-
-	int start_index = 0;
-	if (cursor) {
-		start_index = atoi (cursor);
-		if (start_index < 0) {
-			start_index = 0;
-		}
-	}
-	int total = r_list_length (reg->list);
-	int end_index = start_index + page_size;
-	if (end_index > total) {
-		end_index = total;
-	}
-
+char *prompts_build_list_json(const ServerState *ss, const char *cursor, int pagesz) {
+	PromptRegistry *reg = (ss && ss->prompts)? (PromptRegistry *)ss->prompts: NULL;
+	int total = 0;
+	int eidx = 0;
 	PJ *pj = pj_new ();
 	pj_o (pj);
 	pj_k (pj, "prompts");
 	pj_a (pj);
-
-	RListIter *it;
-	PromptSpec *p;
-	int idx = 0;
-	r_list_foreach (reg->list, it, p) {
-		if (idx >= start_index && idx < end_index) {
-			pj_o (pj);
-			pj_ks (pj, "name", p->name);
-			pj_ks (pj, "description", p->description? p->description: "");
-			pj_k (pj, "arguments");
-			pj_a (pj);
-			for (int i = 0; i < p->nargs; i++) {
+	if (reg) {
+		int idx = 0;
+		int total = r_list_length (reg->lst);
+		int sidx = 0;
+		if (cursor) {
+			sidx = atoi (cursor);
+			if (sidx < 0) {
+				sidx = 0;
+			}
+		}
+		eidx = sidx + pagesz;
+		if (eidx > total) {
+			eidx = total;
+		}
+		RListIter *it;
+		PromptSpec *p;
+		r_list_foreach (reg->lst, it, p) {
+			if (idx >= sidx && idx < eidx) {
 				pj_o (pj);
-				pj_ks (pj, "name", p->args[i].name);
-				pj_ks (pj, "description", p->args[i].description? p->args[i].description: "");
-				pj_kb (pj, "required", p->args[i].required);
+				pj_ks (pj, "name", p->name);
+				pj_ks (pj, "description", p->description? p->description: "");
+				pj_k (pj, "arguments");
+				pj_a (pj);
+				int i;
+				for (i = 0; i < p->nargs; i++) {
+					pj_o (pj);
+					pj_ks (pj, "name", p->args[i].name);
+					pj_ks (pj, "description", p->args[i].description? p->args[i].description: "");
+					pj_kb (pj, "required", p->args[i].required);
+					pj_end (pj);
+				}
+				pj_end (pj);
 				pj_end (pj);
 			}
-			pj_end (pj); // end arguments array
-			pj_end (pj); // end prompt object
+			idx++;
 		}
-		idx++;
 	}
 
 	pj_end (pj); // end prompts array
-	if (end_index < total) {
+	if (eidx < total) {
 		char buf[32];
-		snprintf (buf, sizeof (buf), "%d", end_index);
+		snprintf (buf, sizeof (buf), "%d", eidx);
 		pj_ks (pj, "nextCursor", buf);
 	}
 	pj_end (pj); // end root object
 	return pj_drain (pj);
 }
 
-char *prompts_get_json(const ServerState *ss, const char *name, RJson *arguments) {
-	PromptSpec *spec = prompts_find (ss, name);
-	if (!spec) {
-		return NULL;
-	}
-	return spec->render (spec, arguments);
+char *prompts_get_json(const ServerState *ss, const char *nm, RJson *args) {
+	PromptSpec *spec = prompts_find (ss, nm);
+	return spec? spec->render (spec, args): NULL;
 }

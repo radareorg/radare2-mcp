@@ -73,12 +73,16 @@ user-install: all
 	$(INSTALL_DIR) $(R2PM_BINDIR)
 	$(INSTALL_PROGRAM) $(TARGET) $(R2PM_BINDIR)/r2mcp
 	$(INSTALL_PROGRAM) $(LIBTARGET) $(R2PM_PLUGDIR)
+	$(INSTALL_DIR) $(HOME)/.config/r2mcp/prompts
+	cp -f ../prompts/*.r2ai.md $(HOME)/.config/r2mcp/prompts/
 
 doc:
 	cat INSTALL.md
 
 user-uninstall:
-	rm -f $(R2_BINDIR)/bin/r2mcp
+	rm -f $(R2PM_BINDIR)/r2mcp
+	rm -f $(R2PM_PLUGDIR)/$(LIBTARGET)
+	rm -rf $(HOME)/.config/r2mcp/prompts
 
 indent fmt:
 	clang-format-radare2 *.c
