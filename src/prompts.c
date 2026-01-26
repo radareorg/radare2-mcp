@@ -124,6 +124,26 @@ static char *render_loaded(const PromptSpec *spec, RJson *arguments) {
 	return out;
 }
 
+static PromptSpec *create_prompt_spec_from_parsed(ParsedPrompt *pp) {
+	PromptSpec *spec = R_NEW (PromptSpec);
+	spec->name = pp->name;
+	spec->description = pp->description;
+	spec->nargs = pp->args? r_list_length (pp->args): 0;
+	spec->args = calloc (spec->nargs + 1, sizeof (PromptArg));
+	int i = 0;
+	RListIter *ait;
+	ParsedArg *pa;
+	r_list_foreach (pp->args, ait, pa) {
+		spec->args[i].name = pa->name;
+		spec->args[i].description = pa->description;
+		spec->args[i].required = pa->required && !strcmp (pa->required, "true");
+		i++;
+	}
+	spec->render = render_loaded;
+	spec->render_data = pp;
+	return spec;
+}
+
 static ParsedPrompt *parse_r2ai_md(const char *path) {
 	size_t size;
 	char *data = r_file_slurp (path, &size);
@@ -139,7 +159,7 @@ static ParsedPrompt *parse_r2ai_md(const char *path) {
 	}
 	pp->name = name_dup;
 	char *p = data;
-	if (size < 4 || strncmp (p, "---\n", 4)) {
+	if (size < 4 || !r_str_startswith (p, "---\n")) {
 		goto fail;
 	}
 	p += 4;
@@ -149,24 +169,28 @@ static ParsedPrompt *parse_r2ai_md(const char *path) {
 	}
 	*end = 0;
 	char *front = p;
-	p = end + 5;
-	pp->content = r_str_trim_dup (p);
+	char *content_start = end + 5;
+	pp->content = r_str_trim_dup (content_start);
 	char *front_copy = strdup (front);
-	char *line = strtok (front_copy, "\n");
+	char *line_ptr = front_copy;
 	int in_args = 0;
 	RList *args = NULL;
-	while (line) {
-		char *trimmed_line = r_str_trim_dup (line);
+	while (*line_ptr) {
+		char *newline = strchr (line_ptr, '\n');
+		if (newline) {
+			*newline = '\0';
+		}
+		char *trimmed_line = r_str_trim_dup (line_ptr);
 		if (!*trimmed_line) {
 			free (trimmed_line);
-			line = strtok (NULL, "\n");
+			line_ptr = newline? newline + 1: line_ptr + strlen (line_ptr);
 			continue;
 		}
 		if (!strcmp (trimmed_line, "args:")) {
 			in_args = 1;
 			args = r_list_newf (free);
 			free (trimmed_line);
-			line = strtok (NULL, "\n");
+			line_ptr = newline? newline + 1: line_ptr + strlen (line_ptr);
 			continue;
 		}
 		if (in_args) {
@@ -212,18 +236,22 @@ static ParsedPrompt *parse_r2ai_md(const char *path) {
 					if (value[0] == '|') {
 						RStrBuf *sb = r_strbuf_new ("");
 						free (value);
-						line = strtok (NULL, "\n");
-						while (line) {
-							char *trimmed = r_str_trim_dup (line);
+						line_ptr = newline? newline + 1: line_ptr + strlen (line_ptr);
+						while (*line_ptr) {
+							char *next_newline = strchr (line_ptr, '\n');
+							if (next_newline) {
+								*next_newline = '\0';
+							}
+							char *trimmed = r_str_trim_dup (line_ptr);
 							if (!*trimmed) {
 								free (trimmed);
-								line = strtok (NULL, "\n");
+								line_ptr = next_newline? next_newline + 1: line_ptr + strlen (line_ptr);
 								continue;
 							}
 							r_strbuf_append (sb, trimmed);
 							r_strbuf_append (sb, "\n");
 							free (trimmed);
-							line = strtok (NULL, "\n");
+							line_ptr = next_newline? next_newline + 1: line_ptr + strlen (line_ptr);
 						}
 						pp->user_template = r_strbuf_drain (sb);
 					} else {
@@ -236,7 +264,7 @@ static ParsedPrompt *parse_r2ai_md(const char *path) {
 			}
 		}
 		free (trimmed_line);
-		line = strtok (NULL, "\n");
+		line_ptr = newline? newline + 1: line_ptr + strlen (line_ptr);
 	}
 	pp->args = args;
 	free (front_copy);
@@ -280,19 +308,18 @@ void prompts_registry_init(ServerState *ss) {
 			RListIter *it;
 			char *path_part;
 			r_list_foreach (path_parts, it, path_part) {
-				if (path_part && *path_part) {
-					char *expanded = r_file_home (path_part);
-					if (expanded) {
-						r_list_append (dirs_list, expanded);
-					} else {
-						// If r_file_home fails, try direct path
-						r_list_append (dirs_list, strdup (path_part));
-					}
+				char *expanded = r_file_home (path_part);
+				if (expanded) {
+					r_list_append (dirs_list, expanded);
+				} else {
+					// If r_file_home fails, try direct path
+					r_list_append (dirs_list, strdup (path_part));
 				}
 			}
 			r_list_free (path_parts);
 		}
 	} else {
+		// AITODO: this is duplicated, just put that shit above, right before ss->prompts_dir, assign that to a local variable and if its null just put the defaults path in the list to be iterated to avoid repeating code. i prefer to have a path_parts (find a better name without lowerdashes) as rlist to be reused for both cases than the same loop twice with different implementations
 		// Default directories when no custom path specified
 		const char *default_paths[] = { "prompts", "~/.config/r2ai/prompts", "~/.config/r2mcp/prompts", NULL };
 		for (int i = 0; default_paths[i]; i++) {
@@ -312,29 +339,14 @@ void prompts_registry_init(ServerState *ss) {
 			RListIter *it;
 			char *file;
 			r_list_foreach (files, it, file) {
-				if (!strcmp (file, ".") || !strcmp (file, "..")) {
+				if (*file == '.') {
 					continue;
 				}
-				if (*file != '.' && r_str_endswith (file, ".r2ai.md")) {
+				if (r_str_endswith (file, ".r2ai.md")) {
 					char *full_path = r_str_newf ("%s/%s", path, file);
 					ParsedPrompt *pp = parse_r2ai_md (full_path);
 					if (pp) {
-						PromptSpec *spec = R_NEW (PromptSpec);
-						spec->name = pp->name;
-						spec->description = pp->description;
-						spec->nargs = pp->args ? r_list_length (pp->args) : 0;
-						spec->args = calloc (spec->nargs + 1, sizeof (PromptArg));
-						int i = 0;
-						RListIter *ait;
-						ParsedArg *pa;
-						r_list_foreach (pp->args, ait, pa) {
-							spec->args[i].name = pa->name;
-							spec->args[i].description = pa->description;
-							spec->args[i].required = pa->required && !strcmp (pa->required, "true");
-							i++;
-						}
-						spec->render = render_loaded;
-						spec->render_data = pp;
+						PromptSpec *spec = create_prompt_spec_from_parsed (pp);
 						r_list_append (reg->list, spec);
 					}
 					free (full_path);
