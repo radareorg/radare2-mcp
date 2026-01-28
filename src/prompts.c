@@ -2,6 +2,7 @@
 
 #include "r2mcp.h"
 #include "prompts.h"
+#include "utils.inc.c"
 
 typedef struct {
 	char *name;
