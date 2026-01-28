@@ -54,6 +54,22 @@ static bool tool_allowed_by_whitelist(const ServerState *ss, const char *name) {
 	return false;
 }
 
+// Check if a tool is disabled via blacklist. If ss->disabled_tools is NULL,
+// no tools are disabled. If the tool name is in the blacklist, return false.
+static bool tool_not_disabled(const ServerState *ss, const char *name) {
+	if (!ss || !ss->disabled_tools) {
+		return true;
+	}
+	RListIter *it;
+	const char *s;
+	r_list_foreach (ss->disabled_tools, it, s) {
+		if (!strcmp (s, name)) {
+			return false;
+		}
+	}
+	return true;
+}
+
 static inline ToolMode current_mode(const ServerState *ss) {
 	if (ss->http_mode) {
 		return TOOL_MODE_HTTP;
@@ -79,7 +95,7 @@ static RList *tools_filtered_for_mode(const ServerState *ss) {
 	}
 	for (size_t i = 0; tool_specs[i].name; i++) {
 		ToolSpec *t = &tool_specs[i];
-		if (tool_matches_mode (t, mode) && tool_allowed_by_whitelist (ss, t->name)) {
+		if (tool_matches_mode (t, mode) && tool_allowed_by_whitelist (ss, t->name) && tool_not_disabled (ss, t->name)) {
 			r_list_append (out, t); // reference only
 		}
 	}
@@ -91,6 +107,9 @@ bool tools_is_tool_allowed(const ServerState *ss, const char *name) {
 		return true;
 	}
 	if (!name) {
+		return false;
+	}
+	if (!tool_not_disabled (ss, name)) {
 		return false;
 	}
 	ToolMode mode = current_mode (ss);
@@ -179,7 +198,7 @@ void tools_print_table(const ServerState *ss) {
 
 	for (size_t i = 0; tool_specs[i].name; i++) {
 		ToolSpec *t = &tool_specs[i];
-		if (!tool_allowed_by_whitelist (ss, t->name)) {
+		if (!tool_allowed_by_whitelist (ss, t->name) || !tool_not_disabled (ss, t->name)) {
 			continue;
 		}
 		char modes_buf[8];

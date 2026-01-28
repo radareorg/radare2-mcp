@@ -36,6 +36,7 @@ void r2mcp_help(void) {
 		" -l [file]  append debug logs to this file\n"
 		" -s [dir]   enable sandbox mode; only allow files under [dir]\n"
 		" -e [tool]  enable only the specified tool (repeatable)\n"
+		" -D [tool]  disable the specified tool (repeatable)\n"
 		" -h         show this help\n"
 		" -r         enable the dangerous runCommand tool\n"
 		" -R         enable read-only mode (expose only non-mutating tools)\n"
@@ -81,8 +82,9 @@ int r2mcp_main(int argc, const char **argv) {
 	bool load_prompts = true;
 	bool ignore_analysis_level = false;
 	const char *dsl_tests = NULL;
+	RList *disabled_tools = NULL;
 	RGetopt opt;
-	r_getopt_init (&opt, argc, argv, "hmvpd:nc:u:l:s:rite:RT:S:P:N");
+	r_getopt_init (&opt, argc, argv, "hmvpd:nc:u:l:s:rite:D:RT:S:P:N");
 	int c;
 	while ((c = r_getopt_next (&opt)) != -1) {
 		switch (c) {
@@ -150,6 +152,14 @@ int r2mcp_main(int argc, const char **argv) {
 				r_list_append (enabled_tools, strdup (opt.arg));
 			}
 			break;
+		case 'D':
+			if (opt.arg) {
+				if (!disabled_tools) {
+					disabled_tools = r_list_newf (free);
+				}
+				r_list_append (disabled_tools, strdup (opt.arg));
+			}
+			break;
 		case 'P':
 			prompts_dir = strdup (opt.arg);
 			break;
@@ -192,6 +202,7 @@ int r2mcp_main(int argc, const char **argv) {
 		.client_capabilities = NULL,
 		.client_info = NULL,
 		.enabled_tools = enabled_tools,
+		.disabled_tools = disabled_tools,
 	};
 	/* Enable logging */
 	r2mcp_log_pub (&ss, "r2mcp starting");
@@ -246,6 +257,9 @@ int r2mcp_main(int argc, const char **argv) {
 		if (ss.enabled_tools) {
 			r_list_free (ss.enabled_tools);
 		}
+		if (ss.disabled_tools) {
+			r_list_free (ss.disabled_tools);
+		}
 		return r == 0? 0: 2;
 	}
 	RListIter *iter;
@@ -267,6 +281,9 @@ int r2mcp_main(int argc, const char **argv) {
 	free (ss.prompts_dir);
 	if (ss.enabled_tools) {
 		r_list_free (ss.enabled_tools);
+	}
+	if (ss.disabled_tools) {
+		r_list_free (ss.disabled_tools);
 	}
 	(void)0;
 	return 0;

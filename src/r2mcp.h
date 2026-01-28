@@ -67,6 +67,12 @@ typedef struct {
 	 * strings and the list should be created with `r_list_newf(free)`.
 	 */
 	RList *enabled_tools;
+	/* Optional blacklist of tool names disabled via command line -D options.
+	 * Tools in this list will be excluded from the available tools regardless
+	 * of other settings. Items are heap-allocated strings and the list should
+	 * be created with `r_list_newf(free)`.
+	 */
+	RList *disabled_tools;
 	void *prompts; // registry of PromptSpec* (RList*), opaque here
 } ServerState;
 
