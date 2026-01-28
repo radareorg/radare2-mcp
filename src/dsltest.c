@@ -131,13 +131,13 @@ static int run_statement(ServerState *ss, char *stmt, RCore *core) {
 				if (text_end) {
 					char *text = r_str_ndup (text_start, text_end - text_start);
 					r_str_replace_in (text, -1, "\\n", "\n", true);
-					r_cons_printf (core->cons, "%s\n", text);
+					r_cons_printf ("%s\n", text);
 					free (text);
 				} else {
-					r_cons_printf (core->cons, "(malformed text in response)\n");
+					r_cons_printf ("(malformed text in response)\n");
 				}
 			} else {
-				r_cons_printf (core->cons, "(no text in response)\n");
+				r_cons_printf ("(no text in response)\n");
 			}
 		} else {
 			printf ("[DSL] %s -> %s\n", tool, res);
@@ -145,7 +145,7 @@ static int run_statement(ServerState *ss, char *stmt, RCore *core) {
 		free (res);
 	} else {
 		if (core) {
-			r_cons_printf (core->cons, "(no result)\n");
+			r_cons_printf ("(no result)\n");
 		} else {
 			printf ("[DSL] %s -> (no result)\n", tool);
 		}
