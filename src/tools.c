@@ -1,9 +1,8 @@
-/* r2mcp - MIT - Copyright 2025 - pancake */
+/* r2mcp - MIT - Copyright 2025-2026 - pancake */
 
 #include <r_core.h>
 #include "r2mcp.h"
 #include "tools.h"
-#include <r_util/pj.h>
 #include "utils.inc.c"
 #include "jsonrpc.h"
 
@@ -243,19 +242,24 @@ static char *filter_lines_by_regex(const char *input, const char *pattern) {
 	}
 	const char *line_begin = src;
 	const char *p = src;
+	size_t line_buf_size = 0;
+	char *line = NULL;
 	for (;;) {
 		if (*p == '\n' || *p == '\0') {
 			size_t len = (size_t) (p - line_begin);
-			char *line = (char *)malloc (len + 1);
-			if (!line) {
-				break;
+			if (len + 1 > line_buf_size) {
+				size_t new_size = len + 1;
+				line = realloc (line, new_size);
+				if (!line) {
+					break;
+				}
+				line_buf_size = new_size;
 			}
 			memcpy (line, line_begin, len);
 			line[len] = '\0';
 			if (r_regex_exec (&rx, line, 0, 0, 0) == 0) {
 				r_strbuf_appendf (sb, "%s\n", line);
 			}
-			free (line);
 			if (*p == '\0') {
 				break;
 			}
@@ -265,6 +269,7 @@ static char *filter_lines_by_regex(const char *input, const char *pattern) {
 		}
 		p++;
 	}
+	free (line);
 	r_regex_fini (&rx);
 	return r_strbuf_drain (sb);
 }
@@ -274,12 +279,18 @@ static char *filter_named_functions_only(const char *input) {
 	RStrBuf *sb = r_strbuf_new ("");
 	const char *line_begin = src;
 	const char *p = src;
+	size_t line_buf_size = 0;
+	char *line = NULL;
 	for (;;) {
 		if (*p == '\n' || *p == '\0') {
 			size_t len = (size_t) (p - line_begin);
-			char *line = (char *)malloc (len + 1);
-			if (!line) {
-				break;
+			if (len + 1 > line_buf_size) {
+				size_t new_size = len + 1;
+				line = realloc (line, new_size);
+				if (!line) {
+					break;
+				}
+				line_buf_size = new_size;
 			}
 			memcpy (line, line_begin, len);
 			line[len] = '\0';
@@ -293,7 +304,6 @@ static char *filter_named_functions_only(const char *input) {
 			if (is_named) {
 				r_strbuf_appendf (sb, "%s\n", line);
 			}
-			free (line);
 			if (*p == '\0') {
 				break;
 			}
@@ -303,6 +313,7 @@ static char *filter_named_functions_only(const char *input) {
 		}
 		p++;
 	}
+	free (line);
 	return r_strbuf_drain (sb);
 }
 
