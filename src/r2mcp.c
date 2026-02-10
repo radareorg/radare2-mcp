@@ -1,14 +1,10 @@
-/* r2mcp - MIT - Copyright 2025 - pancake, dnakov */
+/* r2mcp - MIT - Copyright 2025-2026 - pancake, dnakov */
 
 #include <r_core.h>
 #include <r_util/r_json.h>
 #include <r_util/pj.h>
 #include <r_util.h>
 #include <r_util/r_print.h>
-#include <stdio.h>
-#include <stdarg.h>
-#include <errno.h>
-#include <string.h>
 
 #include "config.h"
 #include "jsonrpc.h"
@@ -16,7 +12,6 @@
 #if defined(R2__UNIX__)
 #include <unistd.h>
 #include <fcntl.h>
-#include <sys/types.h>
 #include <sys/wait.h>
 #include <signal.h>
 #elif defined(R2__WINDOWS__)
@@ -38,10 +33,8 @@
 #define R2MCP_VERSION "1.5.4"
 #endif
 
-#define JSON_RPC_VERSION "2.0"
-#define MCP_VERSION "2024-11-05"
 #define READ_CHUNK_SIZE 32768
-#define LATEST_PROTOCOL_VERSION "2024-11-05"
+#define LATEST_PROTOCOL_VERSION "2025-06-18"
 
 #include "utils.inc.c"
 #include "r2api.inc.c"
@@ -51,15 +44,28 @@ void r2mcp_running_set(int value) {
 	running = value? 1: 0;
 }
 
+static bool is_valid_json_response(const char *str) {
+	if (!str || *str != '{') {
+		return false;
+	}
+	RJson *json = r_json_parse ((char *)str);
+	if (!json) {
+		return false;
+	}
+	r_json_free (json);
+	return true;
+}
+
 // Local I/O mode helper (moved from utils.inc.c to avoid unused warnings in other TUs)
 static void set_nonblocking_io(bool nonblocking) {
 #if defined(R2__UNIX__)
 	int flags = fcntl (STDIN_FILENO, F_GETFL, 0);
 	if (nonblocking) {
-		fcntl (STDIN_FILENO, F_SETFL, flags | O_NONBLOCK);
+		flags |= O_NONBLOCK;
 	} else {
-		fcntl (STDIN_FILENO, F_SETFL, flags & ~O_NONBLOCK);
+		flags &= ~O_NONBLOCK;
 	}
+	fcntl (STDIN_FILENO, F_SETFL, flags);
 	setvbuf (stdout, NULL, _IOLBF, 0);
 #elif defined(R2__WINDOWS__)
 	// Windows doesn't support POSIX fcntl/O_NONBLOCK on stdin reliably.
@@ -83,10 +89,8 @@ bool r2mcp_state_init(ServerState *ss) {
 		R_LOG_ERROR ("Failed to initialize radare2 core");
 		return false;
 	}
-
 	r2state_settings (core);
 	ss->rstate.core = core;
-
 	R_LOG_INFO ("Radare2 core initialized");
 	r_log_add_callback (logcb, ss);
 	return true;
@@ -397,6 +401,13 @@ static void send_response(ServerState *ss, const char *response) {
 	if (!response) {
 		return;
 	}
+
+	// Validate response is valid JSON before writing to stdout
+	if (!is_valid_json_response (response)) {
+		R_LOG_ERROR ("send_response: response is not valid JSON - dropping output");
+		return;
+	}
+
 	r2mcp_log (ss, ">>>");
 	r2mcp_log (ss, response);
 	size_t len = strlen (response);
@@ -416,6 +427,7 @@ static void process_mcp_message(ServerState *ss, const char *msg) {
 
 	RJson *request = r_json_parse ((char *)msg);
 	if (!request) {
+		R_LOG_ERROR ("process_mcp_message: received invalid JSON from client");
 		char *err = jsonrpc_error_response (-32700, "Parse error: invalid JSON", NULL, NULL);
 		send_response (ss, err);
 		free (err);
