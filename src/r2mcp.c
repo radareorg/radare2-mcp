@@ -14,6 +14,8 @@
 #include <fcntl.h>
 #include <sys/wait.h>
 #include <signal.h>
+#include <errno.h>
+#include <string.h>
 #elif defined(R2__WINDOWS__)
 #include <windows.h>
 #include <io.h>
@@ -410,10 +412,36 @@ static void send_response(ServerState *ss, const char *response) {
 	r2mcp_log (ss, ">>>");
 	r2mcp_log (ss, response);
 	size_t len = strlen (response);
-	(void) write (STDOUT_FILENO, response, len);
-	if (len == 0 || response[len - 1] != '\n') {
-		(void) write (STDOUT_FILENO, "\n", 1);
+	const bool needsnewline = len == 0 || response[len - 1] != '\n';
+
+	// Write response with proper error handling and partial write support
+	const char *ptr = response;
+	size_t remaining = len;
+	while (remaining > 0) {
+		ssize_t written = write (STDOUT_FILENO, ptr, remaining);
+		if (written <= 0) {
+			if (written == 0) {
+				// write() returned 0 - this is an error condition (e.g., invalid fd or pipe broken)
+				R_LOG_ERROR ("send_response: write returned 0 to stdout");
+				return;
+			}
+			if (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK) {
+				continue; // Retry on interrupt or temporary unavailable
+			}
+			R_LOG_ERROR ("send_response: write error to stdout: %s", strerror (errno));
+			return;
+		}
+		ptr += written;
+		remaining -= written;
 	}
+
+	if (needsnewline) {
+		const char nl = '\n';
+		if (write (STDOUT_FILENO, &nl, 1) < 0) {
+			R_LOG_ERROR ("send_response: write newline error: %s", strerror (errno));
+		}
+	}
+
 #if R2__UNIX__
 	fsync (STDOUT_FILENO);
 #endif
