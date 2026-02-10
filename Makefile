@@ -1,4 +1,4 @@
-SRC_TARGETS=all clean install user-install uninstall user-uninstall
+SRC_TARGETS=all clean install user-install uninstall user-uninstall asan
 
 $(SRC_TARGETS): src/Makefile
 	$(MAKE) -C src $@

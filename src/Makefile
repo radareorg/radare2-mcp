@@ -1,6 +1,12 @@
 CC?= gcc
 TARGET = r2mcp
 CFLAGS = -Wall -Wextra -g
+
+# AddressSanitizer build
+asan: CFLAGS += -fsanitize=address -fsanitize=undefined -g3 -O1
+asan: LDFLAGS += -fsanitize=address -fsanitize=undefined
+asan: clean $(TARGET)
+	@echo "✓ AddressSanitizer build complete."
 PKGCONFIG = pkg-config
 INSTALL_DIR?=install -d
 R2_LIBEXT=$(shell r2 -H R2_LIBEXT)
@@ -91,6 +97,7 @@ indent fmt:
 help:
 	@echo "Available targets:"
 	@echo "  all            - Build the server (default)"
+	@echo "  asan           - Build with AddressSanitizer (ASAN)"
 	@echo "  check_deps     - Check for required dependencies"
 	@echo "  clean          - Remove built binaries"
 	@echo "  install        - Install the server to /usr/local/bin"
