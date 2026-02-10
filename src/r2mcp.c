@@ -444,6 +444,8 @@ static void send_response(ServerState *ss, const char *response) {
 
 #if R2__UNIX__
 	fsync (STDOUT_FILENO);
+#elif R2__WINDOWS__
+	FlushFileBuffers (GetStdHandle (STD_OUTPUT_HANDLE));
 #endif
 }
 
