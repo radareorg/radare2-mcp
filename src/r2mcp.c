@@ -50,12 +50,15 @@ static bool is_valid_json_response(const char *str) {
 	if (!str || *str != '{') {
 		return false;
 	}
-	RJson *json = r_json_parse ((char *)str);
-	if (!json) {
-		return false;
+	char *copy = strdup (str);
+	RJson *json = r_json_parse (copy);
+	if (json) {
+		free (copy);
+		r_json_free (json);
+		return true;
 	}
-	r_json_free (json);
-	return true;
+	free (copy);
+	return false;
 }
 
 // Local I/O mode helper (moved from utils.inc.c to avoid unused warnings in other TUs)
@@ -305,8 +308,8 @@ static bool is_valid_mcp_method(const char *method) {
 	if (!method || !*method) {
 		return false;
 	}
-	// MCP method names must be lowercase, dot-separated strings
-	// Format: category/name or category/subcategory/name
+	// MCP method names must be lowercase letters with optional '/' or '.' separators
+	// Examples: initialize, ping, tools/list, notifications/initialized
 	for (int i = 0; method[i]; i++) {
 		char c = method[i];
 		if (c == '/' || c == '.') {
@@ -316,8 +319,7 @@ static bool is_valid_mcp_method(const char *method) {
 			return false;
 		}
 	}
-	// Must contain at least one '/' to be valid
-	return strchr (method, '/') != NULL;
+	return true;
 }
 
 static char *handle_mcp_request(ServerState *ss, const char *method, RJson *params, const char *id) {
