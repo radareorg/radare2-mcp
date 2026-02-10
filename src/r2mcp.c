@@ -33,7 +33,6 @@
 #define R2MCP_VERSION "1.5.4"
 #endif
 
-#define READ_CHUNK_SIZE 32768
 #define LATEST_PROTOCOL_VERSION "2025-06-18"
 
 #include "utils.inc.c"
@@ -491,11 +490,12 @@ void r2mcp_eventloop(ServerState *ss) {
 	set_nonblocking_io (false);
 
 	ReadBuffer *buffer = read_buffer_new ();
-	char chunk[READ_CHUNK_SIZE];
+	const size_t chunk_size = 32768;
+	char *chunk = malloc (chunk_size);
 
 	while (running) {
 		// Read data from stdin
-		ssize_t bytes_read = read (STDIN_FILENO, chunk, sizeof (chunk) - 1);
+		ssize_t bytes_read = read (STDIN_FILENO, chunk, chunk_size);
 
 		if (bytes_read > 0) {
 			// Append to our buffer
@@ -513,15 +513,13 @@ void r2mcp_eventloop(ServerState *ss) {
 			// EOF - stdin closed
 			r2mcp_log (ss, "End of input stream - exiting");
 			break;
-		} else {
-			// Error
-			if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) {
-				r2mcp_log (ss, "Read error");
-				break;
-			}
+		} else if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) {
+			r2mcp_log (ss, "Read error");
+			break;
 		}
 	}
 
+	free (chunk);
 	read_buffer_free (buffer);
 	r2mcp_log (ss, "Direct mode loop terminated");
 }
