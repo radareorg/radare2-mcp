@@ -152,65 +152,67 @@ char *r2mcp_analyze(ServerState *ss, int level) {
 	return r2_analyze (ss, level);
 }
 
-static bool check_client_capability(ServerState *ss, const char *capability) {
+typedef bool (*CapCheckFn)(ServerState *, const char *);
+
+typedef struct {
+	const char *prefix;
+	const char *cap;
+	const char *errmsg;
+} CapMap;
+
+static const CapMap server_caps[] = {
+	{ "sampling/createMessage", "sampling", "Server does not support sampling" },
+	{ "prompts/", "prompts", "Server does not support prompts" },
+	{ "tools/", "tools", "Server does not support tools" },
+	{ "resources/", "resources", "Server does not support resources" },
+	{ NULL, NULL, NULL }
+};
+
+static const CapMap client_caps[] = {
+	{ "sampling/createMessage", "sampling", "Client does not support sampling" },
+	{ "roots/list", "roots", "Client does not support listing roots" },
+	{ NULL, NULL, NULL }
+};
+
+static bool has_client_cap(ServerState *ss, const char *cap) {
 	if (ss->client_capabilities) {
-		RJson *cap = (RJson *)r_json_get (ss->client_capabilities, capability);
-		return cap != NULL;
+		return r_json_get (ss->client_capabilities, cap) != NULL;
 	}
 	return false;
 }
 
-static bool check_server_capability(ServerState *ss, const char *capability) {
-	if (!strcmp (capability, "tools")) {
+static bool has_server_cap(ServerState *ss, const char *cap) {
+	if (!strcmp (cap, "tools")) {
 		return ss->capabilities.tools;
 	}
-	if (!strcmp (capability, "prompts")) {
+	if (!strcmp (cap, "prompts")) {
 		return ss->capabilities.prompts;
 	}
-	if (!strcmp (capability, "resources")) {
+	if (!strcmp (cap, "resources")) {
 		return ss->capabilities.resources;
 	}
 	return false;
 }
 
-static bool assert_capability_for_method(ServerState *ss, const char *method, char **error) {
-	if (!strcmp (method, "sampling/createMessage")) {
-		if (!check_client_capability (ss, "sampling")) {
-			*error = strdup ("Client does not support sampling");
-			return false;
-		}
-	} else if (!strcmp (method, "roots/list")) {
-		if (!check_client_capability (ss, "roots")) {
-			*error = strdup ("Client does not support listing roots");
-			return false;
+static bool check_cap(ServerState *ss, const CapMap *map, CapCheckFn fn, const char *method, char **error) {
+	int i;
+	for (i = 0; map[i].prefix; i++) {
+		if (!strcmp (method, map[i].prefix) || r_str_startswith (method, map[i].prefix)) {
+			if (!fn (ss, map[i].cap)) {
+				*error = strdup (map[i].errmsg);
+				return false;
+			}
+			return true;
 		}
 	}
 	return true;
 }
 
-static bool assert_request_handler_capability(ServerState *ss, const char *method, char **error) {
-	if (!strcmp (method, "sampling/createMessage")) {
-		if (!check_server_capability (ss, "sampling")) {
-			*error = strdup ("Server does not support sampling");
-			return false;
-		}
-	} else if (r_str_startswith (method, "prompts/")) {
-		if (!check_server_capability (ss, "prompts")) {
-			*error = strdup ("Server does not support prompts");
-			return false;
-		}
-	} else if (r_str_startswith (method, "tools/")) {
-		if (!check_server_capability (ss, "tools")) {
-			*error = strdup ("Server does not support tools");
-			return false;
-		}
-	} else if (r_str_startswith (method, "resources/")) {
-		if (!check_server_capability (ss, "resources")) {
-			*error = strdup ("Server does not support resources");
-			return false;
-		}
+static bool check_capabilities(ServerState *ss, const char *method, char **error) {
+	if (!check_cap (ss, client_caps, has_client_cap, method, error)) {
+		return false;
 	}
-	return true;
+	return check_cap (ss, server_caps, has_server_cap, method, error);
 }
 
 // Helper function to create JSON-RPC error responses
@@ -327,7 +329,7 @@ static char *handle_mcp_request(ServerState *ss, const char *method, RJson *para
 		return jsonrpc_error_response (-32601, "Invalid method name: must be lowercase and dot-separated (e.g., tools/list)", id, NULL);
 	}
 
-	if (!assert_capability_for_method (ss, method, &error) || !assert_request_handler_capability (ss, method, &error)) {
+	if (!check_capabilities (ss, method, &error)) {
 		char *response = jsonrpc_error_response (-32601, error, id, NULL);
 		free (error);
 		return response;
