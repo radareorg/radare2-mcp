@@ -36,6 +36,7 @@
 #endif
 
 #define LATEST_PROTOCOL_VERSION "2025-06-18"
+// #define LATEST_PROTOCOL_VERSION "2024-11-05"
 
 #include "utils.inc.c"
 #include "r2api.inc.c"
@@ -263,7 +264,7 @@ static char *handle_initialize(ServerState *ss, RJson *params) {
 
 	pj_end (pj);
 
-	ss->initialized = true;
+	// initialization flag is set when notifications/initialized is received
 	return pj_drain (pj);
 }
 
@@ -332,9 +333,15 @@ static char *handle_mcp_request(ServerState *ss, const char *method, RJson *para
 		return response;
 	}
 
+	// All requests except 'initialize' require the client to have sent notifications/initialized
+	if (strcmp (method, "initialize") && !ss->initialized) {
+		return jsonrpc_error_response (-32000, "Client must send notifications/initialized before sending requests", id, NULL);
+	}
+
 	if (!strcmp (method, "initialize")) {
 		result = handle_initialize (ss, params);
 	} else if (!strcmp (method, "notifications/initialized")) {
+		ss->initialized = true;
 		return NULL; // No response for notifications
 	} else if (!strcmp (method, "ping")) {
 		result = strdup ("{}");
@@ -529,6 +536,7 @@ static void process_mcp_message(ServerState *ss, const char *msg) {
 			r2mcp_log (ss, "Received cancelled notification");
 		} else if (!strcmp (method, "notifications/initialized")) {
 			r2mcp_log (ss, "Received initialized notification");
+			ss->initialized = true;
 		} else {
 			r2mcp_log (ss, "Received unknown notification");
 		}
