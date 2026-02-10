@@ -470,13 +470,17 @@ static void process_mcp_message(ServerState *ss, const char *msg) {
 	// Extract id for error responses (may be NULL for notifications)
 	const char *id = NULL;
 	char id_buf[32] = { 0 };
+	bool has_id = false;
 	if (id_json) {
 		if (id_json->type == R_JSON_STRING) {
 			id = id_json->str_value;
+			has_id = true;
 		} else if (id_json->type == R_JSON_INTEGER) {
 			snprintf (id_buf, sizeof (id_buf), "%lld", (long long)id_json->num.u_value);
 			id = id_buf;
+			has_id = true;
 		}
+		// Note: R_JSON_NULL means id is explicitly null, which is a notification per JSON-RPC 2.0
 	}
 
 	if (!method) {
@@ -488,15 +492,15 @@ static void process_mcp_message(ServerState *ss, const char *msg) {
 		return;
 	}
 
-	if (id_json) {
-		// Request: requires a response
+	if (has_id) {
+		// Request: requires a response (has a non-null id)
 		char *response = handle_mcp_request (ss, method, params, id);
 		if (response) {
 			send_response (ss, response);
 			free (response);
 		}
 	} else {
-		// Notification: no response
+		// Notification: no response (no id or id is null)
 		if (!strcmp (method, "notifications/cancelled")) {
 			r2mcp_log (ss, "Received cancelled notification");
 		} else if (!strcmp (method, "notifications/initialized")) {
