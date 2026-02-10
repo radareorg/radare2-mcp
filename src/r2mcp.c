@@ -298,9 +298,33 @@ static char *handle_call_tool(ServerState *ss, const char *tool_name, RJson *too
 	return tools_call (ss, tool_name, tool_args);
 }
 
+static bool is_valid_mcp_method(const char *method) {
+	if (!method || !*method) {
+		return false;
+	}
+	// MCP method names must be lowercase, dot-separated strings
+	// Format: category/name or category/subcategory/name
+	for (int i = 0; method[i]; i++) {
+		char c = method[i];
+		if (c == '/' || c == '.') {
+			continue;
+		}
+		if (c < 'a' || c > 'z') {
+			return false;
+		}
+	}
+	// Must contain at least one '/' to be valid
+	return strchr (method, '/') != NULL;
+}
+
 static char *handle_mcp_request(ServerState *ss, const char *method, RJson *params, const char *id) {
 	char *error = NULL;
 	char *result = NULL;
+
+	// Validate method name format: lowercase, dot-separated
+	if (!is_valid_mcp_method (method)) {
+		return jsonrpc_error_response (-32601, "Invalid method name: must be lowercase and dot-separated (e.g., tools/list)", id, NULL);
+	}
 
 	if (!assert_capability_for_method (ss, method, &error) || !assert_request_handler_capability (ss, method, &error)) {
 		char *response = jsonrpc_error_response (-32601, error, id, NULL);
@@ -315,9 +339,9 @@ static char *handle_mcp_request(ServerState *ss, const char *method, RJson *para
 	} else if (!strcmp (method, "ping")) {
 		result = strdup ("{}");
 
-	} else if (!strcmp (method, "tools/list") || !strcmp (method, "tool/list")) {
+	} else if (!strcmp (method, "tools/list")) {
 		result = handle_list_tools (ss, params);
-	} else if (!strcmp (method, "tools/call") || !strcmp (method, "tool/call")) {
+	} else if (!strcmp (method, "tools/call")) {
 		const char *tool_name = r_json_get_str (params, "name");
 		if (!tool_name) {
 			tool_name = r_json_get_str (params, "tool");
@@ -380,9 +404,9 @@ static char *handle_mcp_request(ServerState *ss, const char *method, RJson *para
 		} else {
 			result = handle_call_tool (ss, tool_name, tool_args);
 		}
-	} else if (!strcmp (method, "prompts/list") || !strcmp (method, "prompt/list")) {
+	} else if (!strcmp (method, "prompts/list")) {
 		result = handle_list_prompts (ss, params);
-	} else if (!strcmp (method, "prompts/get") || !strcmp (method, "prompt/get")) {
+	} else if (!strcmp (method, "prompts/get")) {
 		result = handle_get_prompt (ss, params);
 	} else if (!strcmp (method, "resources/list")) {
 		result = strdup ("{\"resources\":[]}");
