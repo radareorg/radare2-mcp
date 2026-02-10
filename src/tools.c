@@ -3,6 +3,7 @@
 #include <r_core.h>
 #include "r2mcp.h"
 #include "tools.h"
+#include "validation.h"
 #include "utils.inc.c"
 #include "jsonrpc.h"
 
@@ -1018,6 +1019,25 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 	if (!ss->http_mode && !ss->rstate.file_opened) {
 		result = jsonrpc_error_file_required ();
 		goto cleanup;
+	}
+
+	// Find the tool spec and validate arguments against schema
+	ToolSpec *found_tool = NULL;
+	for (size_t i = 0; tool_specs[i].name; i++) {
+		ToolSpec *t = &tool_specs[i];
+		if (!strcmp (tool_name, t->name)) {
+			found_tool = t;
+			break;
+		}
+	}
+
+	if (found_tool && found_tool->schema_json) {
+		ValidationResult vr = validate_arguments (tool_args, found_tool->schema_json);
+		if (!vr.valid) {
+			result = jsonrpc_error_response (-32602, vr.error_message, NULL, NULL);
+			free (vr.error_message);
+			goto cleanup;
+		}
 	}
 
 	// Dispatch to tool functions
