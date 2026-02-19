@@ -8,6 +8,7 @@ typedef enum {
 	TOOL_MODE_HTTP = 1 << 1,
 	TOOL_MODE_NORMAL = 1 << 2,
 	TOOL_MODE_RO = 1 << 3,
+	TOOL_MODE_SESSIONS = 1 << 4,
 } ToolMode;
 
 // Tool handler signature: returns heap-allocated JSON string describing

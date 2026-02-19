@@ -74,6 +74,9 @@ static inline ToolMode current_mode(const ServerState *ss) {
 	if (ss->http_mode) {
 		return TOOL_MODE_HTTP;
 	}
+	if (ss->use_sessions) {
+		return TOOL_MODE_SESSIONS;
+	}
 	if (ss->readonly_mode) {
 		return TOOL_MODE_RO;
 	}
@@ -211,6 +214,9 @@ void tools_print_table(const ServerState *ss) {
 		}
 		if (t->modes & TOOL_MODE_RO) {
 			modes_buf[p++] = 'R';
+		}
+		if (t->modes & TOOL_MODE_SESSIONS) {
+			modes_buf[p++] = 'S';
 		}
 		if (t->modes & TOOL_MODE_NORMAL) {
 			modes_buf[p++] = 'N';
@@ -792,6 +798,9 @@ static char *tool_run_javascript(ServerState *ss, RJson *tool_args) {
 }
 
 static char *tool_list_sessions(ServerState *ss, RJson *tool_args) {
+	if (!ss->use_sessions) {
+		return jsonrpc_error_response (-32603, "Start r2mcp with -L to support sessions", NULL, NULL);
+	}
 	(void)tool_args;
 	(void)ss;
 	// r2agent command doesn't require an open file, run it directly
@@ -810,6 +819,9 @@ static char *tool_list_sessions(ServerState *ss, RJson *tool_args) {
 }
 
 static char *tool_open_session(ServerState *ss, RJson *tool_args) {
+	if (!ss->use_sessions) {
+		return jsonrpc_error_response (-32603, "Start r2mcp with -L to support sessions", NULL, NULL);
+	}
 	const char *url;
 	if (!validate_required_string_param (tool_args, "url", &url)) {
 		return jsonrpc_error_missing_param ("url");
@@ -852,6 +864,9 @@ static char *tool_open_session(ServerState *ss, RJson *tool_args) {
 }
 
 static char *tool_close_session(ServerState *ss, RJson *tool_args) {
+	if (!ss->use_sessions) {
+		return jsonrpc_error_response (-32603, "Start r2mcp with -L to support sessions", NULL, NULL);
+	}
 	(void)tool_args;
 	
 	if (!ss->http_mode) {
@@ -1048,9 +1063,9 @@ ToolSpec tool_specs[] = {
 	{ "open_file", "Opens a binary file with radare2 for analysis <think>Call this tool before any other one from r2mcp. Use an absolute file_path</think>", "{\"type\":\"object\",\"properties\":{\"file_path\":{\"type\":\"string\",\"description\":\"Path to the file to open\"}},\"required\":[\"file_path\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI, NULL },
 	{ "run_javascript", "Executes JavaScript code using radare2's qjs runtime", "{\"type\":\"object\",\"properties\":{\"script\":{\"type\":\"string\",\"description\":\"The JavaScript code to execute\"}},\"required\":[\"script\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP, tool_run_javascript },
 	{ "run_command", "Executes a raw radare2 command directly", "{\"type\":\"object\",\"properties\":{\"command\":{\"type\":\"string\",\"description\":\"The radare2 command to execute\"}},\"required\":[\"command\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP, tool_run_command },
-	{ "list_sessions", "Lists available r2agent sessions in JSON format", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_HTTP | TOOL_MODE_RO, tool_list_sessions },
-	{ "open_session", "Connects to a remote r2 instance using r2pipe API", "{\"type\":\"object\",\"properties\":{\"url\":{\"type\":\"string\",\"description\":\"URL of the remote r2 instance to connect to\"}},\"required\":[\"url\"]}", TOOL_MODE_NORMAL | TOOL_MODE_HTTP, tool_open_session },
-	{ "close_session", "Close the currently open remote session", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_HTTP, tool_close_session },
+	{ "list_sessions", "Lists available r2agent sessions in JSON format", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_HTTP | TOOL_MODE_RO | TOOL_MODE_SESSIONS, tool_list_sessions },
+	{ "open_session", "Connects to a remote r2 instance using r2pipe API", "{\"type\":\"object\",\"properties\":{\"url\":{\"type\":\"string\",\"description\":\"URL of the remote r2 instance to connect to\"}},\"required\":[\"url\"]}", TOOL_MODE_NORMAL | TOOL_MODE_HTTP | TOOL_MODE_SESSIONS , tool_open_session },
+	{ "close_session", "Close the currently open remote session", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_HTTP | TOOL_MODE_SESSIONS, tool_close_session },
 	{ "close_file", "Close the currently open file", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL, tool_close_file },
 	{ "list_functions", "Lists all functions discovered during analysis", "{\"type\":\"object\",\"properties\":{\"only_named\":{\"type\":\"boolean\",\"description\":\"If true, only list functions with named symbols (excludes functions with numeric suffixes like sym.func.1000016c8)\"},\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"}}}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO, tool_list_functions },
 	{ "list_functions_tree", "Lists functions and successors (aflmu)", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO, tool_list_functions_tree },

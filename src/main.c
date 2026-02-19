@@ -49,6 +49,7 @@ void r2mcp_help(void) {
 		" -S [url]   enable supervisor control; connect to svc at [url]\n"
 		" -P [dir]   specify custom prompts directory (supports colon-separated paths like r2ai)\n"
 		" -N         do not load any prompts\n"
+		" -L         enable session management tools (list/open/close sessions)\n"
 		" -v         show version\n";
 	printf ("%s", help_text);
 }
@@ -81,10 +82,11 @@ int r2mcp_main(int argc, const char **argv) {
 	char *prompts_dir = NULL;
 	bool load_prompts = true;
 	bool ignore_analysis_level = false;
+	bool use_sessions = false;
 	const char *dsl_tests = NULL;
 	RList *disabled_tools = NULL;
 	RGetopt opt;
-	r_getopt_init (&opt, argc, argv, "hmvpd:nc:u:l:s:rite:D:RT:S:P:N");
+	r_getopt_init (&opt, argc, argv, "hmvpd:nc:u:l:s:rite:D:RT:S:P:NL");
 	int c;
 	while ((c = r_getopt_next (&opt)) != -1) {
 		switch (c) {
@@ -166,6 +168,9 @@ int r2mcp_main(int argc, const char **argv) {
 		case 'N':
 			load_prompts = false;
 			break;
+		case 'L':
+			use_sessions = true;
+			break;
 		default:
 			R_LOG_ERROR ("Invalid flag -%c", c);
 			return 1;
@@ -191,6 +196,7 @@ int r2mcp_main(int argc, const char **argv) {
 		.readonly_mode = readonly_mode,
 		.permissive_tools = permissive,
 		.enable_run_command_tool = enable_run_command_tool,
+		.use_sessions = use_sessions,
 		.http_mode = http_mode,
 		.baseurl = baseurl,
 		.svc_baseurl = svc_baseurl,
