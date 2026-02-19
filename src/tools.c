@@ -1073,9 +1073,6 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 		r_str_replace_ch (filteredpath, '`', 0, true);
 		bool success = r2mcp_open_file (ss, filteredpath);
 		free (filteredpath);
-		if (success) {
-			ss->frida_mode = r_str_startswith (filepath, "frida://");
-		}
 		result = jsonrpc_tooltext_response (success? "File opened successfully.": "Failed to open file.");
 		goto cleanup;
 	}
