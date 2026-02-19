@@ -209,6 +209,7 @@ int r2mcp_main(int argc, const char **argv) {
 		.client_info = NULL,
 		.enabled_tools = enabled_tools,
 		.disabled_tools = disabled_tools,
+		.frida_mode = false
 	};
 	/* Enable logging */
 	r2mcp_log_pub (&ss, "r2mcp starting");

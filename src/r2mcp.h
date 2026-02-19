@@ -59,6 +59,8 @@ typedef struct {
 	bool load_prompts;
 	/* When true, ignore the analysis level specified in analyze calls */
 	bool ignore_analysis_level;
+	/* When true, operate in Frida mode */
+	bool frida_mode;
 	const RJson *client_capabilities;
 	const RJson *client_info;
 	RadareState rstate;

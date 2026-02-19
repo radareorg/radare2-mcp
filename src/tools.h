@@ -9,6 +9,7 @@ typedef enum {
 	TOOL_MODE_NORMAL = 1 << 2,
 	TOOL_MODE_RO = 1 << 3,
 	TOOL_MODE_SESSIONS = 1 << 4,
+	TOOL_MODE_FRIDA = 1 << 5,
 } ToolMode;
 
 // Tool handler signature: returns heap-allocated JSON string describing
