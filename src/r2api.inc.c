@@ -163,18 +163,22 @@ static bool r2_open_file(ServerState *ss, const char *filepath) {
 		R_LOG_ERROR ("Empty file path is not allowed");
 		return false;
 	}
-	if (!path_is_absolute (filepath)) {
-		R_LOG_ERROR ("Relative paths are not allowed. Use an absolute path");
-		return false;
-	}
-	if (path_contains_parent_ref (filepath)) {
-		R_LOG_ERROR ("Path traversal is not allowed (contains '/../')");
-		return false;
-	}
-	if (ss && ss->sandbox && *ss->sandbox) {
-		if (!path_is_within_sandbox (filepath, ss->sandbox)) {
-			R_LOG_ERROR ("Access denied: path is outside of the sandbox");
+	bool is_uri = strstr (filepath, "://") != NULL;
+	// Filesystem security checks only apply to local paths, not URI schemes
+	if (!is_uri) {
+		if (!path_is_absolute (filepath)) {
+			R_LOG_ERROR ("Relative paths are not allowed. Use an absolute path");
 			return false;
+		}
+		if (path_contains_parent_ref (filepath)) {
+			R_LOG_ERROR ("Path traversal is not allowed (contains '/../')");
+			return false;
+		}
+		if (ss && ss->sandbox && *ss->sandbox) {
+			if (!path_is_within_sandbox (filepath, ss->sandbox)) {
+				R_LOG_ERROR ("Access denied: path is outside of the sandbox");
+				return false;
+			}
 		}
 	}
 	/* In HTTP mode we do not touch the local r2 core. Just set the state

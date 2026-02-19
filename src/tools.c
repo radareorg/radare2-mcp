@@ -904,6 +904,9 @@ static char *tool_open_session(ServerState *ss, RJson *tool_args) {
 		old_baseurl = strdup (ss->baseurl);
 	}
 
+	// Determine if this is a Frida session based on the URL scheme
+	ss->frida_mode = r_str_startswith (url, "frida://");
+
 	// Set up HTTP mode for this session
 	ss->http_mode = true;
 	free (ss->baseurl);
@@ -927,7 +930,8 @@ static char *tool_open_session(ServerState *ss, RJson *tool_args) {
 	free (test_result);
 	free (old_baseurl);
 
-	ss->frida_mode = r_str_startswith (url, "frida://");
+	
+	ss->rstate.file_opened = true;
 
 	char *success_msg = r_str_newf ("Successfully connected to remote r2 instance at %s", url);
 	char *response = jsonrpc_tooltext_response (success_msg);
