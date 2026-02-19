@@ -785,13 +785,9 @@ static char *tool_run_javascript(ServerState *ss, RJson *tool_args) {
 	}
 
 	char *cmd = r_str_newf ("js base64:%s", encoded);
-
 	char *res = r2mcp_cmd (ss, cmd);
-
 	free (cmd);
-
 	free (encoded);
-
 	return tool_cmd_response (res);
 }
 
@@ -804,22 +800,10 @@ static char *tool_list_sessions(ServerState *ss, RJson *tool_args) {
 		// In HTTP mode, we can't run r2agent locally, return empty result
 		res = strdup ("[]");
 	} else {
-		// Run r2agent command directly using system
-		FILE *fp = popen ("r2agent -Lj 2>/dev/null", "r");
-		if (!fp) {
+		res = r_sys_cmd_str ("r2agent -Lj 2>/dev/null", NULL, NULL);
+		if (R_STR_ISEMPTY (res)) {
+			free (res);
 			res = strdup ("[]");
-		} else {
-			char buffer[4096];
-			RStrBuf *sb = r_strbuf_new ("");
-			while (fgets (buffer, sizeof (buffer), fp)) {
-				r_strbuf_append (sb, buffer);
-			}
-			pclose (fp);
-			res = r_strbuf_drain (sb);
-			if (R_STR_ISEMPTY (res)) {
-				free (res);
-				res = strdup ("[]");
-			}
 		}
 	}
 	return tool_cmd_response (res);
