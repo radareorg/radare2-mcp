@@ -346,6 +346,19 @@ static char *tool_list_functions(ServerState *ss, RJson *tool_args) {
 			only_named = only_named_parameter->num.u_value;
 		}
 	}
+
+	// Acquire additional parameters `start` and `max_length`.
+	int start = 0;
+	int max_length = 50;
+	const RJson *start_json = r_json_get (tool_args, "start");
+	if (start_json && start_json->type == R_JSON_INTEGER) {
+		start = (int)start_json->num.u_value;
+	}
+	const RJson *max_length_json = r_json_get (tool_args, "max_length");
+	if (max_length_json && max_length_json->type == R_JSON_INTEGER) {
+		max_length = (int)max_length_json->num.s_value;
+	}
+	
 	const char *filter = r_json_get_str (tool_args, "filter");
 	char *res = r2mcp_cmd (ss, "afl,addr/cols/name");
 	r_str_trim (res);
@@ -373,7 +386,17 @@ static char *tool_list_functions(ServerState *ss, RJson *tool_args) {
 		free (res);
 		res = r;
 	}
-	return tool_cmd_response (res);
+	// Apply pagination, offset by 2 to skip the header lines
+	int total_lines = r_str_char_count (res, '\n') - 2;
+	int page_size = (max_length < 0) ? total_lines : max_length;
+	char cursor_buf[32];
+	snprintf (cursor_buf, sizeof (cursor_buf), "%d", start + 2);
+	char *next_cursor = NULL;
+	bool has_more = false;
+	char *paginated = paginate_text_by_lines (res, cursor_buf, page_size, &has_more, &next_cursor);
+	free (res);
+	free (next_cursor);
+	return tool_cmd_response (paginated);
 }
 
 static char *tool_list_files(ServerState *ss, RJson *tool_args) {
@@ -1067,7 +1090,7 @@ ToolSpec tool_specs[] = {
 	{ "open_session", "Connects to a remote r2 instance using r2pipe API", "{\"type\":\"object\",\"properties\":{\"url\":{\"type\":\"string\",\"description\":\"URL of the remote r2 instance to connect to\"}},\"required\":[\"url\"]}", TOOL_MODE_NORMAL | TOOL_MODE_HTTP | TOOL_MODE_SESSIONS , tool_open_session },
 	{ "close_session", "Close the currently open remote session", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_HTTP | TOOL_MODE_SESSIONS, tool_close_session },
 	{ "close_file", "Close the currently open file", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL, tool_close_file },
-	{ "list_functions", "Lists all functions discovered during analysis", "{\"type\":\"object\",\"properties\":{\"only_named\":{\"type\":\"boolean\",\"description\":\"If true, only list functions with named symbols (excludes functions with numeric suffixes like sym.func.1000016c8)\"},\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"}}}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO, tool_list_functions },
+	{ "list_functions", "Lists all functions discovered during analysis", "{\"type\":\"object\",\"properties\":{\"only_named\":{\"type\":\"boolean\",\"description\":\"If true, only list functions with named symbols (excludes functions with numeric suffixes like sym.func.1000016c8)\"},\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"},\"start\":{\"type\":\"integer\",\"description\":\"Starting index for pagination (default: 0)\"},\"max_length\":{\"type\":\"integer\",\"description\":\"Maximum number of results to return, -1 for all (default: 50)\"}}}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO, tool_list_functions },
 	{ "list_functions_tree", "Lists functions and successors (aflmu)", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO, tool_list_functions_tree },
 	{ "list_libraries", "Lists all shared libraries linked to the binary", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO, tool_list_libraries },
 	{ "list_imports", "Lists imported symbols (note: use list_symbols for addresses with sym.imp. prefix)", "{\"type\":\"object\",\"properties\":{\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"}}}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO, tool_list_imports },
