@@ -71,19 +71,26 @@ static bool tool_not_disabled(const ServerState *ss, const char *name) {
 }
 
 static inline ToolMode current_mode(const ServerState *ss) {
+	ToolMode mode = 0;
 	if (ss->http_mode) {
-		return TOOL_MODE_HTTP;
+		mode |= TOOL_MODE_HTTP;
+	}
+	if (ss->frida_mode) {
+		mode |= TOOL_MODE_FRIDA;
 	}
 	if (ss->use_sessions) {
-		return TOOL_MODE_SESSIONS;
+		mode |= TOOL_MODE_SESSIONS;
 	}
 	if (ss->readonly_mode) {
-		return TOOL_MODE_RO;
+		mode |= TOOL_MODE_RO;
 	}
 	if (ss->minimode) {
-		return TOOL_MODE_MINI;
+		mode |= TOOL_MODE_MINI;
 	}
-	return TOOL_MODE_NORMAL;
+	if (mode == 0) {
+		mode = TOOL_MODE_NORMAL;
+	}
+	return mode;
 }
 
 static bool tool_matches_mode(const ToolSpec *t, ToolMode mode) {
@@ -129,7 +136,6 @@ bool tools_is_tool_allowed(const ServerState *ss, const char *name) {
 }
 
 char *tools_build_catalog_json(const ServerState *ss, const char *cursor, int page_size) {
-
 	int start_index = 0;
 	if (cursor) {
 		start_index = atoi (cursor);
@@ -162,7 +168,9 @@ char *tools_build_catalog_json(const ServerState *ss, const char *cursor, int pa
 			}
 			r_strbuf_appendf (sb,
 				"{\"name\":\"%s\",\"description\":\"%s\",\"inputSchema\":%s}",
-				t->name, t->description, t->schema_json);
+				t->name,
+				t->description,
+				t->schema_json);
 			out_count++;
 		}
 		idx++;
@@ -211,6 +219,9 @@ void tools_print_table(const ServerState *ss) {
 		}
 		if (t->modes & TOOL_MODE_HTTP) {
 			modes_buf[p++] = 'H';
+		}
+		if (t->modes & TOOL_MODE_FRIDA) {
+			modes_buf[p++] = 'F';
 		}
 		if (t->modes & TOOL_MODE_RO) {
 			modes_buf[p++] = 'R';
@@ -332,6 +343,7 @@ static char *tool_close_file(ServerState *ss, RJson *tool_args) {
 	if (ss->rstate.core) {
 		free (r2mcp_cmd (ss, "o-*"));
 		ss->rstate.file_opened = false;
+		ss->frida_mode = false;
 		free (ss->rstate.current_file);
 		ss->rstate.current_file = NULL;
 	}
@@ -347,16 +359,21 @@ static char *tool_list_functions(ServerState *ss, RJson *tool_args) {
 		}
 	}
 	const char *filter = r_json_get_str (tool_args, "filter");
-	char *res = r2mcp_cmd (ss, "afl,addr/cols/name");
-	r_str_trim (res);
-	if (R_STR_ISEMPTY (res)) {
-		free (res);
-		free (r2mcp_cmd (ss, "aaa"));
+	char *res;
+	if (ss->frida_mode) {
+		return jsonrpc_tooltext_response ("In Frida mode we won't list functions. List exports or classes instead.");
+	} else {
 		res = r2mcp_cmd (ss, "afl,addr/cols/name");
 		r_str_trim (res);
 		if (R_STR_ISEMPTY (res)) {
 			free (res);
-			res = strdup ("No functions found. Run the analysis first.");
+			free (r2mcp_cmd (ss, "aaa"));
+			res = r2mcp_cmd (ss, "afl,addr/cols/name");
+			r_str_trim (res);
+			if (R_STR_ISEMPTY (res)) {
+				free (res);
+				res = strdup ("No functions found. Run the analysis first.");
+			}
 		}
 	}
 	// Apply filtering if only_named is true
@@ -406,7 +423,12 @@ static char *tool_list_files(ServerState *ss, RJson *tool_args) {
 
 static char *tool_list_classes(ServerState *ss, RJson *tool_args) {
 	const char *filter = r_json_get_str (tool_args, "filter");
-	char *res = r2mcp_cmd (ss, "icqq");
+	char *res;
+	if (ss->frida_mode) {
+		res = r2mcp_cmd (ss, ":ic");
+	} else {
+		res = r2mcp_cmd (ss, "icqq");
+	}
 
 	if (R_STR_ISNOTEMPTY (filter)) {
 
@@ -424,6 +446,9 @@ static char *tool_list_methods(ServerState *ss, RJson *tool_args) {
 	const char *classname;
 	if (!validate_required_string_param (tool_args, "classname", &classname)) {
 		return jsonrpc_error_missing_param ("classname");
+	}
+	if (ss->frida_mode) {
+		return tool_cmd_response (r2mcp_cmdf (ss, ":ic %s", classname));
 	}
 	return tool_cmd_response (r2mcp_cmdf (ss, "'ic %s", classname));
 }
@@ -444,7 +469,33 @@ static char *tool_list_functions_tree(ServerState *ss, RJson *tool_args) {
 
 static char *tool_list_imports(ServerState *ss, RJson *tool_args) {
 	const char *filter = r_json_get_str (tool_args, "filter");
-	char *res = r2mcp_cmd (ss, "iiq");
+	char *res;
+	if (ss->frida_mode) {
+		res = r2mcp_cmd (ss, ":ii");
+	} else {
+		res = r2mcp_cmd (ss, "iiq");
+	}
+
+	if (R_STR_ISNOTEMPTY (filter)) {
+
+		char *r = filter_lines_by_regex (res, filter);
+
+		free (res);
+
+		res = r;
+	}
+
+	return tool_cmd_response (res);
+}
+
+static char *tool_list_exports(ServerState *ss, RJson *tool_args) {
+	const char *filter = r_json_get_str (tool_args, "filter");
+	char *res;
+	if (ss->frida_mode) {
+		res = r2mcp_cmd (ss, ":iE");
+	} else {
+		res = r2mcp_cmd (ss, "iEq");
+	}
 
 	if (R_STR_ISNOTEMPTY (filter)) {
 
@@ -460,11 +511,25 @@ static char *tool_list_imports(ServerState *ss, RJson *tool_args) {
 
 static char *tool_list_sections(ServerState *ss, RJson *tool_args) {
 	(void)tool_args;
+	if (ss->frida_mode) {
+		return tool_cmd_response (r2mcp_cmd (ss, ":iS"));
+	}
 	return tool_cmd_response (r2mcp_cmd (ss, "iS;iSS"));
+}
+
+static char *tool_list_memory_maps(ServerState *ss, RJson *tool_args) {
+	(void)tool_args;
+	if (ss->frida_mode) {
+		return tool_cmd_response (r2mcp_cmd (ss, ":dm"));
+	}
+	return tool_cmd_response (r2mcp_cmd (ss, "dm"));
 }
 
 static char *tool_show_headers(ServerState *ss, RJson *tool_args) {
 	(void)tool_args;
+	if (ss->frida_mode) {
+		return tool_cmd_response (r2mcp_cmd (ss, ":i"));
+	}
 	return tool_cmd_response (r2mcp_cmd (ss, "i;iH"));
 }
 
@@ -480,14 +545,16 @@ static char *tool_get_current_address(ServerState *ss, RJson *tool_args) {
 
 static char *tool_list_symbols(ServerState *ss, RJson *tool_args) {
 	const char *filter = r_json_get_str (tool_args, "filter");
-	char *res = r2mcp_cmd (ss, "isq~!func.,!imp.");
+	char *res;
+	if (ss->frida_mode) {
+		res = r2mcp_cmd (ss, ":is");
+	} else {
+		res = r2mcp_cmd (ss, "isq~!func.,!imp.");
+	}
 
 	if (R_STR_ISNOTEMPTY (filter)) {
-
 		char *r = filter_lines_by_regex (res, filter);
-
 		free (res);
-
 		res = r;
 	}
 
@@ -496,7 +563,12 @@ static char *tool_list_symbols(ServerState *ss, RJson *tool_args) {
 
 static char *tool_list_entrypoints(ServerState *ss, RJson *tool_args) {
 	(void)tool_args;
-	char *res = r2mcp_cmd (ss, "ies");
+	char *res;
+	if (ss->frida_mode) {
+		res = r2mcp_cmd (ss, ":ie");
+	} else {
+		res = r2mcp_cmd (ss, "ies");
+	}
 	char *o = jsonrpc_tooltext_response_lines (res);
 	free (res);
 	return o;
@@ -504,6 +576,9 @@ static char *tool_list_entrypoints(ServerState *ss, RJson *tool_args) {
 
 static char *tool_list_libraries(ServerState *ss, RJson *tool_args) {
 	(void)tool_args;
+	if (ss->frida_mode) {
+		return tool_cmd_response (r2mcp_cmd (ss, ":il"));
+	}
 	return tool_cmd_response (r2mcp_cmd (ss, "ilq"));
 }
 
@@ -572,7 +647,12 @@ static char *tool_list_strings(ServerState *ss, RJson *tool_args) {
 		page_size = R2MCP_MAX_PAGE_SIZE;
 	}
 
-	char *cmd_result = r2mcp_cmd (ss, "izqq");
+	char *cmd_result;
+	if (ss->frida_mode) {
+		cmd_result = r2mcp_cmd (ss, ":iz");
+	} else {
+		cmd_result = r2mcp_cmd (ss, "izqq");
+	}
 	if (R_STR_ISNOTEMPTY (filter)) {
 		char *r = filter_lines_by_regex (cmd_result, filter);
 		free (cmd_result);
@@ -620,8 +700,11 @@ static char *tool_list_all_strings(ServerState *ss, RJson *tool_args) {
 }
 
 static char *tool_analyze(ServerState *ss, RJson *tool_args) {
+	if (ss->frida_mode) {
+		return jsonrpc_tooltext_response ("Analysis is not available in frida mode. Use list_functions to see exports or run_command with r2frida commands.");
+	}
 	const int level = (int)r_json_get_num (tool_args, "level");
-	char *err = r2mcp_analyze (ss, level);
+	char *err = r2_analyze (ss, level);
 	char *cmd_result = r2mcp_cmd (ss, "aflc");
 	char *errstr;
 	if (R_STR_ISNOTEMPTY (err)) {
@@ -857,6 +940,8 @@ static char *tool_open_session(ServerState *ss, RJson *tool_args) {
 	free (test_result);
 	free (old_baseurl);
 
+	ss->rstate.file_opened = true;
+
 	char *success_msg = r_str_newf ("Successfully connected to remote r2 instance at %s", url);
 	char *response = jsonrpc_tooltext_response (success_msg);
 	free (success_msg);
@@ -868,13 +953,14 @@ static char *tool_close_session(ServerState *ss, RJson *tool_args) {
 		return jsonrpc_error_response (-32603, "Start r2mcp with -L to support sessions", NULL, NULL);
 	}
 	(void)tool_args;
-	
+
 	if (!ss->http_mode) {
 		return jsonrpc_tooltext_response ("No active remote session to close.");
 	}
 
 	// Clear the HTTP mode and baseurl
 	ss->http_mode = false;
+	ss->frida_mode = false;
 	free (ss->baseurl);
 	ss->baseurl = NULL;
 
@@ -997,7 +1083,7 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 
 		char *filteredpath = strdup (filepath);
 		r_str_replace_ch (filteredpath, '`', 0, true);
-		bool success = r2mcp_open_file (ss, filteredpath);
+		bool success = r2_open_file (ss, filteredpath);
 		free (filteredpath);
 		result = jsonrpc_tooltext_response (success? "File opened successfully.": "Failed to open file.");
 		goto cleanup;
@@ -1064,21 +1150,23 @@ ToolSpec tool_specs[] = {
 	{ "run_javascript", "Executes JavaScript code using radare2's qjs runtime", "{\"type\":\"object\",\"properties\":{\"script\":{\"type\":\"string\",\"description\":\"The JavaScript code to execute\"}},\"required\":[\"script\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP, tool_run_javascript },
 	{ "run_command", "Executes a raw radare2 command directly", "{\"type\":\"object\",\"properties\":{\"command\":{\"type\":\"string\",\"description\":\"The radare2 command to execute\"}},\"required\":[\"command\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP, tool_run_command },
 	{ "list_sessions", "Lists available r2agent sessions in JSON format", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_HTTP | TOOL_MODE_RO | TOOL_MODE_SESSIONS, tool_list_sessions },
-	{ "open_session", "Connects to a remote r2 instance using r2pipe API", "{\"type\":\"object\",\"properties\":{\"url\":{\"type\":\"string\",\"description\":\"URL of the remote r2 instance to connect to\"}},\"required\":[\"url\"]}", TOOL_MODE_NORMAL | TOOL_MODE_HTTP | TOOL_MODE_SESSIONS , tool_open_session },
+	{ "open_session", "Connects to a remote r2 instance using r2pipe API", "{\"type\":\"object\",\"properties\":{\"url\":{\"type\":\"string\",\"description\":\"URL of the remote r2 instance to connect to\"}},\"required\":[\"url\"]}", TOOL_MODE_NORMAL | TOOL_MODE_HTTP | TOOL_MODE_SESSIONS, tool_open_session },
 	{ "close_session", "Close the currently open remote session", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_HTTP | TOOL_MODE_SESSIONS, tool_close_session },
 	{ "close_file", "Close the currently open file", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL, tool_close_file },
 	{ "list_functions", "Lists all functions discovered during analysis", "{\"type\":\"object\",\"properties\":{\"only_named\":{\"type\":\"boolean\",\"description\":\"If true, only list functions with named symbols (excludes functions with numeric suffixes like sym.func.1000016c8)\"},\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"}}}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO, tool_list_functions },
 	{ "list_functions_tree", "Lists functions and successors (aflmu)", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO, tool_list_functions_tree },
-	{ "list_libraries", "Lists all shared libraries linked to the binary", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO, tool_list_libraries },
-	{ "list_imports", "Lists imported symbols (note: use list_symbols for addresses with sym.imp. prefix)", "{\"type\":\"object\",\"properties\":{\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"}}}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO, tool_list_imports },
-	{ "list_sections", "Displays memory sections and segments from the binary", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_RO, tool_list_sections },
+	{ "list_libraries", "Lists all shared libraries linked to the binary", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_list_libraries },
+	{ "list_imports", "Lists imported symbols (note: use list_symbols for addresses with sym.imp. prefix)", "{\"type\":\"object\",\"properties\":{\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"}}}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_list_imports },
+	{ "list_exports", "Lists exported symbols from the binary or process", "{\"type\":\"object\",\"properties\":{\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"}}}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_list_exports },
+	{ "list_sections", "Displays memory sections and segments from the binary", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_list_sections },
+	{ "list_memory_maps", "Lists memory regions of the process with addresses and permissions", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_FRIDA, tool_list_memory_maps },
 	{ "show_function_details", "Displays detailed information about the current function", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_RO, tool_show_function_details },
 	{ "get_current_address", "Shows the current position and function name", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_RO, tool_get_current_address },
-	{ "show_headers", "Displays binary headers and file information", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO, tool_show_headers },
-	{ "list_symbols", "Shows all symbols (functions, variables, imports) with addresses", "{\"type\":\"object\",\"properties\":{\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"}}}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO, tool_list_symbols },
-	{ "list_entrypoints", "Displays program entrypoints, constructors and main function", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO, tool_list_entrypoints },
-	{ "list_methods", "Lists all methods belonging to the specified class", "{\"type\":\"object\",\"properties\":{\"classname\":{\"type\":\"string\",\"description\":\"Name of the class to list methods for\"}},\"required\":[\"classname\"]}", TOOL_MODE_NORMAL | TOOL_MODE_RO, tool_list_methods },
-	{ "list_classes", "Lists class names from various languages (C++, ObjC, Swift, Java, Dalvik)", "{\"type\":\"object\",\"properties\":{\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"}}}", TOOL_MODE_NORMAL | TOOL_MODE_RO, tool_list_classes },
+	{ "show_headers", "Displays binary headers and file information", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_show_headers },
+	{ "list_symbols", "Shows all symbols (functions, variables, imports) with addresses", "{\"type\":\"object\",\"properties\":{\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"}}}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_list_symbols },
+	{ "list_entrypoints", "Displays program entrypoints, constructors and main function", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_list_entrypoints },
+	{ "list_methods", "Lists all methods belonging to the specified class", "{\"type\":\"object\",\"properties\":{\"classname\":{\"type\":\"string\",\"description\":\"Name of the class to list methods for\"}},\"required\":[\"classname\"]}", TOOL_MODE_NORMAL | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_list_methods },
+	{ "list_classes", "Lists class names from various languages (C++, ObjC, Swift, Java, Dalvik)", "{\"type\":\"object\",\"properties\":{\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"}}}", TOOL_MODE_NORMAL | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_list_classes },
 	{ "list_decompilers", "Shows all available decompiler backends", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_RO, tool_list_decompilers },
 	{ "rename_function", "Renames the function at the specified address", "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"New function name\"},\"address\":{\"type\":\"string\",\"description\":\"Address of the function to rename\"}},\"required\":[\"name\",\"address\"]}", TOOL_MODE_NORMAL, tool_rename_function },
 	{ "rename_flag", "Renames a local variable or data reference within the specified address", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the flag containing the variable or data reference\"},\"name\":{\"type\":\"string\",\"description\":\"Current variable name or data reference\"},\"new_name\":{\"type\":\"string\",\"description\":\"New variable name or data reference\"}},\"required\":[\"address\",\"name\",\"new_name\"]}", TOOL_MODE_NORMAL | TOOL_MODE_HTTP, tool_rename_flag },
@@ -1086,14 +1174,14 @@ ToolSpec tool_specs[] = {
 	{ "get_function_prototype", "Retrieves the function signature at the specified address", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the function\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | TOOL_MODE_RO, tool_get_function_prototype },
 	{ "set_function_prototype", "Sets the function signature (return type, name, arguments)", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the function\"},\"prototype\":{\"type\":\"string\",\"description\":\"Function signature in C-like syntax\"}},\"required\":[\"address\",\"prototype\"]}", TOOL_MODE_NORMAL, tool_set_function_prototype },
 	{ "set_comment", "Adds a comment at the specified address", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address to put the comment in\"},\"message\":{\"type\":\"string\",\"description\":\"Comment text to use\"}},\"required\":[\"address\",\"message\"]}", TOOL_MODE_NORMAL | TOOL_MODE_HTTP, tool_set_comment },
-	{ "list_strings", "Lists strings from data sections with optional regex filter", "{\"type\":\"object\",\"properties\":{\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"},\"cursor\":{\"type\":\"string\",\"description\":\"Cursor for pagination (line number to start from)\"},\"page_size\":{\"type\":\"integer\",\"description\":\"Number of lines per page (default: 1000, max: 10000)\"}}}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO, tool_list_strings },
+	{ "list_strings", "Lists strings from data sections with optional regex filter", "{\"type\":\"object\",\"properties\":{\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"},\"cursor\":{\"type\":\"string\",\"description\":\"Cursor for pagination (line number to start from)\"},\"page_size\":{\"type\":\"integer\",\"description\":\"Number of lines per page (default: 1000, max: 10000)\"}}}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_list_strings },
 	{ "list_all_strings", "Scans the entire binary for strings with optional regex filter", "{\"type\":\"object\",\"properties\":{\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"},\"cursor\":{\"type\":\"string\",\"description\":\"Cursor for pagination (line number to start from)\"},\"page_size\":{\"type\":\"integer\",\"description\":\"Number of lines per page (default: 1000, max: 10000)\"}}}", TOOL_MODE_NORMAL | TOOL_MODE_RO, tool_list_all_strings },
-	{ "analyze", "Runs binary analysis with optional depth level", "{\"type\":\"object\",\"properties\":{\"level\":{\"type\":\"number\",\"description\":\"Analysis level (0-4, higher is more thorough)\"}},\"required\":[]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP, tool_analyze },
+	{ "analyze", "Runs binary analysis with optional depth level", "{\"type\":\"object\",\"properties\":{\"level\":{\"type\":\"number\",\"description\":\"Analysis level (0-4, higher is more thorough)\"}},\"required\":[]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_FRIDA, tool_analyze },
 	{ "xrefs_to", "Finds all code references to the specified address", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address to check for cross-references\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO, tool_xrefs_to },
 	{ "decompile_function", "Show C-like pseudocode of the function in the given address. <think>Use this to inspect the code in a function, do not run multiple times in the same offset</think>", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the function to decompile\"},\"cursor\":{\"type\":\"string\",\"description\":\"Cursor for pagination (line number to start from)\"},\"page_size\":{\"type\":\"integer\",\"description\":\"Number of lines per page (default: 1000, max: 10000)\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO, tool_decompile_function },
 	{ "list_files", "Lists files in the specified path using radare2's ls -q command. Files ending with / are directories, otherwise they are files.", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"Path to list files from\"}},\"required\":[\"path\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO, tool_list_files },
 	{ "disassemble_function", "Shows assembly listing of the function at the specified address", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the function to disassemble\"},\"cursor\":{\"type\":\"string\",\"description\":\"Cursor for pagination (line number to start from)\"},\"page_size\":{\"type\":\"integer\",\"description\":\"Number of lines per page (default: 1000, max: 10000)\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | TOOL_MODE_RO, tool_disassemble_function },
-	{ "disassemble", "Disassembles a specific number of instructions from an address <think>Use this tool to inspect a portion of memory as code without depending on function analysis boundaries. Use this tool when functions are large and you are only interested on few instructions</think>", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address to start disassembly\"},\"num_instructions\":{\"type\":\"integer\",\"description\":\"Number of instructions to disassemble (default: 10)\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | TOOL_MODE_RO, tool_disassemble },
-	{ "calculate", "Evaluate a math expression using core->num (r_num_math). Usecases: do proper 64-bit math, resolve addresses for flag names/symbols, and avoid hallucinated results.", "{\"type\":\"object\",\"properties\":{\"expression\":{\"type\":\"string\",\"description\":\"Math expression to evaluate (eg. 0x100 + sym.flag - 4)\"}},\"required\":[\"expression\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_RO, tool_calculate },
+	{ "disassemble", "Disassembles a specific number of instructions from an address <think>Use this tool to inspect a portion of memory as code without depending on function analysis boundaries. Use this tool when functions are large and you are only interested on few instructions</think>", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address to start disassembly\"},\"num_instructions\":{\"type\":\"integer\",\"description\":\"Number of instructions to disassemble (default: 10)\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_disassemble },
+	{ "calculate", "Evaluate a math expression using core->num (r_num_math). Usecases: do proper 64-bit math, resolve addresses for flag names/symbols, and avoid hallucinated results.", "{\"type\":\"object\",\"properties\":{\"expression\":{\"type\":\"string\",\"description\":\"Math expression to evaluate (eg. 0x100 + sym.flag - 4)\"}},\"required\":[\"expression\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_calculate },
 	{ NULL, NULL, NULL, 0, NULL }
 };

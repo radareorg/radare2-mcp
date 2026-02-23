@@ -10,7 +10,7 @@
 /* Signal handling moved from r2mcp.c */
 static void signal_handler(int signum) {
 	const char msg[] = "\nInterrupt received, shutting down...\n";
-	(void) write (STDERR_FILENO, msg, sizeof (msg) - 1);
+	(void)write (STDERR_FILENO, msg, sizeof (msg) - 1);
 	r2mcp_running_set (0);
 	signal (signum, SIG_DFL);
 }
@@ -209,6 +209,7 @@ int r2mcp_main(int argc, const char **argv) {
 		.client_info = NULL,
 		.enabled_tools = enabled_tools,
 		.disabled_tools = disabled_tools,
+		.frida_mode = false
 	};
 	/* Enable logging */
 	r2mcp_log_pub (&ss, "r2mcp starting");
@@ -246,6 +247,12 @@ int r2mcp_main(int argc, const char **argv) {
 		}
 	} else {
 		r2mcp_log_pub (&ss, "HTTP r2pipe client mode active - skipping local r2 initialization");
+		char *cmd_result = r2mcp_cmd (&ss, "i~file");
+		if (cmd_result && strstr (cmd_result, "frida://")) {
+			r2mcp_log_pub (&ss, "Frida mode detected");
+			ss.frida_mode = true;
+		}
+		free (cmd_result);
 	}
 	/* If -T was provided, run DSL tests and exit */
 	if (dsl_tests) {

@@ -59,6 +59,8 @@ typedef struct {
 	bool load_prompts;
 	/* When true, ignore the analysis level specified in analyze calls */
 	bool ignore_analysis_level;
+	/* When true, operate in Frida mode */
+	bool frida_mode;
 	const RJson *client_capabilities;
 	const RJson *client_info;
 	RadareState rstate;
@@ -98,8 +100,8 @@ void r2mcp_log_pub(ServerState *ss, const char *msg);
 // Additional public wrappers exposed so other modules (eg. tools.c) can use
 // functionality implemented in r2api.inc.c. These simply forward to the
 // internal static helpers so we keep the original separation.
-bool r2mcp_open_file(ServerState *ss, const char *filepath);
-char *r2mcp_analyze(ServerState *ss, int level);
+bool r2_open_file(ServerState *ss, const char *filepath);
+char *r2_analyze(ServerState *ss, int level);
 
 // Run a small domain-specific language (DSL) used for testing tools from the
 // command-line. The DSL describes a sequence of tool calls with arguments and

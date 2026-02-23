@@ -48,19 +48,19 @@ static RList *parse_required_properties(const char *schema_json) {
 	if (!schema_json || !*schema_json) {
 		return NULL;
 	}
-	
+
 	/* We need a non-modifiable copy for parsing */
 	char *schema_copy = strdup (schema_json);
 	if (!schema_copy) {
 		return NULL;
 	}
-	
+
 	RJson *schema = r_json_parse (schema_copy);
 	if (!schema || schema->type != R_JSON_OBJECT) {
 		free (schema_copy);
 		return NULL;
 	}
-	
+
 	RList *required = NULL;
 	const RJson *required_json = r_json_get (schema, "required");
 	if (required_json && required_json->type == R_JSON_ARRAY) {
@@ -73,7 +73,7 @@ static RList *parse_required_properties(const char *schema_json) {
 			item = item->next;
 		}
 	}
-	
+
 	r_json_free (schema);
 	free (schema_copy);
 	return required;
@@ -85,14 +85,14 @@ ValidationResult validate_arguments(RJson *args, const char *schema_json) {
 		/* No schema defined - allow all arguments */
 		return (ValidationResult){ true, NULL };
 	}
-	
+
 	/* Parse schema to get required properties */
 	RList *required = parse_required_properties (schema_json);
 	if (!required) {
 		/* Schema couldn't be parsed - allow all arguments */
 		return (ValidationResult){ true, NULL };
 	}
-	
+
 	/* Check each required parameter exists */
 	RListIter *it;
 	const char *param;
@@ -104,7 +104,7 @@ ValidationResult validate_arguments(RJson *args, const char *schema_json) {
 			return (ValidationResult){ false, msg };
 		}
 	}
-	
+
 	r_list_free (required);
 	return (ValidationResult){ true, NULL };
 }

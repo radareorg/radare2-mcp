@@ -123,7 +123,7 @@ char *r2mcp_cmd(ServerState *ss, const char *cmd) {
 	}
 	RCore *core = ss->rstate.core;
 	if (!core || !ss->rstate.file_opened) {
-		return strdup ("Use the open_file method before calling any other method");
+		return strdup ("Cannot run commands without calling the `open_file` tool first");
 	}
 	bool changed = false;
 	char *filteredCommand = r2_cmd_filter (cmd, &changed);
@@ -147,15 +147,7 @@ void r2mcp_log_pub(ServerState *ss, const char *msg) {
 	r2mcp_log (ss, msg);
 }
 
-// New wrappers to expose functionality from r2api.inc.c to other modules
-bool r2mcp_open_file(ServerState *ss, const char *filepath) {
-	return r2_open_file (ss, filepath);
-}
-char *r2mcp_analyze(ServerState *ss, int level) {
-	return r2_analyze (ss, level);
-}
-
-typedef bool (*CapCheckFn)(ServerState *, const char *);
+typedef bool(*CapCheckFn)(ServerState *, const char *);
 
 typedef struct {
 	const char *prefix;
@@ -456,7 +448,7 @@ static void send_response(ServerState *ss, const char *response) {
 		ssize_t written = write (STDOUT_FILENO, ptr, remaining);
 		if (written <= 0) {
 			if (written == 0) {
-				// write() returned 0 - this is an error condition (e.g., invalid fd or pipe broken)
+				// write () returned 0 - this is an error condition (e.g., invalid fd or pipe broken)
 				R_LOG_ERROR ("send_response: write returned 0 to stdout");
 				return;
 			}

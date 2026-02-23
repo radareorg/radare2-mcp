@@ -32,6 +32,7 @@ static bool logcb(void *user, int type, const char *origin, const char *msg) {
 	if (ss->sb) {
 		const char *typestr = r_log_level_tostring (type);
 		// R_LOG_INFO ("[%s] from=%s message=%s\n", typestr, origin, msg);
+		fprintf (stderr, "[%s] %s\n", typestr, msg);
 		r_strbuf_appendf (ss->sb, "[%s] %s\n", typestr, msg);
 		// r_strbuf_appendf (ss->sb, "[%s] from=%s message=%s\n", typestr, origin, msg);
 	}
@@ -155,33 +156,38 @@ static bool path_is_within_sandbox(const char *p, const char *sb) {
 	return p[slen] == '/';
 }
 
-static bool r2_open_file(ServerState *ss, const char *filepath) {
+R_IPI bool r2_open_file(ServerState *ss, const char *filepath) {
 	R_LOG_INFO ("Attempting to open file: %s\n", filepath);
 
 	// Security checks common to both local and HTTP modes
-	if (!filepath || !*filepath) {
+	if (R_STR_ISEMPTY (filepath)) {
 		R_LOG_ERROR ("Empty file path is not allowed");
 		return false;
 	}
-	if (!path_is_absolute (filepath)) {
-		R_LOG_ERROR ("Relative paths are not allowed. Use an absolute path");
-		return false;
-	}
-	if (path_contains_parent_ref (filepath)) {
-		R_LOG_ERROR ("Path traversal is not allowed (contains '/../')");
-		return false;
-	}
-	if (ss && ss->sandbox && *ss->sandbox) {
-		if (!path_is_within_sandbox (filepath, ss->sandbox)) {
-			R_LOG_ERROR ("Access denied: path is outside of the sandbox");
+	bool is_uri = strstr (filepath, "://") != NULL;
+	// Filesystem security checks only apply to local paths, not URI schemes
+	if (!is_uri) {
+		if (!path_is_absolute (filepath)) {
+			R_LOG_ERROR ("Relative paths are not allowed. Use an absolute path");
 			return false;
 		}
+		if (path_contains_parent_ref (filepath)) {
+			R_LOG_ERROR ("Path traversal is not allowed (contains '/../')");
+			return false;
+		}
+		if (ss->sandbox && *ss->sandbox) {
+			if (!path_is_within_sandbox (filepath, ss->sandbox)) {
+				R_LOG_ERROR ("Access denied: path is outside of the sandbox");
+				return false;
+			}
+		}
 	}
+
 	/* In HTTP mode we do not touch the local r2 core. Just set the state
 	 * so subsequent calls to r2mcp_cmd will be allowed (they will be handled
 	 * by the HTTP helper).
 	 */
-	if (ss && ss->http_mode) {
+	if (ss->http_mode) {
 		free (ss->rstate.current_file);
 		ss->rstate.current_file = strdup (filepath);
 		ss->rstate.file_opened = true;
@@ -202,8 +208,15 @@ static bool r2_open_file(ServerState *ss, const char *filepath) {
 		ss->rstate.current_file = NULL;
 	}
 
-	r_core_cmd0 (core, "e bin.relocs.apply=true");
-	r_core_cmd0 (core, "e bin.cache=true");
+	bool is_frida = strstr (filepath, "frida://") != NULL;
+	if (is_frida) {
+		ss->frida_mode = true;
+	} else {
+		r_core_cmd0 (core, "e bin.relocs.apply=true");
+		r_core_cmd0 (core, "e bin.cache=true");
+		R_LOG_INFO ("Loading binary information");
+		r_core_cmd0 (core, "ob");
+	}
 
 	char *cmd = r_str_newf ("'o %s", filepath);
 	R_LOG_INFO ("Running r2 command: %s", cmd);
@@ -224,10 +237,6 @@ static bool r2_open_file(ServerState *ss, const char *filepath) {
 			return false;
 		}
 	}
-
-	R_LOG_INFO ("Loading binary information");
-	r_core_cmd0 (core, "ob");
-
 	free (ss->rstate.current_file);
 	ss->rstate.current_file = strdup (filepath);
 	ss->rstate.file_opened = true;
@@ -236,7 +245,7 @@ static bool r2_open_file(ServerState *ss, const char *filepath) {
 	return true;
 }
 
-static char *r2_analyze(ServerState *ss, int level) {
+R_IPI char *r2_analyze(ServerState *ss, int level) {
 	if (ss && ss->http_mode) {
 		/* In HTTP mode we won't run local analysis; return empty string. */
 		return strdup ("");
