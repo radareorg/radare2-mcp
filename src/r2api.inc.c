@@ -1,4 +1,4 @@
-/* r2mcp - MIT - Copyright 2025 - pancake, dnakov */
+/* r2mcp - MIT - Copyright 2025-2026 - pancake, dnakov */
 
 static void r2state_settings(RCore *core) {
 	r_config_set_i (core->config, "scr.color", 0);
@@ -46,23 +46,19 @@ static void r2mcp_log_reset(ServerState *ss) {
 
 static char *r2mcp_log_drain(ServerState *ss) {
 	char *s = r_strbuf_drain (ss->sb);
-	if (R_STR_ISNOTEMPTY (s)) {
-		ss->sb = NULL;
-		return s;
+	if (R_STR_ISEMPTY (s)) {
+		R_FREE (s);
 	}
-	free (s);
 	ss->sb = NULL;
-	return NULL;
+	return s;
 }
 
 static inline void r2mcp_log(ServerState *ss, const char *x) {
 	R_LOG_INFO ("[R2MCP] %s", x);
-#if R2MCP_DEBUG
 	if (ss && ss->logfile && *ss->logfile) {
 		r_file_dump (ss->logfile, (const ut8 *) (x), -1, true);
 		r_file_dump (ss->logfile, (const ut8 *)"\n", -1, true);
 	}
-#endif
 }
 
 static char *r2_cmd_filter(const char *cmd, bool *changed) {
@@ -138,7 +134,7 @@ static bool path_contains_parent_ref(const char *p) {
 }
 
 static bool path_is_within_sandbox(const char *p, const char *sb) {
-	if (!sb || !*sb) {
+	if (R_STR_ISEMPTY (sb)) {
 		return true;
 	}
 	size_t plen = strlen (p);
@@ -208,7 +204,7 @@ R_IPI bool r2_open_file(ServerState *ss, const char *filepath) {
 		ss->rstate.current_file = NULL;
 	}
 
-	bool is_frida = strstr (filepath, "frida://") != NULL;
+	const bool is_frida = strstr (filepath, "frida://") != NULL;
 	if (is_frida) {
 		ss->frida_mode = true;
 	} else {
@@ -222,20 +218,18 @@ R_IPI bool r2_open_file(ServerState *ss, const char *filepath) {
 	R_LOG_INFO ("Running r2 command: %s", cmd);
 	char *result = r_core_cmd_str (core, cmd);
 	free (cmd);
-	bool success = (result && strlen (result) > 0);
+	bool success = R_STR_ISNOTEMPTY (result);
 	free (result);
 
 	if (!success) {
 		R_LOG_INFO ("Trying alternative method to open file");
 		RIODesc *fd = r_core_file_open (core, filepath, R_PERM_R, 0);
-		if (fd) {
-			r_core_bin_load (core, filepath, 0);
-			R_LOG_INFO ("File opened using r_core_file_open");
-			success = true;
-		} else {
+		if (!fd) {
 			R_LOG_ERROR ("Failed to open file: %s", filepath);
 			return false;
 		}
+		r_core_bin_load (core, filepath, 0);
+		R_LOG_INFO ("File opened using r_core_file_open");
 	}
 	free (ss->rstate.current_file);
 	ss->rstate.current_file = strdup (filepath);
