@@ -147,7 +147,7 @@ void r2mcp_log_pub(ServerState *ss, const char *msg) {
 	r2mcp_log (ss, msg);
 }
 
-typedef bool (*CapCheckFn)(ServerState *, const char *);
+typedef bool(*CapCheckFn)(ServerState *, const char *);
 
 typedef struct {
 	const char *prefix;
@@ -448,7 +448,7 @@ static void send_response(ServerState *ss, const char *response) {
 		ssize_t written = write (STDOUT_FILENO, ptr, remaining);
 		if (written <= 0) {
 			if (written == 0) {
-				// write() returned 0 - this is an error condition (e.g., invalid fd or pipe broken)
+				// write () returned 0 - this is an error condition (e.g., invalid fd or pipe broken)
 				R_LOG_ERROR ("send_response: write returned 0 to stdout");
 				return;
 			}

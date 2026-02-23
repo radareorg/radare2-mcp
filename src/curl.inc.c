@@ -162,7 +162,8 @@ char *curl_post_capture(const char *url, const char *msg, int *exit_code_out) {
 		char *const argv[] = {
 			"curl",
 			"-sS",
-			"-d", (char *)msg,
+			"-d",
+			(char *)msg,
 			(char *)url,
 			NULL
 		};

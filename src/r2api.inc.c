@@ -207,10 +207,10 @@ R_IPI bool r2_open_file(ServerState *ss, const char *filepath) {
 		free (ss->rstate.current_file);
 		ss->rstate.current_file = NULL;
 	}
-	
+
 	bool is_frida = strstr (filepath, "frida://") != NULL;
 	if (is_frida) {
-	 	ss->frida_mode = true;
+		ss->frida_mode = true;
 	} else {
 		r_core_cmd0 (core, "e bin.relocs.apply=true");
 		r_core_cmd0 (core, "e bin.cache=true");
