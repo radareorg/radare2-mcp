@@ -159,7 +159,7 @@ static bool r2_open_file(ServerState *ss, const char *filepath) {
 	R_LOG_INFO ("Attempting to open file: %s\n", filepath);
 
 	// Security checks common to both local and HTTP modes
-	if (!filepath || !*filepath) {
+	if (R_STR_ISEMPTY (filepath)) {
 		R_LOG_ERROR ("Empty file path is not allowed");
 		return false;
 	}
@@ -174,18 +174,19 @@ static bool r2_open_file(ServerState *ss, const char *filepath) {
 			R_LOG_ERROR ("Path traversal is not allowed (contains '/../')");
 			return false;
 		}
-		if (ss && ss->sandbox && *ss->sandbox) {
+		if (ss->sandbox && *ss->sandbox) {
 			if (!path_is_within_sandbox (filepath, ss->sandbox)) {
 				R_LOG_ERROR ("Access denied: path is outside of the sandbox");
 				return false;
 			}
 		}
 	}
+
 	/* In HTTP mode we do not touch the local r2 core. Just set the state
 	 * so subsequent calls to r2mcp_cmd will be allowed (they will be handled
 	 * by the HTTP helper).
 	 */
-	if (ss && ss->http_mode) {
+	if (ss->http_mode) {
 		free (ss->rstate.current_file);
 		ss->rstate.current_file = strdup (filepath);
 		ss->rstate.file_opened = true;
@@ -205,9 +206,16 @@ static bool r2_open_file(ServerState *ss, const char *filepath) {
 		free (ss->rstate.current_file);
 		ss->rstate.current_file = NULL;
 	}
-
-	r_core_cmd0 (core, "e bin.relocs.apply=true");
-	r_core_cmd0 (core, "e bin.cache=true");
+	
+	bool is_frida = strstr (filepath, "frida://") != NULL;
+	if (is_frida) {
+	 	ss->frida_mode = true;
+	} else {
+		r_core_cmd0 (core, "e bin.relocs.apply=true");
+		r_core_cmd0 (core, "e bin.cache=true");
+		R_LOG_INFO ("Loading binary information");
+		r_core_cmd0 (core, "ob");
+	}
 
 	char *cmd = r_str_newf ("'o %s", filepath);
 	R_LOG_INFO ("Running r2 command: %s", cmd);
@@ -228,10 +236,6 @@ static bool r2_open_file(ServerState *ss, const char *filepath) {
 			return false;
 		}
 	}
-
-	R_LOG_INFO ("Loading binary information");
-	r_core_cmd0 (core, "ob");
-
 	free (ss->rstate.current_file);
 	ss->rstate.current_file = strdup (filepath);
 	ss->rstate.file_opened = true;
