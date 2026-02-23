@@ -136,7 +136,6 @@ bool tools_is_tool_allowed(const ServerState *ss, const char *name) {
 }
 
 char *tools_build_catalog_json(const ServerState *ss, const char *cursor, int page_size) {
-
 	int start_index = 0;
 	if (cursor) {
 		start_index = atoi (cursor);
@@ -553,11 +552,8 @@ static char *tool_list_symbols(ServerState *ss, RJson *tool_args) {
 	}
 	
 	if (R_STR_ISNOTEMPTY (filter)) {
-
 		char *r = filter_lines_by_regex (res, filter);
-
 		free (res);
-
 		res = r;
 	}
 
@@ -707,7 +703,7 @@ static char *tool_analyze(ServerState *ss, RJson *tool_args) {
 		return jsonrpc_tooltext_response ("Analysis is not available in frida mode. Use list_functions to see exports or run_command with r2frida commands.");
 	}
 	const int level = (int)r_json_get_num (tool_args, "level");
-	char *err = r2mcp_analyze (ss, level);
+	char *err = r2_analyze (ss, level);
 	char *cmd_result = r2mcp_cmd (ss, "aflc");
 	char *errstr;
 	if (R_STR_ISNOTEMPTY (err)) {
@@ -1086,7 +1082,7 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 
 		char *filteredpath = strdup (filepath);
 		r_str_replace_ch (filteredpath, '`', 0, true);
-		bool success = r2mcp_open_file (ss, filteredpath);
+		bool success = r2_open_file (ss, filteredpath);
 		free (filteredpath);
 		result = jsonrpc_tooltext_response (success? "File opened successfully.": "Failed to open file.");
 		goto cleanup;

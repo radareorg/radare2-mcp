@@ -32,6 +32,7 @@ static bool logcb(void *user, int type, const char *origin, const char *msg) {
 	if (ss->sb) {
 		const char *typestr = r_log_level_tostring (type);
 		// R_LOG_INFO ("[%s] from=%s message=%s\n", typestr, origin, msg);
+		fprintf (stderr, "[%s] %s\n", typestr, msg);
 		r_strbuf_appendf (ss->sb, "[%s] %s\n", typestr, msg);
 		// r_strbuf_appendf (ss->sb, "[%s] from=%s message=%s\n", typestr, origin, msg);
 	}
@@ -155,7 +156,7 @@ static bool path_is_within_sandbox(const char *p, const char *sb) {
 	return p[slen] == '/';
 }
 
-static bool r2_open_file(ServerState *ss, const char *filepath) {
+R_IPI bool r2_open_file(ServerState *ss, const char *filepath) {
 	R_LOG_INFO ("Attempting to open file: %s\n", filepath);
 
 	// Security checks common to both local and HTTP modes
@@ -244,7 +245,7 @@ static bool r2_open_file(ServerState *ss, const char *filepath) {
 	return true;
 }
 
-static char *r2_analyze(ServerState *ss, int level) {
+R_IPI char *r2_analyze(ServerState *ss, int level) {
 	if (ss && ss->http_mode) {
 		/* In HTTP mode we won't run local analysis; return empty string. */
 		return strdup ("");

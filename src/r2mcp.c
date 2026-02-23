@@ -147,14 +147,6 @@ void r2mcp_log_pub(ServerState *ss, const char *msg) {
 	r2mcp_log (ss, msg);
 }
 
-// New wrappers to expose functionality from r2api.inc.c to other modules
-bool r2mcp_open_file(ServerState *ss, const char *filepath) {
-	return r2_open_file (ss, filepath);
-}
-char *r2mcp_analyze(ServerState *ss, int level) {
-	return r2_analyze (ss, level);
-}
-
 typedef bool (*CapCheckFn)(ServerState *, const char *);
 
 typedef struct {
