@@ -49,17 +49,10 @@ char *jsonrpc_tooltext_response_lines(const char *text) {
 	pj_o (pj);
 	pj_k (pj, "content");
 	pj_a (pj);
-	if (text) {
-		RList *lines = r_str_split_list ((char *)text, "\n", 0);
-		if (lines) {
-			RListIter *it;
-			char *line;
-			r_list_foreach (lines, it, line) {
-				pj_s (pj, line);
-			}
-			r_list_free (lines);
-		}
-	}
+	pj_o (pj);
+	pj_ks (pj, "type", "text");
+	pj_ks (pj, "text", text);
+	pj_end (pj);
 	pj_end (pj);
 	pj_end (pj);
 	return pj_drain (pj);
