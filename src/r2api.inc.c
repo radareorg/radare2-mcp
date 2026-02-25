@@ -129,10 +129,6 @@ char *r2mcp_cmdf(ServerState *ss, const char *fmt, ...) {
 	return res;
 }
 
-static bool path_is_absolute(const char *p) {
-	return p && p[0] == '/';
-}
-
 static bool path_contains_parent_ref(const char *p) {
 	return p && strstr (p, "/../") != NULL;
 }
@@ -167,7 +163,7 @@ R_IPI bool r2_open_file(ServerState *ss, const char *filepath) {
 	bool is_uri = strstr (filepath, "://") != NULL;
 	// Filesystem security checks only apply to local paths, not URI schemes
 	if (!is_uri) {
-		if (!path_is_absolute (filepath)) {
+		if (!r_file_abspath (filepath)) {
 			R_LOG_ERROR ("Relative paths are not allowed. Use an absolute path");
 			return false;
 		}
