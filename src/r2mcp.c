@@ -1,34 +1,12 @@
 /* r2mcp - MIT - Copyright 2025-2026 - pancake, dnakov */
 
+#include <signal.h>
 #include <r_core.h>
-#include <r_util/r_json.h>
-#include <r_util/pj.h>
-#include <r_util.h>
-#include <r_util/r_print.h>
-
 #include "config.h"
 #include "jsonrpc.h"
-
-#if defined(R2__UNIX__)
-#include <unistd.h>
-#include <fcntl.h>
-#include <sys/wait.h>
-#include <signal.h>
-#include <errno.h>
-#include <string.h>
-#elif defined(R2__WINDOWS__)
-#include <windows.h>
-#include <io.h>
-#include <fcntl.h>
-#include <signal.h>
-#else
-#error please define R2__WINDOWS__ or R2__UNIX__ for platform detection
-#endif
 #include "r2mcp.h"
 #include "tools.h"
 #include "prompts.h"
-
-#define R2MCP_DEBUG 1
 
 #ifndef R2MCP_VERSION
 #warning R2MCP_VERSION is not defined
