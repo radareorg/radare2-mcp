@@ -163,7 +163,7 @@ R_IPI bool r2_open_file(ServerState *ss, const char *filepath) {
 	bool is_uri = strstr (filepath, "://") != NULL;
 	// Filesystem security checks only apply to local paths, not URI schemes
 	if (!is_uri) {
-		if (!r_file_abspath (filepath)) {
+		if (!r_file_is_abspath (filepath)) {
 			R_LOG_ERROR ("Relative paths are not allowed. Use an absolute path");
 			return false;
 		}
