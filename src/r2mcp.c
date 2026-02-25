@@ -1,5 +1,6 @@
 /* r2mcp - MIT - Copyright 2025-2026 - pancake, dnakov */
 
+#include <signal.h>
 #include <r_core.h>
 #include "config.h"
 #include "jsonrpc.h"
