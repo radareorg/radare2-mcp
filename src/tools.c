@@ -508,7 +508,7 @@ static char *tool_list_sections(ServerState *ss, RJson *tool_args) {
 static char *tool_list_memory_maps(ServerState *ss, RJson *tool_args) {
 	(void)tool_args;
 	const char *prefix = ss->frida_mode ? ":" : "";
-	return tool_cmd_response (r2mcp_cmd (ss, "%sdm", prefix));
+	return tool_cmd_response (r2mcp_cmdf (ss, "%sdm", prefix));
 }
 
 static char *tool_show_headers(ServerState *ss, RJson *tool_args) {
