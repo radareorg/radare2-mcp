@@ -446,22 +446,12 @@ static char *tool_list_files(ServerState *ss, RJson *tool_args) {
 
 static char *tool_list_classes(ServerState *ss, RJson *tool_args) {
 	const char *filter = r_json_get_str (tool_args, "filter");
-	char *res;
-	if (ss->frida_mode) {
-		res = r2mcp_cmd (ss, ":ic");
-	} else {
-		res = r2mcp_cmd (ss, "icqq");
-	}
-
+	char *res = r2mcp_cmd (ss, ss->frida_mode ? ":ic" : "icqq");
 	if (R_STR_ISNOTEMPTY (filter)) {
-
 		char *r = filter_lines_by_regex (res, filter);
-
 		free (res);
-
 		res = r;
 	}
-
 	return tool_cmd_response (res);
 }
 
@@ -470,10 +460,8 @@ static char *tool_list_methods(ServerState *ss, RJson *tool_args) {
 	if (!validate_required_string_param (tool_args, "classname", &classname)) {
 		return jsonrpc_error_missing_param ("classname");
 	}
-	if (ss->frida_mode) {
-		return tool_cmd_response (r2mcp_cmdf (ss, ":ic %s", classname));
-	}
-	return tool_cmd_response (r2mcp_cmdf (ss, "'ic %s", classname));
+	const char *prefix = ss->frida_mode ? ":" : "'";
+	return tool_cmd_response (r2mcp_cmdf (ss, "%sic %s", prefix, classname));
 }
 
 static char *tool_list_decompilers(ServerState *ss, RJson *tool_args) {
@@ -492,68 +480,40 @@ static char *tool_list_functions_tree(ServerState *ss, RJson *tool_args) {
 
 static char *tool_list_imports(ServerState *ss, RJson *tool_args) {
 	const char *filter = r_json_get_str (tool_args, "filter");
-	char *res;
-	if (ss->frida_mode) {
-		res = r2mcp_cmd (ss, ":ii");
-	} else {
-		res = r2mcp_cmd (ss, "iiq");
-	}
-
+	char *res = r2mcp_cmd (ss, ss->frida_mode ? ":ii" : "iiq");
 	if (R_STR_ISNOTEMPTY (filter)) {
-
 		char *r = filter_lines_by_regex (res, filter);
-
 		free (res);
-
 		res = r;
 	}
-
 	return tool_cmd_response (res);
 }
 
 static char *tool_list_exports(ServerState *ss, RJson *tool_args) {
 	const char *filter = r_json_get_str (tool_args, "filter");
-	char *res;
-	if (ss->frida_mode) {
-		res = r2mcp_cmd (ss, ":iE");
-	} else {
-		res = r2mcp_cmd (ss, "iEq");
-	}
-
+	char *res = r2mcp_cmd (ss, ss->frida_mode ? ":iE" : "iEq");
 	if (R_STR_ISNOTEMPTY (filter)) {
-
 		char *r = filter_lines_by_regex (res, filter);
-
 		free (res);
-
 		res = r;
 	}
-
 	return tool_cmd_response (res);
 }
 
 static char *tool_list_sections(ServerState *ss, RJson *tool_args) {
 	(void)tool_args;
-	if (ss->frida_mode) {
-		return tool_cmd_response (r2mcp_cmd (ss, ":iS"));
-	}
-	return tool_cmd_response (r2mcp_cmd (ss, "iS;iSS"));
+	return tool_cmd_response (r2mcp_cmd (ss, ss->frida_mode ? ":iS" : "iS;iSS"));
 }
 
 static char *tool_list_memory_maps(ServerState *ss, RJson *tool_args) {
 	(void)tool_args;
-	if (ss->frida_mode) {
-		return tool_cmd_response (r2mcp_cmd (ss, ":dm"));
-	}
-	return tool_cmd_response (r2mcp_cmd (ss, "dm"));
+	const char *prefix = ss->frida_mode ? ":" : "";
+	return tool_cmd_response (r2mcp_cmd (ss, "%sdm", prefix));
 }
 
 static char *tool_show_headers(ServerState *ss, RJson *tool_args) {
 	(void)tool_args;
-	if (ss->frida_mode) {
-		return tool_cmd_response (r2mcp_cmd (ss, ":i"));
-	}
-	return tool_cmd_response (r2mcp_cmd (ss, "i;iH"));
+	return tool_cmd_response (r2mcp_cmd (ss, ss->frida_mode ? ":i" : "i;iH"));
 }
 
 static char *tool_show_function_details(ServerState *ss, RJson *tool_args) {
@@ -568,41 +528,23 @@ static char *tool_get_current_address(ServerState *ss, RJson *tool_args) {
 
 static char *tool_list_symbols(ServerState *ss, RJson *tool_args) {
 	const char *filter = r_json_get_str (tool_args, "filter");
-	char *res;
-	if (ss->frida_mode) {
-		res = r2mcp_cmd (ss, ":is");
-	} else {
-		res = r2mcp_cmd (ss, "isq~!func.,!imp.");
-	}
-
+	char *res = r2mcp_cmd (ss, ss->frida_mode ? ":is" : "isq~!func.,!imp.");
 	if (R_STR_ISNOTEMPTY (filter)) {
 		char *r = filter_lines_by_regex (res, filter);
 		free (res);
 		res = r;
 	}
-
 	return tool_cmd_response (res);
 }
 
 static char *tool_list_entrypoints(ServerState *ss, RJson *tool_args) {
 	(void)tool_args;
-	char *res;
-	if (ss->frida_mode) {
-		res = r2mcp_cmd (ss, ":ie");
-	} else {
-		res = r2mcp_cmd (ss, "ies");
-	}
-	char *o = jsonrpc_tooltext_response_lines (res);
-	free (res);
-	return o;
+	return tool_cmd_response (r2mcp_cmd (ss, ss->frida_mode ? ":ie" : "ies"));
 }
 
 static char *tool_list_libraries(ServerState *ss, RJson *tool_args) {
 	(void)tool_args;
-	if (ss->frida_mode) {
-		return tool_cmd_response (r2mcp_cmd (ss, ":il"));
-	}
-	return tool_cmd_response (r2mcp_cmd (ss, "ilq"));
+	return tool_cmd_response (r2mcp_cmd (ss, ss->frida_mode ? ":il" : "ilq"));
 }
 
 static char *tool_calculate(ServerState *ss, RJson *tool_args) {
@@ -670,12 +612,7 @@ static char *tool_list_strings(ServerState *ss, RJson *tool_args) {
 		page_size = R2MCP_MAX_PAGE_SIZE;
 	}
 
-	char *cmd_result;
-	if (ss->frida_mode) {
-		cmd_result = r2mcp_cmd (ss, ":iz");
-	} else {
-		cmd_result = r2mcp_cmd (ss, "izqq");
-	}
+	char *cmd_result = r2mcp_cmd (ss, ss->frida_mode ? ":iz" : "izqq");
 	if (R_STR_ISNOTEMPTY (filter)) {
 		char *r = filter_lines_by_regex (cmd_result, filter);
 		free (cmd_result);
