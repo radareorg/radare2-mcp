@@ -903,6 +903,120 @@ static char *tool_dump_registers(ServerState *ss, RJson *tool_args) {
 	return tool_cmd_response (r2mcp_cmd (ss, "dr"));
 }
 
+static char *tool_hexdump(ServerState *ss, RJson *tool_args) {
+	const char *address;
+	if (!validate_address_param (tool_args, "address", &address)) {
+		return jsonrpc_error_missing_param ("address");
+	}
+	const char *size = r_json_get_str (tool_args, "size");
+	if (R_STR_ISNOTEMPTY (size)) {
+		return tool_cmd_response (r2mcp_cmdf (ss, "px %s @ %s", size, address));
+	}
+	return tool_cmd_response (r2mcp_cmdf (ss, "px @ %s", address));
+}
+
+static char *tool_memory_map_here(ServerState *ss, RJson *tool_args) {
+	(void)tool_args;
+	if (ss->frida_mode) {
+		return tool_cmd_response (r2mcp_cmd (ss, ":dm."));
+	}
+	return tool_cmd_response (r2mcp_cmd (ss, "dm."));
+}
+
+static char *tool_list_heap_allocations(ServerState *ss, RJson *tool_args) {
+	(void)tool_args;
+	if (ss->frida_mode) {
+		return tool_cmd_response (r2mcp_cmd (ss, ":dmh"));
+	}
+	return tool_cmd_response (r2mcp_cmd (ss, "dmh"));
+}
+
+static char *tool_alloc_memory(ServerState *ss, RJson *tool_args) {
+	const char *string_value = r_json_get_str (tool_args, "string");
+	if (R_STR_ISNOTEMPTY (string_value)) {
+		return tool_cmd_response (r2mcp_cmdf (ss, ":dmas %s", string_value));
+	}
+	int size = (int)r_json_get_num (tool_args, "size");
+	if (size <= 0) {
+		return jsonrpc_error_response (-32602, "Provide either 'size' (number of bytes) or 'string' to allocate", NULL, NULL);
+	}
+	return tool_cmd_response (r2mcp_cmdf (ss, ":dma %d", size));
+}
+
+static char *tool_change_memory_protection(ServerState *ss, RJson *tool_args) {
+	const char *address, *protection;
+	if (!validate_address_param (tool_args, "address", &address)) {
+		return jsonrpc_error_missing_param ("address");
+	}
+	int size = (int)r_json_get_num (tool_args, "size");
+	if (size <= 0) {
+		return jsonrpc_error_missing_param ("size");
+	}
+	if (!validate_required_string_param (tool_args, "protection", &protection)) {
+		return jsonrpc_error_missing_param ("protection");
+	}
+	return tool_cmd_response (r2mcp_cmdf (ss, ":dmp %s %d %s", address, size, protection));
+}
+
+static char *tool_search_memory(ServerState *ss, RJson *tool_args) {
+	const char *query;
+	if (!validate_required_string_param (tool_args, "query", &query)) {
+		return jsonrpc_error_missing_param ("query");
+	}
+	const char *type = r_json_get_str (tool_args, "type");
+	if (R_STR_ISEMPTY (type)) {
+		type = "string";
+	}
+	if (!strcmp (type, "hex")) {
+		return tool_cmd_response (r2mcp_cmdf (ss, ":/x %s", query));
+	}
+	if (!strcmp (type, "wide")) {
+		return tool_cmd_response (r2mcp_cmdf (ss, ":/w %s", query));
+	}
+	if (!strcmp (type, "value")) {
+		int value_size = (int)r_json_get_num (tool_args, "value_size");
+		if (value_size != 1 && value_size != 2 && value_size != 4 && value_size != 8) {
+			value_size = 4;
+		}
+		return tool_cmd_response (r2mcp_cmdf (ss, ":/v%d %s", value_size, query));
+	}
+	// default: string search
+	return tool_cmd_response (r2mcp_cmdf (ss, ":/ %s", query));
+}
+
+static char *tool_lookup_address(ServerState *ss, RJson *tool_args) {
+	const char *address;
+	if (!validate_address_param (tool_args, "address", &address)) {
+		return jsonrpc_error_missing_param ("address");
+	}
+	if (ss->frida_mode) {
+		return tool_cmd_response (r2mcp_cmdf (ss, ":fd @ %s", address));
+	}
+	return tool_cmd_response (r2mcp_cmdf (ss, "fd @ %s", address));
+}
+
+static char *tool_lookup_export(ServerState *ss, RJson *tool_args) {
+	const char *name;
+	if (!validate_required_string_param (tool_args, "name", &name)) {
+		return jsonrpc_error_missing_param ("name");
+	}
+	if (ss->frida_mode) {
+		return tool_cmd_response (r2mcp_cmdf (ss, ":iaE %s", name));
+	}
+	return tool_cmd_response (r2mcp_cmdf (ss, "iaE %s", name));
+}
+
+static char *tool_lookup_symbol(ServerState *ss, RJson *tool_args) {
+	const char *address;
+	if (!validate_address_param (tool_args, "address", &address)) {
+		return jsonrpc_error_missing_param ("address");
+	}
+	if (ss->frida_mode) {
+		return tool_cmd_response (r2mcp_cmdf (ss, ":ias %s", address));
+	}
+	return tool_cmd_response (r2mcp_cmdf (ss, "is. @ %s", address));
+}
+
 static char *tool_run_command(ServerState *ss, RJson *tool_args) {
 	const char *command;
 	if (!validate_required_string_param (tool_args, "command", &command)) {
@@ -1258,5 +1372,14 @@ ToolSpec tool_specs[] = {
 	{ "get_pid", "Get the process ID of the target process", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_FRIDA, tool_get_pid },
 	{ "list_threads", "List all threads in the target process with their IDs and state", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_FRIDA, tool_list_threads },
 	{ "dump_registers", "Show register values for the target process threads", "{\"type\":\"object\",\"properties\":{\"thread_id\":{\"type\":\"string\",\"description\":\"Optional thread ID to show registers for a specific thread\"}}}", TOOL_MODE_NORMAL | TOOL_MODE_FRIDA, tool_dump_registers },
+	{ "hexdump", "Print memory contents in hexdump style at the given address", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address to hexdump\"},\"size\":{\"type\":\"string\",\"description\":\"Number of bytes to dump (empty string for default size)\"}},\"required\":[\"address\",\"size\"]}", TOOL_MODE_NORMAL | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_hexdump },
+	{ "memory_map_here", "Show memory map information at the current address", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_FRIDA, tool_memory_map_here },
+	{ "list_heap_allocations", "List malloc/heap memory ranges in the target process", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_FRIDA, tool_list_heap_allocations },
+	{ "alloc_memory", "Allocate memory in the target process heap. Provide either size (bytes) or string to allocate", "{\"type\":\"object\",\"properties\":{\"size\":{\"type\":\"integer\",\"description\":\"Number of bytes to allocate\"},\"string\":{\"type\":\"string\",\"description\":\"String to allocate in target heap (returns its address)\"}}}", TOOL_MODE_FRIDA, tool_alloc_memory },
+	{ "change_memory_protection", "Change memory protection (rwx) at the given address and size", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the memory region\"},\"size\":{\"type\":\"integer\",\"description\":\"Size in bytes of the region\"},\"protection\":{\"type\":\"string\",\"description\":\"New protection string (e.g. rwx, r-x, rw-)\"}},\"required\":[\"address\",\"size\",\"protection\"]}", TOOL_MODE_FRIDA, tool_change_memory_protection },
+	{ "search_memory", "Search process memory for strings, hex patterns, wide strings, or numeric values", "{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\",\"description\":\"The search query (string, hex bytes, or numeric value)\"},\"type\":{\"type\":\"string\",\"description\":\"Search type: string (default), hex, wide, or value\"},\"value_size\":{\"type\":\"integer\",\"description\":\"For value search: byte width 1, 2, 4 (default), or 8\"}},\"required\":[\"query\"]}", TOOL_MODE_FRIDA, tool_search_memory },
+	{ "lookup_address", "Describe what is at a given address (flag name, symbol, module)", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address to describe\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_lookup_address },
+	{ "lookup_export", "Resolve an export name to its implementation address", "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"Export name to look up\"}},\"required\":[\"name\"]}", TOOL_MODE_NORMAL | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_lookup_export },
+	{ "lookup_symbol", "Resolve an address to its symbol name", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address to resolve\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_lookup_symbol },
 	{ NULL, NULL, NULL, 0, NULL }
 };
