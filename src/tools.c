@@ -876,6 +876,33 @@ static char *tool_decompile_function(ServerState *ss, RJson *tool_args) {
 	return response;
 }
 
+static char *tool_get_pid(ServerState *ss, RJson *tool_args) {
+	(void)tool_args;
+	if (ss->frida_mode) {
+		return tool_cmd_response (r2mcp_cmd (ss, ":dp"));
+	}
+	return tool_cmd_response (r2mcp_cmd (ss, "dp"));
+}
+
+static char *tool_list_threads(ServerState *ss, RJson *tool_args) {
+	(void)tool_args;
+	if (ss->frida_mode) {
+		return tool_cmd_response (r2mcp_cmd (ss, ":dpt"));
+	}
+	return tool_cmd_response (r2mcp_cmd (ss, "dpt"));
+}
+
+static char *tool_dump_registers(ServerState *ss, RJson *tool_args) {
+	const char *thread_id = r_json_get_str (tool_args, "thread_id");
+	if (ss->frida_mode) {
+		if (R_STR_ISNOTEMPTY (thread_id)) {
+			return tool_cmd_response (r2mcp_cmdf (ss, ":dr %s", thread_id));
+		}
+		return tool_cmd_response (r2mcp_cmd (ss, ":dr"));
+	}
+	return tool_cmd_response (r2mcp_cmd (ss, "dr"));
+}
+
 static char *tool_run_command(ServerState *ss, RJson *tool_args) {
 	const char *command;
 	if (!validate_required_string_param (tool_args, "command", &command)) {
@@ -897,6 +924,27 @@ static char *tool_run_javascript(ServerState *ss, RJson *tool_args) {
 	}
 
 	char *cmd = r_str_newf ("js base64:%s", encoded);
+	char *res = r2mcp_cmd (ss, cmd);
+	free (cmd);
+	free (encoded);
+	return tool_cmd_response (res);
+}
+
+static char *tool_run_frida_script(ServerState *ss, RJson *tool_args) {
+	const char *script;
+	if (!ss->frida_mode) {
+		return jsonrpc_error_response (-32603, "Frida mode is not enabled", NULL, NULL);
+	}
+	if (!validate_required_string_param (tool_args, "script", &script)) {
+		return jsonrpc_error_missing_param ("script");
+	}
+	char *encoded = r_base64_encode_dyn ((const ut8 *)script, strlen (script));
+
+	if (!encoded) {
+		return jsonrpc_error_response (-32603, "Failed to encode script", NULL, NULL);
+	}
+
+	char *cmd = r_str_newf (": base64:%s", encoded);
 	char *res = r2mcp_cmd (ss, cmd);
 	free (cmd);
 	free (encoded);
@@ -1171,6 +1219,7 @@ cleanup:
 ToolSpec tool_specs[] = {
 	{ "open_file", "Opens a binary file with radare2 for analysis <think>Call this tool before any other one from r2mcp. Use an absolute file_path</think>", "{\"type\":\"object\",\"properties\":{\"file_path\":{\"type\":\"string\",\"description\":\"Path to the file to open\"}},\"required\":[\"file_path\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI, NULL },
 	{ "run_javascript", "Executes JavaScript code using radare2's qjs runtime", "{\"type\":\"object\",\"properties\":{\"script\":{\"type\":\"string\",\"description\":\"The JavaScript code to execute\"}},\"required\":[\"script\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP, tool_run_javascript },
+	{ "run_frida_script", "Executes Frida JavaScript code", "{\"type\":\"object\",\"properties\":{\"script\":{\"type\":\"string\",\"description\":\"The script code to execute\"}},\"required\":[\"script\"]}", TOOL_MODE_FRIDA, tool_run_frida_script },
 	{ "run_command", "Executes a raw radare2 command directly", "{\"type\":\"object\",\"properties\":{\"command\":{\"type\":\"string\",\"description\":\"The radare2 command to execute\"}},\"required\":[\"command\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP, tool_run_command },
 	{ "list_sessions", "Lists available r2agent sessions in JSON format", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_HTTP | TOOL_MODE_RO | TOOL_MODE_SESSIONS, tool_list_sessions },
 	{ "open_session", "Connects to a remote r2 instance using r2pipe API", "{\"type\":\"object\",\"properties\":{\"url\":{\"type\":\"string\",\"description\":\"URL of the remote r2 instance to connect to\"}},\"required\":[\"url\"]}", TOOL_MODE_NORMAL | TOOL_MODE_HTTP | TOOL_MODE_SESSIONS, tool_open_session },
@@ -1206,5 +1255,8 @@ ToolSpec tool_specs[] = {
 	{ "disassemble_function", "Shows assembly listing of the function at the specified address", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the function to disassemble\"},\"cursor\":{\"type\":\"string\",\"description\":\"Cursor for pagination (line number to start from)\"},\"page_size\":{\"type\":\"integer\",\"description\":\"Number of lines per page (default: 1000, max: 10000)\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | TOOL_MODE_RO, tool_disassemble_function },
 	{ "disassemble", "Disassembles a specific number of instructions from an address <think>Use this tool to inspect a portion of memory as code without depending on function analysis boundaries. Use this tool when functions are large and you are only interested on few instructions</think>", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address to start disassembly\"},\"num_instructions\":{\"type\":\"integer\",\"description\":\"Number of instructions to disassemble (default: 10)\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_disassemble },
 	{ "calculate", "Evaluate a math expression using core->num (r_num_math). Usecases: do proper 64-bit math, resolve addresses for flag names/symbols, and avoid hallucinated results.", "{\"type\":\"object\",\"properties\":{\"expression\":{\"type\":\"string\",\"description\":\"Math expression to evaluate (eg. 0x100 + sym.flag - 4)\"}},\"required\":[\"expression\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_calculate },
+	{ "get_pid", "Get the process ID of the target process", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_FRIDA, tool_get_pid },
+	{ "list_threads", "List all threads in the target process with their IDs and state", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_FRIDA, tool_list_threads },
+	{ "dump_registers", "Show register values for the target process threads", "{\"type\":\"object\",\"properties\":{\"thread_id\":{\"type\":\"string\",\"description\":\"Optional thread ID to show registers for a specific thread\"}}}", TOOL_MODE_NORMAL | TOOL_MODE_FRIDA, tool_dump_registers },
 	{ NULL, NULL, NULL, 0, NULL }
 };
