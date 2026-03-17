@@ -948,7 +948,7 @@ static char *tool_change_memory_protection(ServerState *ss, RJson *tool_args) {
 	return tool_cmd_response (r2mcp_cmdf (ss, ":dmp %s %d %s", address, size, protection));
 }
 
-static char *tool_search_memory(ServerState *ss, RJson *tool_args) {
+static char *tool_search(ServerState *ss, RJson *tool_args) {
 	const char *query;
 	if (!validate_required_string_param (tool_args, "query", &query)) {
 		return jsonrpc_error_missing_param ("query");
@@ -957,21 +957,22 @@ static char *tool_search_memory(ServerState *ss, RJson *tool_args) {
 	if (R_STR_ISEMPTY (type)) {
 		type = "string";
 	}
+	const char *prefix = ss->frida_mode ? ":" : "";
 	if (!strcmp (type, "hex")) {
-		return tool_cmd_response (r2mcp_cmdf (ss, ":/x %s", query));
+		return tool_cmd_response (r2mcp_cmdf (ss, "%s/x %s", prefix, query));
 	}
 	if (!strcmp (type, "wide")) {
-		return tool_cmd_response (r2mcp_cmdf (ss, ":/w %s", query));
+		return tool_cmd_response (r2mcp_cmdf (ss, "%s/w %s", prefix, query));
 	}
 	if (!strcmp (type, "value")) {
 		int value_size = (int)r_json_get_num (tool_args, "value_size");
 		if (value_size != 1 && value_size != 2 && value_size != 4 && value_size != 8) {
 			value_size = 4;
 		}
-		return tool_cmd_response (r2mcp_cmdf (ss, ":/v%d %s", value_size, query));
+		return tool_cmd_response (r2mcp_cmdf (ss, "%s/v%d %s", prefix, value_size, query));
 	}
 	// default: string search
-	return tool_cmd_response (r2mcp_cmdf (ss, ":/ %s", query));
+	return tool_cmd_response (r2mcp_cmdf (ss, "%s/ %s", prefix, query));
 }
 
 static char *tool_lookup_address(ServerState *ss, RJson *tool_args) {
@@ -1361,7 +1362,7 @@ ToolSpec tool_specs[] = {
 	{ "list_heap_allocations", "List malloc/heap memory ranges in the target process", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_FRIDA, tool_list_heap_allocations },
 	{ "alloc_memory", "Allocate memory in the target process heap. Provide either size (bytes) or string to allocate", "{\"type\":\"object\",\"properties\":{\"size\":{\"type\":\"integer\",\"description\":\"Number of bytes to allocate\"},\"string\":{\"type\":\"string\",\"description\":\"String to allocate in target heap (returns its address)\"}}}", TOOL_MODE_FRIDA, tool_alloc_memory },
 	{ "change_memory_protection", "Change memory protection (rwx) at the given address and size", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the memory region\"},\"size\":{\"type\":\"integer\",\"description\":\"Size in bytes of the region\"},\"protection\":{\"type\":\"string\",\"description\":\"New protection string (e.g. rwx, r-x, rw-)\"}},\"required\":[\"address\",\"size\",\"protection\"]}", TOOL_MODE_FRIDA, tool_change_memory_protection },
-	{ "search_memory", "Search process memory for strings, hex patterns, wide strings, or numeric values", "{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\",\"description\":\"The search query (string, hex bytes, or numeric value)\"},\"type\":{\"type\":\"string\",\"description\":\"Search type: string (default), hex, wide, or value\"},\"value_size\":{\"type\":\"integer\",\"description\":\"For value search: byte width 1, 2, 4 (default), or 8\"}},\"required\":[\"query\"]}", TOOL_MODE_FRIDA, tool_search_memory },
+	{ "search", "Search for strings, hex patterns, wide strings, or numeric values", "{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\",\"description\":\"The search query (string, hex bytes, or numeric value)\"},\"type\":{\"type\":\"string\",\"description\":\"Search type: string (default), hex, wide, or value\"},\"value_size\":{\"type\":\"integer\",\"description\":\"For value search: byte width 1, 2, 4 (default), or 8\"}},\"required\":[\"query\"]}", TOOL_MODE_NORMAL | TOOL_MODE_FRIDA, tool_search },
 	{ "lookup_address", "Describe what is at a given address (flag name, symbol, module)", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address to describe\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_lookup_address },
 	{ "lookup_export", "Resolve an export name to its implementation address", "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"Export name to look up\"}},\"required\":[\"name\"]}", TOOL_MODE_NORMAL | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_lookup_export },
 	{ "lookup_symbol", "Resolve an address to its symbol name", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address to resolve\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_lookup_symbol },
