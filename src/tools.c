@@ -30,6 +30,11 @@ static bool validate_address_param(RJson *args, const char *param_name, const ch
 	return validate_required_string_param (args, param_name, out_address);
 }
 
+static inline bool get_json_param(RJson *args) {
+	const RJson *p = r_json_get (args, "json");
+	return p && p->type == R_JSON_BOOLEAN && p->num.u_value;
+}
+
 // Helper to wrap command result in JSON response and free the result
 static char *tool_cmd_response(char *res) {
 	char *response = jsonrpc_tooltext_response (res);
@@ -446,7 +451,11 @@ static char *tool_list_files(ServerState *ss, RJson *tool_args) {
 
 static char *tool_list_classes(ServerState *ss, RJson *tool_args) {
 	const char *filter = r_json_get_str (tool_args, "filter");
-	char *res = r2mcp_cmd (ss, ss->frida_mode ? ":ic" : "icqq");
+	bool json = get_json_param (tool_args);
+	const char *cmd = json
+		? (ss->frida_mode ? ":icj" : "icj")
+		: (ss->frida_mode ? ":ic" : "icqq");
+	char *res = r2mcp_cmd (ss, cmd);
 	if (R_STR_ISNOTEMPTY (filter)) {
 		char *r = filter_lines_by_regex (res, filter);
 		free (res);
@@ -460,8 +469,9 @@ static char *tool_list_methods(ServerState *ss, RJson *tool_args) {
 	if (!validate_required_string_param (tool_args, "classname", &classname)) {
 		return jsonrpc_error_missing_param ("classname");
 	}
-	const char *prefix = ss->frida_mode ? ":" : "'";
-	return tool_cmd_response (r2mcp_cmdf (ss, "%sic %s", prefix, classname));
+	bool json = get_json_param (tool_args);
+	const char *prefix = ss->frida_mode ? ":" : "";
+	return tool_cmd_response (r2mcp_cmdf (ss, json ? "%sicj %s" : "%sic %s", prefix, classname));
 }
 
 static char *tool_list_decompilers(ServerState *ss, RJson *tool_args) {
@@ -480,7 +490,11 @@ static char *tool_list_functions_tree(ServerState *ss, RJson *tool_args) {
 
 static char *tool_list_imports(ServerState *ss, RJson *tool_args) {
 	const char *filter = r_json_get_str (tool_args, "filter");
-	char *res = r2mcp_cmd (ss, ss->frida_mode ? ":ii" : "iiq");
+	bool json = get_json_param (tool_args);
+	const char *cmd = json
+		? (ss->frida_mode ? ":iij" : "iij")
+		: (ss->frida_mode ? ":ii" : "iiq");
+	char *res = r2mcp_cmd (ss, cmd);
 	if (R_STR_ISNOTEMPTY (filter)) {
 		char *r = filter_lines_by_regex (res, filter);
 		free (res);
@@ -491,7 +505,11 @@ static char *tool_list_imports(ServerState *ss, RJson *tool_args) {
 
 static char *tool_list_exports(ServerState *ss, RJson *tool_args) {
 	const char *filter = r_json_get_str (tool_args, "filter");
-	char *res = r2mcp_cmd (ss, ss->frida_mode ? ":iE" : "iEq");
+	bool json = get_json_param (tool_args);
+	const char *cmd = json
+		? (ss->frida_mode ? ":iEj" : "iEj")
+		: (ss->frida_mode ? ":iE" : "iEq");
+	char *res = r2mcp_cmd (ss, cmd);
 	if (R_STR_ISNOTEMPTY (filter)) {
 		char *r = filter_lines_by_regex (res, filter);
 		free (res);
@@ -501,19 +519,25 @@ static char *tool_list_exports(ServerState *ss, RJson *tool_args) {
 }
 
 static char *tool_list_sections(ServerState *ss, RJson *tool_args) {
-	(void)tool_args;
-	return tool_cmd_response (r2mcp_cmd (ss, ss->frida_mode ? ":iS" : "iS;iSS"));
+	bool json = get_json_param (tool_args);
+	const char *cmd = json
+		? (ss->frida_mode ? ":iSj" : "iSj")
+		: (ss->frida_mode ? ":iS" : "iS;iSS");
+	return tool_cmd_response (r2mcp_cmd (ss, cmd));
 }
 
 static char *tool_list_memory_maps(ServerState *ss, RJson *tool_args) {
-	(void)tool_args;
+	bool json = get_json_param (tool_args);
 	const char *prefix = ss->frida_mode ? ":" : "";
-	return tool_cmd_response (r2mcp_cmdf (ss, "%sdm", prefix));
+	return tool_cmd_response (r2mcp_cmdf (ss, json ? "%sdmj" : "%sdm", prefix));
 }
 
 static char *tool_show_info(ServerState *ss, RJson *tool_args) {
-	(void)tool_args;
-	return tool_cmd_response (r2mcp_cmd (ss, ss->frida_mode ? ":i" : "i;iH"));
+	bool json = get_json_param (tool_args);
+	const char *cmd = json
+		? (ss->frida_mode ? ":ij" : "ij")
+		: (ss->frida_mode ? ":i" : "i;iH");
+	return tool_cmd_response (r2mcp_cmd (ss, cmd));
 }
 
 static char *tool_show_function_details(ServerState *ss, RJson *tool_args) {
@@ -528,7 +552,11 @@ static char *tool_get_current_address(ServerState *ss, RJson *tool_args) {
 
 static char *tool_list_symbols(ServerState *ss, RJson *tool_args) {
 	const char *filter = r_json_get_str (tool_args, "filter");
-	char *res = r2mcp_cmd (ss, ss->frida_mode ? ":is" : "isq~!func.,!imp.");
+	bool json = get_json_param (tool_args);
+	const char *cmd = json
+		? (ss->frida_mode ? ":isj" : "isj")
+		: (ss->frida_mode ? ":is" : "isq~!func.,!imp.");
+	char *res = r2mcp_cmd (ss, cmd);
 	if (R_STR_ISNOTEMPTY (filter)) {
 		char *r = filter_lines_by_regex (res, filter);
 		free (res);
@@ -538,13 +566,19 @@ static char *tool_list_symbols(ServerState *ss, RJson *tool_args) {
 }
 
 static char *tool_list_entrypoints(ServerState *ss, RJson *tool_args) {
-	(void)tool_args;
-	return tool_cmd_response (r2mcp_cmd (ss, ss->frida_mode ? ":ie" : "ies"));
+	bool json = get_json_param (tool_args);
+	const char *cmd = json
+		? (ss->frida_mode ? ":iej" : "iej")
+		: (ss->frida_mode ? ":ie" : "ies");
+	return tool_cmd_response (r2mcp_cmd (ss, cmd));
 }
 
 static char *tool_list_libraries(ServerState *ss, RJson *tool_args) {
-	(void)tool_args;
-	return tool_cmd_response (r2mcp_cmd (ss, ss->frida_mode ? ":il" : "ilq"));
+	bool json = get_json_param (tool_args);
+	const char *cmd = json
+		? (ss->frida_mode ? ":ilj" : "ilj")
+		: (ss->frida_mode ? ":il" : "ilq");
+	return tool_cmd_response (r2mcp_cmd (ss, cmd));
 }
 
 static char *tool_calculate(ServerState *ss, RJson *tool_args) {
@@ -612,7 +646,11 @@ static char *tool_list_strings(ServerState *ss, RJson *tool_args) {
 		page_size = R2MCP_MAX_PAGE_SIZE;
 	}
 
-	char *cmd_result = r2mcp_cmd (ss, ss->frida_mode ? ":iz" : "izqq");
+	bool json = get_json_param (tool_args);
+	const char *cmd = json
+		? (ss->frida_mode ? ":izj" : "izj")
+		: (ss->frida_mode ? ":iz" : "izqq");
+	char *cmd_result = r2mcp_cmd (ss, cmd);
 	if (R_STR_ISNOTEMPTY (filter)) {
 		char *r = filter_lines_by_regex (cmd_result, filter);
 		free (cmd_result);
@@ -894,22 +932,24 @@ static char *tool_search(ServerState *ss, RJson *tool_args) {
 	if (R_STR_ISEMPTY (type)) {
 		type = "string";
 	}
+	bool json = get_json_param (tool_args);
 	const char *prefix = ss->frida_mode ? ":" : "";
+	const char *jsuffix = json ? "j" : "";
 	if (!strcmp (type, "hex")) {
-		return tool_cmd_response (r2mcp_cmdf (ss, "%s/x %s", prefix, query));
+		return tool_cmd_response (r2mcp_cmdf (ss, "%s/x%s %s", prefix, jsuffix, query));
 	}
 	if (!strcmp (type, "wide")) {
-		return tool_cmd_response (r2mcp_cmdf (ss, "%s/w %s", prefix, query));
+		return tool_cmd_response (r2mcp_cmdf (ss, "%s/w%s %s", prefix, jsuffix, query));
 	}
 	if (!strcmp (type, "value")) {
 		int value_size = (int)r_json_get_num (tool_args, "value_size");
 		if (value_size != 1 && value_size != 2 && value_size != 4 && value_size != 8) {
 			value_size = 4;
 		}
-		return tool_cmd_response (r2mcp_cmdf (ss, "%s/v%d %s", prefix, value_size, query));
+		return tool_cmd_response (r2mcp_cmdf (ss, "%s/v%d%s %s", prefix, value_size, jsuffix, query));
 	}
 	// default: string search
-	return tool_cmd_response (r2mcp_cmdf (ss, "%s/ %s", prefix, query));
+	return tool_cmd_response (r2mcp_cmdf (ss, "%s/%s %s", prefix, jsuffix, query));
 }
 
 static char *tool_lookup_address(ServerState *ss, RJson *tool_args) {
@@ -917,8 +957,9 @@ static char *tool_lookup_address(ServerState *ss, RJson *tool_args) {
 	if (!validate_address_param (tool_args, "address", &address)) {
 		return jsonrpc_error_missing_param ("address");
 	}
+	bool json = get_json_param (tool_args);
 	const char *prefix = ss->frida_mode ? ":" : "";
-	return tool_cmd_response (r2mcp_cmdf (ss, "%sfd @ %s", prefix, address));
+	return tool_cmd_response (r2mcp_cmdf (ss, json ? "%sfdj @ %s" : "%sfd @ %s", prefix, address));
 }
 
 static char *tool_lookup_export(ServerState *ss, RJson *tool_args) {
@@ -926,14 +967,22 @@ static char *tool_lookup_export(ServerState *ss, RJson *tool_args) {
 	if (!validate_required_string_param (tool_args, "name", &name)) {
 		return jsonrpc_error_missing_param ("name");
 	}
+	bool json = get_json_param (tool_args);
 	const char *prefix = ss->frida_mode ? ":" : "";
-	return tool_cmd_response (r2mcp_cmdf (ss, "%siaE %s", prefix, name));
+	return tool_cmd_response (r2mcp_cmdf (ss, json ? "%siaEj %s" : "%siaE %s", prefix, name));
 }
 
 static char *tool_lookup_symbol(ServerState *ss, RJson *tool_args) {
 	const char *address;
 	if (!validate_address_param (tool_args, "address", &address)) {
 		return jsonrpc_error_missing_param ("address");
+	}
+	bool json = get_json_param (tool_args);
+	if (json) {
+		if (ss->frida_mode) {
+			return tool_cmd_response (r2mcp_cmdf (ss, ":iasj %s", address));
+		}
+		return tool_cmd_response (r2mcp_cmdf (ss, "isj. @ %s", address));
 	}
 	const char *prefix = ss->frida_mode ? ":" : "";
 	return tool_cmd_response (r2mcp_cmdf (ss, "%sis. @ %s", prefix, address));
@@ -1263,18 +1312,18 @@ ToolSpec tool_specs[] = {
 	{ "close_file", "Close the currently open file", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL, tool_close_file },
 	{ "list_functions", "Lists all functions discovered during analysis", "{\"type\":\"object\",\"properties\":{\"only_named\":{\"type\":\"boolean\",\"description\":\"If true, only list functions with named symbols (excludes functions with numeric suffixes like sym.func.1000016c8)\"},\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"},\"start\":{\"type\":\"integer\",\"description\":\"Starting index for pagination (default: 0)\"},\"max_length\":{\"type\":\"integer\",\"description\":\"Maximum number of results to return, -1 for all (default: 50)\"}}}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO, tool_list_functions },
 	{ "list_functions_tree", "Lists functions and successors (aflmu)", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO, tool_list_functions_tree },
-	{ "list_libraries", "Lists all shared libraries linked to the binary", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_list_libraries },
-	{ "list_imports", "Lists imported symbols (note: use list_symbols for addresses with sym.imp. prefix)", "{\"type\":\"object\",\"properties\":{\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"}}}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_list_imports },
-	{ "list_exports", "Lists exported symbols from the binary or process", "{\"type\":\"object\",\"properties\":{\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"}}}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_list_exports },
-	{ "list_sections", "Displays memory sections and segments from the binary", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_list_sections },
-	{ "list_memory_maps", "Lists memory regions of the process with addresses and permissions", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_FRIDA, tool_list_memory_maps },
+	{ "list_libraries", "Lists all shared libraries linked to the binary", "{\"type\":\"object\",\"properties\":{\"json\":{\"type\":\"boolean\",\"description\":\"Output in JSON format\"}}}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_list_libraries },
+	{ "list_imports", "Lists imported symbols (note: use list_symbols for addresses with sym.imp. prefix)", "{\"type\":\"object\",\"properties\":{\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"},\"json\":{\"type\":\"boolean\",\"description\":\"Output in JSON format\"}}}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_list_imports },
+	{ "list_exports", "Lists exported symbols from the binary or process", "{\"type\":\"object\",\"properties\":{\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"},\"json\":{\"type\":\"boolean\",\"description\":\"Output in JSON format\"}}}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_list_exports },
+	{ "list_sections", "Displays memory sections and segments from the binary", "{\"type\":\"object\",\"properties\":{\"json\":{\"type\":\"boolean\",\"description\":\"Output in JSON format\"}}}", TOOL_MODE_NORMAL | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_list_sections },
+	{ "list_memory_maps", "Lists memory regions of the process with addresses and permissions", "{\"type\":\"object\",\"properties\":{\"json\":{\"type\":\"boolean\",\"description\":\"Output in JSON format\"}}}", TOOL_MODE_NORMAL | TOOL_MODE_FRIDA, tool_list_memory_maps },
 	{ "show_function_details", "Displays detailed information about the current function", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_RO, tool_show_function_details },
 	{ "get_current_address", "Shows the current position and function name", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_RO, tool_get_current_address },
-	{ "show_info", "Displays information about the binary or target process", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_show_info },
-	{ "list_symbols", "Shows all symbols (functions, variables, imports) with addresses", "{\"type\":\"object\",\"properties\":{\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"}}}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_list_symbols },
-	{ "list_entrypoints", "Displays program entrypoints, constructors and main function", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_list_entrypoints },
-	{ "list_methods", "Lists all methods belonging to the specified class", "{\"type\":\"object\",\"properties\":{\"classname\":{\"type\":\"string\",\"description\":\"Name of the class to list methods for\"}},\"required\":[\"classname\"]}", TOOL_MODE_NORMAL | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_list_methods },
-	{ "list_classes", "Lists class names from various languages (C++, ObjC, Swift, Java, Dalvik)", "{\"type\":\"object\",\"properties\":{\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"}}}", TOOL_MODE_NORMAL | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_list_classes },
+	{ "show_info", "Displays information about the binary or target process", "{\"type\":\"object\",\"properties\":{\"json\":{\"type\":\"boolean\",\"description\":\"Output in JSON format\"}}}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_show_info },
+	{ "list_symbols", "Shows all symbols (functions, variables, imports) with addresses", "{\"type\":\"object\",\"properties\":{\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"},\"json\":{\"type\":\"boolean\",\"description\":\"Output in JSON format\"}}}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_list_symbols },
+	{ "list_entrypoints", "Displays program entrypoints, constructors and main function", "{\"type\":\"object\",\"properties\":{\"json\":{\"type\":\"boolean\",\"description\":\"Output in JSON format\"}}}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_list_entrypoints },
+	{ "list_methods", "Lists all methods belonging to the specified class", "{\"type\":\"object\",\"properties\":{\"classname\":{\"type\":\"string\",\"description\":\"Name of the class to list methods for\"},\"json\":{\"type\":\"boolean\",\"description\":\"Output in JSON format\"}},\"required\":[\"classname\"]}", TOOL_MODE_NORMAL | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_list_methods },
+	{ "list_classes", "Lists class names from various languages (C++, ObjC, Swift, Java, Dalvik)", "{\"type\":\"object\",\"properties\":{\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"},\"json\":{\"type\":\"boolean\",\"description\":\"Output in JSON format\"}}}", TOOL_MODE_NORMAL | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_list_classes },
 	{ "list_decompilers", "Shows all available decompiler backends", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_RO, tool_list_decompilers },
 	{ "rename_function", "Renames the function at the specified address", "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"New function name\"},\"address\":{\"type\":\"string\",\"description\":\"Address of the function to rename\"}},\"required\":[\"name\",\"address\"]}", TOOL_MODE_NORMAL, tool_rename_function },
 	{ "rename_flag", "Renames a local variable or data reference within the specified address", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the flag containing the variable or data reference\"},\"name\":{\"type\":\"string\",\"description\":\"Current variable name or data reference\"},\"new_name\":{\"type\":\"string\",\"description\":\"New variable name or data reference\"}},\"required\":[\"address\",\"name\",\"new_name\"]}", TOOL_MODE_NORMAL | TOOL_MODE_HTTP, tool_rename_flag },
@@ -1282,7 +1331,7 @@ ToolSpec tool_specs[] = {
 	{ "get_function_prototype", "Retrieves the function signature at the specified address", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the function\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | TOOL_MODE_RO, tool_get_function_prototype },
 	{ "set_function_prototype", "Sets the function signature (return type, name, arguments)", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the function\"},\"prototype\":{\"type\":\"string\",\"description\":\"Function signature in C-like syntax\"}},\"required\":[\"address\",\"prototype\"]}", TOOL_MODE_NORMAL, tool_set_function_prototype },
 	{ "set_comment", "Adds a comment at the specified address", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address to put the comment in\"},\"message\":{\"type\":\"string\",\"description\":\"Comment text to use\"}},\"required\":[\"address\",\"message\"]}", TOOL_MODE_NORMAL | TOOL_MODE_HTTP, tool_set_comment },
-	{ "list_strings", "Lists strings from data sections with optional regex filter", "{\"type\":\"object\",\"properties\":{\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"},\"cursor\":{\"type\":\"string\",\"description\":\"Cursor for pagination (line number to start from)\"},\"page_size\":{\"type\":\"integer\",\"description\":\"Number of lines per page (default: 1000, max: 10000)\"}}}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_list_strings },
+	{ "list_strings", "Lists strings from data sections with optional regex filter", "{\"type\":\"object\",\"properties\":{\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"},\"cursor\":{\"type\":\"string\",\"description\":\"Cursor for pagination (line number to start from)\"},\"page_size\":{\"type\":\"integer\",\"description\":\"Number of lines per page (default: 1000, max: 10000)\"},\"json\":{\"type\":\"boolean\",\"description\":\"Output in JSON format\"}}}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_list_strings },
 	{ "list_all_strings", "Scans the entire binary for strings with optional regex filter", "{\"type\":\"object\",\"properties\":{\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"},\"cursor\":{\"type\":\"string\",\"description\":\"Cursor for pagination (line number to start from)\"},\"page_size\":{\"type\":\"integer\",\"description\":\"Number of lines per page (default: 1000, max: 10000)\"}}}", TOOL_MODE_NORMAL | TOOL_MODE_RO, tool_list_all_strings },
 	{ "analyze", "Runs binary analysis with optional depth level", "{\"type\":\"object\",\"properties\":{\"level\":{\"type\":\"number\",\"description\":\"Analysis level (0-4, higher is more thorough)\"}},\"required\":[]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_FRIDA, tool_analyze },
 	{ "xrefs_to", "Finds all code references to the specified address", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address to check for cross-references\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO, tool_xrefs_to },
@@ -1299,9 +1348,9 @@ ToolSpec tool_specs[] = {
 	{ "list_heap_allocations", "List malloc/heap memory ranges in the target process", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_FRIDA, tool_list_heap_allocations },
 	{ "alloc_memory", "Allocate memory in the target process heap. Provide either size (bytes) or string to allocate", "{\"type\":\"object\",\"properties\":{\"size\":{\"type\":\"integer\",\"description\":\"Number of bytes to allocate\"},\"string\":{\"type\":\"string\",\"description\":\"String to allocate in target heap (returns its address)\"}}}", TOOL_MODE_FRIDA, tool_alloc_memory },
 	{ "change_memory_protection", "Change memory protection (rwx) at the given address and size", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the memory region\"},\"size\":{\"type\":\"integer\",\"description\":\"Size in bytes of the region\"},\"protection\":{\"type\":\"string\",\"description\":\"New protection string (e.g. rwx, r-x, rw-)\"}},\"required\":[\"address\",\"size\",\"protection\"]}", TOOL_MODE_FRIDA, tool_change_memory_protection },
-	{ "search", "Search for strings, hex patterns, wide strings, or numeric values", "{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\",\"description\":\"The search query (string, hex bytes, or numeric value)\"},\"type\":{\"type\":\"string\",\"description\":\"Search type: string (default), hex, wide, or value\"},\"value_size\":{\"type\":\"integer\",\"description\":\"For value search: byte width 1, 2, 4 (default), or 8\"}},\"required\":[\"query\"]}", TOOL_MODE_NORMAL | TOOL_MODE_FRIDA, tool_search },
-	{ "lookup_address", "Describe what is at a given address (flag name, symbol, module)", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address to describe\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_lookup_address },
-	{ "lookup_export", "Resolve an export name to its implementation address", "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"Export name to look up\"}},\"required\":[\"name\"]}", TOOL_MODE_NORMAL | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_lookup_export },
-	{ "lookup_symbol", "Resolve an address to its symbol name", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address to resolve\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_lookup_symbol },
+	{ "search", "Search for strings, hex patterns, wide strings, or numeric values", "{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\",\"description\":\"The search query (string, hex bytes, or numeric value)\"},\"type\":{\"type\":\"string\",\"description\":\"Search type: string (default), hex, wide, or value\"},\"value_size\":{\"type\":\"integer\",\"description\":\"For value search: byte width 1, 2, 4 (default), or 8\"},\"json\":{\"type\":\"boolean\",\"description\":\"Output in JSON format\"}},\"required\":[\"query\"]}", TOOL_MODE_NORMAL | TOOL_MODE_FRIDA, tool_search },
+	{ "lookup_address", "Describe what is at a given address (flag name, symbol, module)", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address to describe\"},\"json\":{\"type\":\"boolean\",\"description\":\"Output in JSON format\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_lookup_address },
+	{ "lookup_export", "Resolve an export name to its implementation address", "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"Export name to look up\"},\"json\":{\"type\":\"boolean\",\"description\":\"Output in JSON format\"}},\"required\":[\"name\"]}", TOOL_MODE_NORMAL | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_lookup_export },
+	{ "lookup_symbol", "Resolve an address to its symbol name", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address to resolve\"},\"json\":{\"type\":\"boolean\",\"description\":\"Output in JSON format\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_lookup_symbol },
 	{ NULL, NULL, NULL, 0, NULL }
 };
