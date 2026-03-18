@@ -39,6 +39,35 @@ static bool is_valid_json_response(const char *str) {
 	return false;
 }
 
+static char *extract_jsonrpc_error_response(const char *str, const char *id) {
+	if (!str || *str != '{') {
+		return NULL;
+	}
+	char *copy = strdup (str);
+	RJson *json = r_json_parse (copy);
+	if (!json) {
+		free (copy);
+		return NULL;
+	}
+	RJson *error = (RJson *)r_json_get (json, "error");
+	char *out = NULL;
+	if (error && error->type == R_JSON_OBJECT) {
+		int code = (int)r_json_get_num (error, "code");
+		const char *message = r_json_get_str (error, "message");
+		const char *uri = NULL;
+		RJson *data = (RJson *)r_json_get (error, "data");
+		if (data && data->type == R_JSON_OBJECT) {
+			uri = r_json_get_str (data, "uri");
+		}
+		if (message) {
+			out = jsonrpc_error_response (code, message, id, uri);
+		}
+	}
+	r_json_free (json);
+	free (copy);
+	return out;
+}
+
 // Local I/O mode helper (moved from utils.inc.c to avoid unused warnings in other TUs)
 static void set_nonblocking_io(bool nonblocking) {
 #if defined(R2__UNIX__)
@@ -397,6 +426,11 @@ static char *handle_mcp_request(ServerState *ss, const char *method, RJson *para
 		return jsonrpc_error_response (-32601, "Unknown method", id, NULL);
 	}
 
+	char *error_response = extract_jsonrpc_error_response (result, id);
+	if (error_response) {
+		free (result);
+		return error_response;
+	}
 	char *response = jsonrpc_success_response (ss, result, id);
 	free (result);
 	return response;

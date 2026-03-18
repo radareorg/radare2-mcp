@@ -598,7 +598,7 @@ static char *tool_get_function_prototype(ServerState *ss, RJson *tool_args) {
 	char *s = r_str_newf ("'@%s'afs", address);
 	char *res = r2mcp_cmd (ss, s);
 	free (s);
-	return res;
+	return tool_cmd_response (res);
 }
 
 static char *tool_list_strings(ServerState *ss, RJson *tool_args) {

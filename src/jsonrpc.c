@@ -64,7 +64,13 @@ char *jsonrpc_error_response(int code, const char *message, const char *id, cons
 	pj_o (pj);
 	pj_ks (pj, "jsonrpc", "2.0");
 	if (id) {
-		pj_ks (pj, "id", id);
+		char *endptr;
+		long num_id = strtol (id, &endptr, 10);
+		if (*id != '\0' && *endptr == '\0') {
+			pj_kn (pj, "id", num_id);
+		} else {
+			pj_ks (pj, "id", id);
+		}
 	}
 	pj_k (pj, "error");
 	pj_o (pj);
