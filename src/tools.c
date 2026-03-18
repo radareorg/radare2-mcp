@@ -574,7 +574,7 @@ static char *tool_set_comment(ServerState *ss, RJson *tool_args) {
 	char *tmpres_cc = r2mcp_cmd (ss, cmd_cc);
 	free (tmpres_cc);
 	free (cmd_cc);
-	return strdup ("ok");
+	return jsonrpc_tooltext_response ("ok");
 }
 
 static char *tool_set_function_prototype(ServerState *ss, RJson *tool_args) {
@@ -587,7 +587,7 @@ static char *tool_set_function_prototype(ServerState *ss, RJson *tool_args) {
 	char *tmpres_afs = r2mcp_cmd (ss, cmd_afs);
 	free (tmpres_afs);
 	free (cmd_afs);
-	return strdup ("ok");
+	return jsonrpc_tooltext_response ("ok");
 }
 
 static char *tool_get_function_prototype(ServerState *ss, RJson *tool_args) {
