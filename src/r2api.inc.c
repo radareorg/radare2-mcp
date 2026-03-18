@@ -235,7 +235,7 @@ R_IPI bool r2_open_file(ServerState *ss, const char *filepath) {
 	return true;
 }
 
-R_IPI char *r2_analyze(ServerState *ss, int level) {
+R_IPI char *r2_analyze(ServerState *ss, int level, int timeout_seconds) {
 	if (ss && ss->http_mode) {
 		/* In HTTP mode we won't run local analysis; return empty string. */
 		return strdup ("");
@@ -253,7 +253,13 @@ R_IPI char *r2_analyze(ServerState *ss, int level) {
 		case 4: cmd = "aaaaa"; break;
 		}
 	}
+	if (timeout_seconds >= 0) {
+		r_config_set_i (core->config, "anal.timeout", timeout_seconds);
+	}
 	r2mcp_log_reset (ss);
 	r_core_cmd0 (core, cmd);
+	if (timeout_seconds >= 0) {
+		r_config_set_i (core->config, "anal.timeout", 0);
+	}
 	return r2mcp_log_drain (ss);
 }

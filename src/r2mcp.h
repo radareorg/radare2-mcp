@@ -13,6 +13,7 @@
 /* Pagination limits for tool responses */
 #define R2MCP_DEFAULT_PAGE_SIZE 1000
 #define R2MCP_MAX_PAGE_SIZE 10000
+#define R2MCP_ANALYZE_TIMEOUT_UNSET (-1)
 
 typedef struct {
 	const char *name;
@@ -101,7 +102,7 @@ void r2mcp_log_pub(ServerState *ss, const char *msg);
 // functionality implemented in r2api.inc.c. These simply forward to the
 // internal static helpers so we keep the original separation.
 bool r2_open_file(ServerState *ss, const char *filepath);
-char *r2_analyze(ServerState *ss, int level);
+char *r2_analyze(ServerState *ss, int level, int timeout_seconds);
 
 // Run a small domain-specific language (DSL) used for testing tools from the
 // command-line. The DSL describes a sequence of tool calls with arguments and
