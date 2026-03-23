@@ -1,9 +1,13 @@
-/* r2mcp - MIT - Copyright 2025 - pancake, dnakov */
+/* r2mcp - MIT - Copyright 2025-2026 - pancake, dnakov */
 
 #include <string.h>
 
 #include "tools.h"
 #include "prompts.h"
+
+#ifndef R_CORE_LOADLIBS_ALL
+#define R_CORE_LOADLIBS_ALL R_LIB_LOAD_ALL
+#endif
 
 #if R2__UNIX__
 #include <signal.h>
@@ -32,24 +36,24 @@ void r2mcp_help(void) {
 		"Usage: r2mcp [-flags]\n"
 		" -c [cmd]   run those commands before entering the mcp loop\n"
 		" -d [pdc]   select a different decompiler (pdc by default)\n"
-		" -u [url]   use remote r2 webserver base URL (HTTP r2pipe client mode)\n"
-		" -l [file]  append debug logs to this file\n"
-		" -s [dir]   enable sandbox mode; only allow files under [dir]\n"
-		" -e [tool]  enable only the specified tool (repeatable)\n"
 		" -D [tool]  disable the specified tool (repeatable)\n"
+		" -e [tool]  enable only the specified tool (repeatable)\n"
 		" -h         show this help\n"
+		" -i         ignore analysis level specified in analyze calls\n"
+		" -l [file]  append debug logs to this file\n"
+		" -L         enable session management tools (list/open/close sessions)\n"
+		" -m         expose minimum amount of tools\n"
+		" -n         do not load any plugin or radare2rc\n"
+		" -N         do not load any prompts\n"
+		" -p         permissive tools: allow calling non-listed tools\n"
+		" -P [dir]   specify custom prompts directory (supports colon-separated paths like r2ai)\n"
 		" -r         enable the dangerous runCommand tool\n"
 		" -R         enable read-only mode (expose only non-mutating tools)\n"
-		" -m         expose minimum amount of tools\n"
+		" -s [dir]   enable sandbox mode; only allow files under [dir]\n"
+		" -S [url]   enable supervisor control; connect to svc at [url]\n"
 		" -t         list available tools and exit\n"
 		" -T [tests] run DSL tests and exit\n"
-		" -p         permissive tools: allow calling non-listed tools\n"
-		" -n         do not load any plugin or radare2rc\n"
-		" -i         ignore analysis level specified in analyze calls\n"
-		" -S [url]   enable supervisor control; connect to svc at [url]\n"
-		" -P [dir]   specify custom prompts directory (supports colon-separated paths like r2ai)\n"
-		" -N         do not load any prompts\n"
-		" -L         enable session management tools (list/open/close sessions)\n"
+		" -u [url]   use remote r2 webserver base URL (HTTP r2pipe client mode)\n"
 		" -v         show version\n";
 	printf ("%s", help_text);
 }
