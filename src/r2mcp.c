@@ -273,18 +273,27 @@ static char *handle_initialize(ServerState *ss, RJson *params) {
 }
 
 static char *handle_list_tools(ServerState *ss, RJson *params) {
+        if (params && params->type != R_JSON_OBJECT) {
+                return NULL;
+        }
 	const char *cursor = r_json_get_str (params, "cursor");
 	int page_size = 32;
 	return tools_build_catalog_json (ss, cursor, page_size);
 }
 
 static char *handle_list_prompts(ServerState *ss, RJson *params) {
+        if (params && params->type != R_JSON_OBJECT) {
+                return NULL;
+        }
 	const char *cursor = r_json_get_str (params, "cursor");
 	int page_size = 32;
 	return prompts_build_list_json (ss, cursor, page_size);
 }
 
 static char *handle_get_prompt(ServerState *ss, RJson *params) {
+        if (params && params->type != R_JSON_OBJECT) {
+                return jsonrpc_error_response (-32602, "Invalid params: expected object", NULL, NULL);
+        }
 	const char *name = r_json_get_str (params, "name");
 	if (!name) {
 		return jsonrpc_error_response (-32602, "Missing required parameter: name", NULL, NULL);
@@ -352,6 +361,9 @@ static char *handle_mcp_request(ServerState *ss, const char *method, RJson *para
 	} else if (!strcmp (method, "tools/list")) {
 		result = handle_list_tools (ss, params);
 	} else if (!strcmp (method, "tools/call")) {
+                if (params && params->type != R_JSON_OBJECT) {
+                        return jsonrpc_error_response (-32602, "Invalid params: expected object", id, NULL);
+                }
 		const char *tool_name = r_json_get_str (params, "name");
 		if (!tool_name) {
 			tool_name = r_json_get_str (params, "tool");
