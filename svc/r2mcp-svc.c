@@ -62,7 +62,7 @@ static RSocket *setup_server(int port) {
 
 static char *handle_modify(R2McpSvcContext *ctx, char *data) {
 	r_cons_printf (ctx->cons, Color_MAGENTA "✏️"
-					" Enter new tool name:" Color_RESET " ");
+		" Enter new tool name:" Color_RESET " ");
 	r_cons_flush (ctx->cons);
 	const char *line = r_line_readline (ctx->cons);
 	if (!line) {
@@ -94,7 +94,7 @@ static char *handle_modify(R2McpSvcContext *ctx, char *data) {
 
 static char *handle_r2cmd(R2McpSvcContext *ctx) {
 	r_cons_printf (ctx->cons, Color_CYAN "🖥️"
-					" Enter r2 command:" Color_RESET " ");
+		" Enter r2 command:" Color_RESET " ");
 	r_cons_flush (ctx->cons);
 	const char *line = r_line_readline (ctx->cons);
 	if (!line) {
@@ -110,9 +110,9 @@ static char *handle_r2cmd(R2McpSvcContext *ctx) {
 
 static char *show_menu_and_get_response(char *data, const char *tool, R2McpSvcContext *ctx) {
 	r_cons_printf (ctx->cons, "\n" Color_YELLOW "╔══════════════════════════════════════╗\n"
-				"║ " Color_CYAN "🔧 Tool Call Request " Color_YELLOW "║\n"
-				"╚══════════════════════════════════════╝\n" Color_GREEN "Tool: %s\n" Color_BLUE "Request: %s\n\n"
-				"Available Actions:\n" Color_GREEN "1. ✅ Accept\n" Color_RED "2. ❌ Reject\n" Color_YELLOW "3. ⚡ Accept all (YOLO mode)\n" Color_MAGENTA "4. Modify tool\n" Color_CYAN "5. 🖥️ Run r2 command\n" Color_RED "6. Quit server\n\n" Color_RESET "❓ Your choice: ",
+		"║ " Color_CYAN "🔧 Tool Call Request " Color_YELLOW "║\n"
+		"╚══════════════════════════════════════╝\n" Color_GREEN "Tool: %s\n" Color_BLUE "Request: %s\n\n"
+		"Available Actions:\n" Color_GREEN "1. ✅ Accept\n" Color_RED "2. ❌ Reject\n" Color_YELLOW "3. ⚡ Accept all (YOLO mode)\n" Color_MAGENTA "4. Modify tool\n" Color_CYAN "5. 🖥️ Run r2 command\n" Color_RED "6. Quit server\n\n" Color_RESET "❓ Your choice: ",
 		tool? tool: "unknown",
 		data);
 	r_cons_flush (ctx->cons);
@@ -188,10 +188,10 @@ static void handle_request(RSocket *server, R2McpSvcContext *ctx) {
 	if (ctx->yolo_mode) {
 		// Auto accept
 		r_cons_printf (ctx->cons, Color_YELLOW "⚡"
-						" YOLO: Received message:" Color_RESET " %s\n",
+			" YOLO: Received message:" Color_RESET " %s\n",
 			(char *)rs->data);
 		r_cons_printf (ctx->cons, Color_YELLOW "⚡"
-						" YOLO: Tool executed:" Color_RESET " %s\n",
+			" YOLO: Tool executed:" Color_RESET " %s\n",
 			tool? tool: "unknown");
 		r_cons_flush (ctx->cons);
 		response_body = strdup ((char *)rs->data);

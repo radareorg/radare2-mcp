@@ -383,7 +383,7 @@ static char *tool_list_functions(ServerState *ss, RJson *tool_args) {
 	if (max_length_json && max_length_json->type == R_JSON_INTEGER) {
 		max_length = (int)max_length_json->num.s_value;
 	}
-	
+
 	const char *filter = r_json_get_str (tool_args, "filter");
 	char *res;
 	if (ss->frida_mode) {
@@ -418,7 +418,7 @@ static char *tool_list_functions(ServerState *ss, RJson *tool_args) {
 	}
 	// Apply pagination, offset by 2 to skip the header lines
 	int total_lines = r_str_char_count (res, '\n') - 2;
-	int page_size = (max_length < 0) ? total_lines : max_length;
+	int page_size = (max_length < 0)? total_lines: max_length;
 	char cursor_buf[32];
 	snprintf (cursor_buf, sizeof (cursor_buf), "%d", start + 2);
 	char *next_cursor = NULL;
@@ -459,7 +459,7 @@ static char *tool_list_files(ServerState *ss, RJson *tool_args) {
 
 static char *tool_list_classes(ServerState *ss, RJson *tool_args) {
 	const char *filter = r_json_get_str (tool_args, "filter");
-	char *res = r2mcp_cmd (ss, ss->frida_mode ? ":ic" : "icqq");
+	char *res = r2mcp_cmd (ss, ss->frida_mode? ":ic": "icqq");
 	if (R_STR_ISNOTEMPTY (filter)) {
 		char *r = filter_lines_by_regex (res, filter);
 		free (res);
@@ -473,7 +473,7 @@ static char *tool_list_methods(ServerState *ss, RJson *tool_args) {
 	if (!validate_required_string_param (tool_args, "classname", &classname)) {
 		return jsonrpc_error_missing_param ("classname");
 	}
-	const char *prefix = ss->frida_mode ? ":" : "'";
+	const char *prefix = ss->frida_mode? ":": "'";
 	return tool_cmd_response (r2mcp_cmdf (ss, "%sic %s", prefix, classname));
 }
 
@@ -493,7 +493,7 @@ static char *tool_list_functions_tree(ServerState *ss, RJson *tool_args) {
 
 static char *tool_list_imports(ServerState *ss, RJson *tool_args) {
 	const char *filter = r_json_get_str (tool_args, "filter");
-	char *res = r2mcp_cmd (ss, ss->frida_mode ? ":ii" : "iiq");
+	char *res = r2mcp_cmd (ss, ss->frida_mode? ":ii": "iiq");
 	if (R_STR_ISNOTEMPTY (filter)) {
 		char *r = filter_lines_by_regex (res, filter);
 		free (res);
@@ -504,7 +504,7 @@ static char *tool_list_imports(ServerState *ss, RJson *tool_args) {
 
 static char *tool_list_exports(ServerState *ss, RJson *tool_args) {
 	const char *filter = r_json_get_str (tool_args, "filter");
-	char *res = r2mcp_cmd (ss, ss->frida_mode ? ":iE" : "iEq");
+	char *res = r2mcp_cmd (ss, ss->frida_mode? ":iE": "iEq");
 	if (R_STR_ISNOTEMPTY (filter)) {
 		char *r = filter_lines_by_regex (res, filter);
 		free (res);
@@ -515,18 +515,18 @@ static char *tool_list_exports(ServerState *ss, RJson *tool_args) {
 
 static char *tool_list_sections(ServerState *ss, RJson *tool_args) {
 	(void)tool_args;
-	return tool_cmd_response (r2mcp_cmd (ss, ss->frida_mode ? ":iS" : "iS;iSS"));
+	return tool_cmd_response (r2mcp_cmd (ss, ss->frida_mode? ":iS": "iS;iSS"));
 }
 
 static char *tool_list_memory_maps(ServerState *ss, RJson *tool_args) {
 	(void)tool_args;
-	const char *prefix = ss->frida_mode ? ":" : "";
+	const char *prefix = ss->frida_mode? ":": "";
 	return tool_cmd_response (r2mcp_cmdf (ss, "%sdm", prefix));
 }
 
 static char *tool_show_info(ServerState *ss, RJson *tool_args) {
 	(void)tool_args;
-	return tool_cmd_response (r2mcp_cmd (ss, ss->frida_mode ? ":i" : "i;iH"));
+	return tool_cmd_response (r2mcp_cmd (ss, ss->frida_mode? ":i": "i;iH"));
 }
 
 static char *tool_show_function_details(ServerState *ss, RJson *tool_args) {
@@ -541,7 +541,7 @@ static char *tool_get_current_address(ServerState *ss, RJson *tool_args) {
 
 static char *tool_list_symbols(ServerState *ss, RJson *tool_args) {
 	const char *filter = r_json_get_str (tool_args, "filter");
-	char *res = r2mcp_cmd (ss, ss->frida_mode ? ":is" : "isq~!func.,!imp.");
+	char *res = r2mcp_cmd (ss, ss->frida_mode? ":is": "isq~!func.,!imp.");
 	if (R_STR_ISNOTEMPTY (filter)) {
 		char *r = filter_lines_by_regex (res, filter);
 		free (res);
@@ -552,12 +552,12 @@ static char *tool_list_symbols(ServerState *ss, RJson *tool_args) {
 
 static char *tool_list_entrypoints(ServerState *ss, RJson *tool_args) {
 	(void)tool_args;
-	return tool_cmd_response (r2mcp_cmd (ss, ss->frida_mode ? ":ie" : "ies"));
+	return tool_cmd_response (r2mcp_cmd (ss, ss->frida_mode? ":ie": "ies"));
 }
 
 static char *tool_list_libraries(ServerState *ss, RJson *tool_args) {
 	(void)tool_args;
-	return tool_cmd_response (r2mcp_cmd (ss, ss->frida_mode ? ":il" : "ilq"));
+	return tool_cmd_response (r2mcp_cmd (ss, ss->frida_mode? ":il": "ilq"));
 }
 
 static char *tool_calculate(ServerState *ss, RJson *tool_args) {
@@ -625,7 +625,7 @@ static char *tool_list_strings(ServerState *ss, RJson *tool_args) {
 		page_size = R2MCP_MAX_PAGE_SIZE;
 	}
 
-	char *cmd_result = r2mcp_cmd (ss, ss->frida_mode ? ":iz" : "izqq");
+	char *cmd_result = r2mcp_cmd (ss, ss->frida_mode? ":iz": "izqq");
 	if (R_STR_ISNOTEMPTY (filter)) {
 		char *r = filter_lines_by_regex (cmd_result, filter);
 		free (cmd_result);
@@ -697,7 +697,11 @@ static char *tool_analyze(ServerState *ss, RJson *tool_args) {
 	char *text;
 	if (timed_out) {
 		text = r_str_newf ("Analysis stopped after %d second%s at level %d.\nFound %d functions so far.%s",
-			timeout_seconds, timeout_seconds == 1? "": "s", level, atoi (cmd_result), errstr);
+			timeout_seconds,
+			timeout_seconds == 1? "": "s",
+			level,
+			atoi (cmd_result),
+			errstr);
 	} else {
 		text = r_str_newf ("Analysis completed with level %d.\nFound %d functions.%s", level, atoi (cmd_result), errstr);
 	}
@@ -843,19 +847,19 @@ static char *tool_decompile_function(ServerState *ss, RJson *tool_args) {
 
 static char *tool_get_pid(ServerState *ss, RJson *tool_args) {
 	(void)tool_args;
-	const char *prefix = ss->frida_mode ? ":" : "";
+	const char *prefix = ss->frida_mode? ":": "";
 	return tool_cmd_response (r2mcp_cmdf (ss, "%sdp", prefix));
 }
 
 static char *tool_list_threads(ServerState *ss, RJson *tool_args) {
 	(void)tool_args;
-	const char *prefix = ss->frida_mode ? ":" : "";
+	const char *prefix = ss->frida_mode? ":": "";
 	return tool_cmd_response (r2mcp_cmdf (ss, "%sdpt", prefix));
 }
 
 static char *tool_dump_registers(ServerState *ss, RJson *tool_args) {
 	const char *thread_id = r_json_get_str (tool_args, "thread_id");
-	const char *prefix = ss->frida_mode ? ":" : "";
+	const char *prefix = ss->frida_mode? ":": "";
 	if (R_STR_ISNOTEMPTY (thread_id)) {
 		return tool_cmd_response (r2mcp_cmdf (ss, "%sdr %s", prefix, thread_id));
 	}
@@ -876,13 +880,13 @@ static char *tool_hexdump(ServerState *ss, RJson *tool_args) {
 
 static char *tool_memory_map_here(ServerState *ss, RJson *tool_args) {
 	(void)tool_args;
-	const char *prefix = ss->frida_mode ? ":" : "";
+	const char *prefix = ss->frida_mode? ":": "";
 	return tool_cmd_response (r2mcp_cmdf (ss, "%sdm.", prefix));
 }
 
 static char *tool_list_heap_allocations(ServerState *ss, RJson *tool_args) {
 	(void)tool_args;
-	const char *prefix = ss->frida_mode ? ":" : "";
+	const char *prefix = ss->frida_mode? ":": "";
 	return tool_cmd_response (r2mcp_cmdf (ss, "%sdmh", prefix));
 }
 
@@ -922,7 +926,7 @@ static char *tool_search(ServerState *ss, RJson *tool_args) {
 	if (R_STR_ISEMPTY (type)) {
 		type = "string";
 	}
-	const char *prefix = ss->frida_mode ? ":" : "";
+	const char *prefix = ss->frida_mode? ":": "";
 	if (!strcmp (type, "hex")) {
 		return tool_cmd_response (r2mcp_cmdf (ss, "%s/x %s", prefix, query));
 	}
@@ -945,7 +949,7 @@ static char *tool_lookup_address(ServerState *ss, RJson *tool_args) {
 	if (!validate_address_param (tool_args, "address", &address)) {
 		return jsonrpc_error_missing_param ("address");
 	}
-	const char *prefix = ss->frida_mode ? ":" : "";
+	const char *prefix = ss->frida_mode? ":": "";
 	return tool_cmd_response (r2mcp_cmdf (ss, "%sfd @ %s", prefix, address));
 }
 
@@ -954,7 +958,7 @@ static char *tool_lookup_export(ServerState *ss, RJson *tool_args) {
 	if (!validate_required_string_param (tool_args, "name", &name)) {
 		return jsonrpc_error_missing_param ("name");
 	}
-	const char *prefix = ss->frida_mode ? ":" : "";
+	const char *prefix = ss->frida_mode? ":": "";
 	return tool_cmd_response (r2mcp_cmdf (ss, "%siaE %s", prefix, name));
 }
 
@@ -963,7 +967,7 @@ static char *tool_lookup_symbol(ServerState *ss, RJson *tool_args) {
 	if (!validate_address_param (tool_args, "address", &address)) {
 		return jsonrpc_error_missing_param ("address");
 	}
-	const char *prefix = ss->frida_mode ? ":" : "";
+	const char *prefix = ss->frida_mode? ":": "";
 	return tool_cmd_response (r2mcp_cmdf (ss, "%sis. @ %s", prefix, address));
 }
 
