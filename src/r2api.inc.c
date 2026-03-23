@@ -21,6 +21,16 @@ static void r2state_settings(RCore *core) {
 	r_config_set_i (core->config, "scr.limit", 16768);
 }
 
+static void r2state_sandbox_settings(ServerState *ss, RCore *core) {
+	const char *sandbox_grain = (ss && ss->sandbox_grain)? ss->sandbox_grain: "exec,socket";
+	if (!strcmp (sandbox_grain, "all")) {
+		r_config_set_b (core->config, "cfg.sandbox", false);
+	} else {
+		r_config_set_b (core->config, "cfg.sandbox", true);
+		r_config_set (core->config, "cfg.sandbox.grain", sandbox_grain);
+	}
+}
+
 static bool logcb(void *user, int type, const char *origin, const char *msg) {
 	if (type > R_LOG_LEVEL_WARN) {
 		return false;
@@ -191,6 +201,7 @@ R_IPI bool r2_open_file(ServerState *ss, const char *filepath) {
 		R_LOG_ERROR ("Failed to initialize r2 core\n");
 		return false;
 	}
+	r_config_set_b (core->config, "cfg.sandbox", false);
 
 	if (ss->rstate.file_opened) {
 		R_LOG_INFO ("Closing previously opened file: %s", ss->rstate.current_file);
@@ -230,6 +241,7 @@ R_IPI bool r2_open_file(ServerState *ss, const char *filepath) {
 	free (ss->rstate.current_file);
 	ss->rstate.current_file = strdup (filepath);
 	ss->rstate.file_opened = true;
+	r2state_sandbox_settings (ss, core);
 	R_LOG_INFO ("File opened successfully: %s", filepath);
 
 	return true;

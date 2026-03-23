@@ -52,6 +52,8 @@ typedef struct {
 	char *svc_baseurl;
 	/* Optional sandbox path. When set, only allow opening files under this dir */
 	char *sandbox;
+	/* Optional radare2 sandbox grain mask; "all" disables cfg.sandbox */
+	char *sandbox_grain;
 	/* Optional path to append debug logs when set via -l */
 	char *logfile;
 	/* Optional custom prompts directory path */

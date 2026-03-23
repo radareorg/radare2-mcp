@@ -38,6 +38,7 @@ void r2mcp_help(void) {
 		" -d [pdc]   select a different decompiler (pdc by default)\n"
 		" -D [tool]  disable the specified tool (repeatable)\n"
 		" -e [tool]  enable only the specified tool (repeatable)\n"
+		" -g [grain] set cfg.sandbox.grain (default: exec,socket; use all to disable sandbox)\n"
 		" -h         show this help\n"
 		" -i         ignore analysis level specified in analyze calls\n"
 		" -l [file]  append debug logs to this file\n"
@@ -82,6 +83,7 @@ int r2mcp_main(int argc, const char **argv) {
 	char *baseurl = NULL;
 	char *svc_baseurl = NULL;
 	char *sandbox = NULL;
+	char *sandbox_grain = strdup ("exec,socket");
 	char *logfile = NULL;
 	char *prompts_dir = NULL;
 	bool load_prompts = true;
@@ -90,7 +92,7 @@ int r2mcp_main(int argc, const char **argv) {
 	const char *dsl_tests = NULL;
 	RList *disabled_tools = NULL;
 	RGetopt opt;
-	r_getopt_init (&opt, argc, argv, "hmvpd:nc:u:l:s:rite:D:RT:S:P:NL");
+	r_getopt_init (&opt, argc, argv, "hmvpd:nc:u:g:l:s:rite:D:RT:S:P:NL");
 	int c;
 	while ((c = r_getopt_next (&opt)) != -1) {
 		switch (c) {
@@ -110,6 +112,10 @@ int r2mcp_main(int argc, const char **argv) {
 			http_mode = true;
 			baseurl = strdup (opt.arg);
 			R_LOG_INFO ("[R2MCP] HTTP r2pipe client mode enabled, baseurl=%s", baseurl);
+			break;
+		case 'g':
+			free (sandbox_grain);
+			sandbox_grain = strdup (opt.arg);
 			break;
 		case 'l':
 			logfile = strdup (opt.arg);
@@ -205,6 +211,7 @@ int r2mcp_main(int argc, const char **argv) {
 		.baseurl = baseurl,
 		.svc_baseurl = svc_baseurl,
 		.sandbox = sandbox,
+		.sandbox_grain = sandbox_grain,
 		.logfile = logfile,
 		.prompts_dir = prompts_dir,
 		.load_prompts = load_prompts,
@@ -269,6 +276,7 @@ int r2mcp_main(int argc, const char **argv) {
 		free (ss.baseurl);
 		free (ss.svc_baseurl);
 		free (ss.sandbox);
+		free (ss.sandbox_grain);
 		free (ss.logfile);
 		free (ss.prompts_dir);
 		if (ss.enabled_tools) {
@@ -294,6 +302,7 @@ int r2mcp_main(int argc, const char **argv) {
 	/* Cleanup */
 	free (ss.baseurl);
 	free (ss.sandbox);
+	free (ss.sandbox_grain);
 	free (ss.logfile);
 	free (ss.prompts_dir);
 	if (ss.enabled_tools) {
