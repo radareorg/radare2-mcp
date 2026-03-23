@@ -70,6 +70,16 @@ static bool tool_not_disabled(const ServerState *ss, const char *name) {
 	return true;
 }
 
+static bool tool_allowed_by_runtime_flags(const ServerState *ss, const char *name) {
+	if (!name) {
+		return false;
+	}
+	if ((!strcmp (name, "run_command") || !strcmp (name, "run_javascript")) && (!ss || !ss->enable_run_command_tool)) {
+		return false;
+	}
+	return true;
+}
+
 static inline ToolMode current_mode(const ServerState *ss) {
 	ToolMode mode = 0;
 	if (ss->http_mode) {
@@ -105,7 +115,7 @@ static RList *tools_filtered_for_mode(const ServerState *ss) {
 	}
 	for (size_t i = 0; tool_specs[i].name; i++) {
 		ToolSpec *t = &tool_specs[i];
-		if (tool_matches_mode (t, mode) && tool_allowed_by_whitelist (ss, t->name) && tool_not_disabled (ss, t->name)) {
+		if (tool_matches_mode (t, mode) && tool_allowed_by_runtime_flags (ss, t->name) && tool_allowed_by_whitelist (ss, t->name) && tool_not_disabled (ss, t->name)) {
 			r_list_append (out, t); // reference only
 		}
 	}
@@ -113,11 +123,14 @@ static RList *tools_filtered_for_mode(const ServerState *ss) {
 }
 
 bool tools_is_tool_allowed(const ServerState *ss, const char *name) {
-	if (ss->permissive_tools) {
-		return true;
-	}
 	if (!name) {
 		return false;
+	}
+	if (!tool_allowed_by_runtime_flags (ss, name)) {
+		return false;
+	}
+	if (ss->permissive_tools) {
+		return true;
 	}
 	if (!tool_not_disabled (ss, name)) {
 		return false;
@@ -209,7 +222,7 @@ void tools_print_table(const ServerState *ss) {
 
 	for (size_t i = 0; tool_specs[i].name; i++) {
 		ToolSpec *t = &tool_specs[i];
-		if (!tool_allowed_by_whitelist (ss, t->name) || !tool_not_disabled (ss, t->name)) {
+		if (!tool_allowed_by_runtime_flags (ss, t->name) || !tool_allowed_by_whitelist (ss, t->name) || !tool_not_disabled (ss, t->name)) {
 			continue;
 		}
 		char modes_buf[8];
@@ -1101,7 +1114,9 @@ static char *check_supervisor_permission(ServerState *ss, const char *tool_name,
 	pj_k (pj, "available_tools");
 	pj_a (pj);
 	for (size_t i = 0; tool_specs[i].name; i++) {
-		pj_s (pj, tool_specs[i].name);
+		if (tools_is_tool_allowed (ss, tool_specs[i].name)) {
+			pj_s (pj, tool_specs[i].name);
+		}
 	}
 	pj_end (pj);
 	pj_end (pj);
