@@ -1146,20 +1146,9 @@ static char *check_supervisor_permission(ServerState *ss, const char *tool_name,
 	}
 	const char *r2cmd = r_json_get_str (*parsed_json_out, "r2cmd");
 	if (r2cmd) {
-		char *cmd_out = r2mcp_cmd (ss, r2cmd);
-		char *res = jsonrpc_tooltext_response (cmd_out? cmd_out: "");
-		free (cmd_out);
-		if (!strcmp (tool_name, "open_file")) {
-			const char *filepath = r_json_get_str (tool_args, "file_path");
-			if (filepath) {
-				free (ss->rstate.current_file);
-				ss->rstate.current_file = strdup (filepath);
-				ss->rstate.file_opened = true;
-			}
-		}
 		r_json_free (*parsed_json_out);
 		*parsed_json_out = NULL;
-		return res;
+		return jsonrpc_error_response (-32000, "Supervisor responses with 'r2cmd' are not allowed. Return 'tool' + 'arguments' instead.", NULL, NULL);
 	}
 	const char *new_tool = r_json_get_str (*parsed_json_out, "tool");
 	if (new_tool && strcmp (new_tool, tool_name)) {
