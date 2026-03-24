@@ -859,9 +859,13 @@ static char *tool_list_threads(ServerState *ss, RJson *tool_args) {
 }
 
 static char *tool_dump_registers(ServerState *ss, RJson *tool_args) {
-	const char *thread_id = r_json_get_str (tool_args, "thread_id");
-	if (R_STR_ISNOTEMPTY (thread_id)) {
-		return tool_cmd_response (r2mcp_cmdf (ss, "%sdr %s", fx (ss), thread_id));
+	const RJson *thread_id_json = r_json_get (tool_args, "thread_id");
+	if (thread_id_json) {
+		if (thread_id_json->type != R_JSON_INTEGER && thread_id_json->type != R_JSON_DOUBLE) {
+			return jsonrpc_error_response (-32602, "'thread_id' must be a number", NULL, NULL);
+		}
+		int thread_id = (int)r_json_get_num (tool_args, "thread_id");
+		return tool_cmd_response (r2mcp_cmdf (ss, "%sdr %d", fx (ss), thread_id));
 	}
 	return tool_cmd_response (r2mcp_cmdf (ss, "%sdr", fx (ss)));
 }
@@ -1343,7 +1347,7 @@ ToolSpec tool_specs[] = {
 	{ "calculate", "Evaluate a math expression using core->num (r_num_math). Usecases: do proper 64-bit math, resolve addresses for flag names/symbols, and avoid hallucinated results.", "{\"type\":\"object\",\"properties\":{\"expression\":{\"type\":\"string\",\"description\":\"Math expression to evaluate (eg. 0x100 + sym.flag - 4)\"}},\"required\":[\"expression\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_calculate },
 	{ "get_pid", "Get the process ID of the target process", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_FRIDA, tool_get_pid },
 	{ "list_threads", "List all threads in the target process with their IDs and state", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_FRIDA, tool_list_threads },
-	{ "dump_registers", "Show register values for the target process threads", "{\"type\":\"object\",\"properties\":{\"thread_id\":{\"type\":\"string\",\"description\":\"Optional thread ID to show registers for a specific thread\"}}}", TOOL_MODE_NORMAL | TOOL_MODE_FRIDA, tool_dump_registers },
+	{ "dump_registers", "Show register values for the target process threads", "{\"type\":\"object\",\"properties\":{\"thread_id\":{\"type\":\"integer\",\"description\":\"Optional thread ID to show registers for a specific thread\"}}}", TOOL_MODE_NORMAL | TOOL_MODE_FRIDA, tool_dump_registers },
 	{ "hexdump", "Print memory contents in hexdump style at the given address", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address to hexdump\"},\"size\":{\"type\":\"string\",\"description\":\"Number of bytes to dump (empty string for default size)\"}},\"required\":[\"address\",\"size\"]}", TOOL_MODE_NORMAL | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_hexdump },
 	{ "memory_map_here", "Show memory map information at the current address", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_FRIDA, tool_memory_map_here },
 	{ "list_heap_allocations", "List malloc/heap memory ranges in the target process", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_FRIDA, tool_list_heap_allocations },
