@@ -16,6 +16,7 @@
 #define LATEST_PROTOCOL_VERSION "2025-06-18"
 // #define LATEST_PROTOCOL_VERSION "2024-11-05"
 
+#include "path.inc.c"
 #include "utils.inc.c"
 #include "r2api.inc.c"
 

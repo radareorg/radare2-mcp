@@ -4,6 +4,7 @@
 #include "r2mcp.h"
 #include "tools.h"
 #include "validation.h"
+#include "path.inc.c"
 #include "utils.inc.c"
 #include "jsonrpc.h"
 
@@ -439,20 +440,9 @@ static char *tool_list_files(ServerState *ss, RJson *tool_args) {
 		return jsonrpc_error_missing_param ("path");
 	}
 
-	// Security checks
-	if (!path || path[0] != '/') {
-		return jsonrpc_error_response (-32603, "Relative paths are not allowed. Use an absolute path", NULL, NULL);
-	}
-	if (strstr (path, "/../") != NULL) {
-		return jsonrpc_error_response (-32603, "Path traversal is not allowed (contains '/../')", NULL, NULL);
-	}
-	if (ss->sandbox && *ss->sandbox) {
-		size_t plen = strlen (path);
-		size_t slen = strlen (ss->sandbox);
-		if (slen == 0 || slen > plen || strncmp (path, ss->sandbox, slen) != 0 ||
-			(plen > slen && path[slen] != '/')) {
-			return jsonrpc_error_response (-32603, "Access denied: path is outside of the sandbox", NULL, NULL);
-		}
+	const char *err = r2mcp_sandbox_check (ss, path);
+	if (err) {
+		return jsonrpc_error_response (-32603, err, NULL, NULL);
 	}
 
 	char *cmd = r_str_newf ("'ls -q %s", path);

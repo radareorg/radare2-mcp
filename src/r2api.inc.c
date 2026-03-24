@@ -135,50 +135,6 @@ char *r2mcp_cmdf(ServerState *ss, const char *fmt, ...) {
 	return res;
 }
 
-static bool path_contains_parent_ref(const char *p) {
-	return p && strstr (p, "/../") != NULL;
-}
-
-static bool canonical_path_is_within_sandbox(const char *p, const char *sb) {
-	if (R_STR_ISEMPTY (sb)) {
-		return true;
-	}
-	size_t plen = strlen (p);
-	size_t slen = strlen (sb);
-	if (slen == 0 || slen > plen) {
-		return false;
-	}
-	if (strncmp (p, sb, slen) != 0) {
-		return false;
-	}
-	if (plen == slen) {
-		return true;
-	}
-	// ensure boundary: next char must be '/'
-	return p[slen] == '/';
-}
-
-static bool path_is_within_sandbox(const char *p, const char *sb) {
-	if (R_STR_ISEMPTY (sb)) {
-		return true;
-	}
-	char *rp = realpath (p, NULL);
-	if (!rp) {
-		R_LOG_ERROR ("Access denied: unable to resolve path");
-		return false;
-	}
-	char *rsb = realpath (sb, NULL);
-	if (!rsb) {
-		R_LOG_ERROR ("Access denied: unable to resolve sandbox path");
-		free (rp);
-		return false;
-	}
-	bool ret = canonical_path_is_within_sandbox (rp, rsb);
-	free (rp);
-	free (rsb);
-	return ret;
-}
-
 R_IPI bool r2_open_file(ServerState *ss, const char *filepath) {
 	R_LOG_INFO ("Attempting to open file: %s\n", filepath);
 
@@ -190,19 +146,10 @@ R_IPI bool r2_open_file(ServerState *ss, const char *filepath) {
 	bool is_uri = strstr (filepath, "://") != NULL;
 	// Filesystem security checks only apply to local paths, not URI schemes
 	if (!is_uri) {
-		if (!r_file_is_abspath (filepath)) {
-			R_LOG_ERROR ("Relative paths are not allowed. Use an absolute path");
+		const char *err = r2mcp_sandbox_check (ss, filepath);
+		if (err) {
+			R_LOG_ERROR ("%s", err);
 			return false;
-		}
-		if (path_contains_parent_ref (filepath)) {
-			R_LOG_ERROR ("Path traversal is not allowed (contains '/../')");
-			return false;
-		}
-		if (ss->sandbox && *ss->sandbox) {
-			if (!path_is_within_sandbox (filepath, ss->sandbox)) {
-				R_LOG_ERROR ("Access denied: path is outside of the sandbox");
-				return false;
-			}
 		}
 	}
 
