@@ -37,6 +37,10 @@ static char *tool_cmd_response(char *res) {
 	return response;
 }
 
+static inline const char *fx(ServerState *ss) {
+	return ss->frida_mode? ":": "";
+}
+
 // Check an optional whitelist of enabled tool names. If ss->enabled_tools is
 // NULL, all tools are considered allowed. Otherwise only names present in the
 // list are allowed.
@@ -520,8 +524,7 @@ static char *tool_list_sections(ServerState *ss, RJson *tool_args) {
 
 static char *tool_list_memory_maps(ServerState *ss, RJson *tool_args) {
 	(void)tool_args;
-	const char *prefix = ss->frida_mode? ":": "";
-	return tool_cmd_response (r2mcp_cmdf (ss, "%sdm", prefix));
+	return tool_cmd_response (r2mcp_cmdf (ss, "%sdm", fx (ss)));
 }
 
 static char *tool_show_info(ServerState *ss, RJson *tool_args) {
@@ -847,23 +850,20 @@ static char *tool_decompile_function(ServerState *ss, RJson *tool_args) {
 
 static char *tool_get_pid(ServerState *ss, RJson *tool_args) {
 	(void)tool_args;
-	const char *prefix = ss->frida_mode? ":": "";
-	return tool_cmd_response (r2mcp_cmdf (ss, "%sdp", prefix));
+	return tool_cmd_response (r2mcp_cmdf (ss, "%sdp", fx (ss)));
 }
 
 static char *tool_list_threads(ServerState *ss, RJson *tool_args) {
 	(void)tool_args;
-	const char *prefix = ss->frida_mode? ":": "";
-	return tool_cmd_response (r2mcp_cmdf (ss, "%sdpt", prefix));
+	return tool_cmd_response (r2mcp_cmdf (ss, "%sdpt", fx (ss)));
 }
 
 static char *tool_dump_registers(ServerState *ss, RJson *tool_args) {
 	const char *thread_id = r_json_get_str (tool_args, "thread_id");
-	const char *prefix = ss->frida_mode? ":": "";
 	if (R_STR_ISNOTEMPTY (thread_id)) {
-		return tool_cmd_response (r2mcp_cmdf (ss, "%sdr %s", prefix, thread_id));
+		return tool_cmd_response (r2mcp_cmdf (ss, "%sdr %s", fx (ss), thread_id));
 	}
-	return tool_cmd_response (r2mcp_cmdf (ss, "%sdr", prefix));
+	return tool_cmd_response (r2mcp_cmdf (ss, "%sdr", fx (ss)));
 }
 
 static char *tool_hexdump(ServerState *ss, RJson *tool_args) {
@@ -880,14 +880,12 @@ static char *tool_hexdump(ServerState *ss, RJson *tool_args) {
 
 static char *tool_memory_map_here(ServerState *ss, RJson *tool_args) {
 	(void)tool_args;
-	const char *prefix = ss->frida_mode? ":": "";
-	return tool_cmd_response (r2mcp_cmdf (ss, "%sdm.", prefix));
+	return tool_cmd_response (r2mcp_cmdf (ss, "%sdm.", fx (ss)));
 }
 
 static char *tool_list_heap_allocations(ServerState *ss, RJson *tool_args) {
 	(void)tool_args;
-	const char *prefix = ss->frida_mode? ":": "";
-	return tool_cmd_response (r2mcp_cmdf (ss, "%sdmh", prefix));
+	return tool_cmd_response (r2mcp_cmdf (ss, "%sdmh", fx (ss)));
 }
 
 static char *tool_alloc_memory(ServerState *ss, RJson *tool_args) {
@@ -926,22 +924,21 @@ static char *tool_search(ServerState *ss, RJson *tool_args) {
 	if (R_STR_ISEMPTY (type)) {
 		type = "string";
 	}
-	const char *prefix = ss->frida_mode? ":": "";
 	if (!strcmp (type, "hex")) {
-		return tool_cmd_response (r2mcp_cmdf (ss, "%s/x %s", prefix, query));
+		return tool_cmd_response (r2mcp_cmdf (ss, "%s/x %s", fx (ss), query));
 	}
 	if (!strcmp (type, "wide")) {
-		return tool_cmd_response (r2mcp_cmdf (ss, "%s/w %s", prefix, query));
+		return tool_cmd_response (r2mcp_cmdf (ss, "%s/w %s", fx (ss), query));
 	}
 	if (!strcmp (type, "value")) {
 		int value_size = (int)r_json_get_num (tool_args, "value_size");
 		if (value_size != 1 && value_size != 2 && value_size != 4 && value_size != 8) {
 			value_size = 4;
 		}
-		return tool_cmd_response (r2mcp_cmdf (ss, "%s/v%d %s", prefix, value_size, query));
+		return tool_cmd_response (r2mcp_cmdf (ss, "%s/v%d %s", fx (ss), value_size, query));
 	}
 	// default: string search
-	return tool_cmd_response (r2mcp_cmdf (ss, "%s/ %s", prefix, query));
+	return tool_cmd_response (r2mcp_cmdf (ss, "%s/ %s", fx (ss), query));
 }
 
 static char *tool_lookup_address(ServerState *ss, RJson *tool_args) {
@@ -949,8 +946,7 @@ static char *tool_lookup_address(ServerState *ss, RJson *tool_args) {
 	if (!validate_address_param (tool_args, "address", &address)) {
 		return jsonrpc_error_missing_param ("address");
 	}
-	const char *prefix = ss->frida_mode? ":": "";
-	return tool_cmd_response (r2mcp_cmdf (ss, "%sfd @ %s", prefix, address));
+	return tool_cmd_response (r2mcp_cmdf (ss, "%sfd @ %s", fx (ss), address));
 }
 
 static char *tool_lookup_export(ServerState *ss, RJson *tool_args) {
@@ -958,8 +954,7 @@ static char *tool_lookup_export(ServerState *ss, RJson *tool_args) {
 	if (!validate_required_string_param (tool_args, "name", &name)) {
 		return jsonrpc_error_missing_param ("name");
 	}
-	const char *prefix = ss->frida_mode? ":": "";
-	return tool_cmd_response (r2mcp_cmdf (ss, "%siaE %s", prefix, name));
+	return tool_cmd_response (r2mcp_cmdf (ss, "%siaE %s", fx (ss), name));
 }
 
 static char *tool_lookup_symbol(ServerState *ss, RJson *tool_args) {
@@ -967,8 +962,7 @@ static char *tool_lookup_symbol(ServerState *ss, RJson *tool_args) {
 	if (!validate_address_param (tool_args, "address", &address)) {
 		return jsonrpc_error_missing_param ("address");
 	}
-	const char *prefix = ss->frida_mode? ":": "";
-	return tool_cmd_response (r2mcp_cmdf (ss, "%sis. @ %s", prefix, address));
+	return tool_cmd_response (r2mcp_cmdf (ss, "%sis. @ %s", fx (ss), address));
 }
 
 static char *tool_run_command(ServerState *ss, RJson *tool_args) {
