@@ -455,7 +455,7 @@ static char *tool_list_files(ServerState *ss, RJson *tool_args) {
 		}
 	}
 
-	char *cmd = r_str_newf ("ls -q %s", path);
+	char *cmd = r_str_newf ("'ls -q %s", path);
 	char *res = r2mcp_cmd (ss, cmd);
 	free (cmd);
 	return tool_cmd_response (res);
