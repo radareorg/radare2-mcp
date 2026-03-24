@@ -81,6 +81,9 @@ static bool tool_allowed_by_runtime_flags(const ServerState *ss, const char *nam
 }
 
 static inline ToolMode current_mode(const ServerState *ss) {
+	if (ss->readonly_mode) {
+		return TOOL_MODE_RO;
+	}
 	ToolMode mode = 0;
 	if (ss->http_mode) {
 		mode |= TOOL_MODE_HTTP;
@@ -90,9 +93,6 @@ static inline ToolMode current_mode(const ServerState *ss) {
 	}
 	if (ss->use_sessions) {
 		mode |= TOOL_MODE_SESSIONS;
-	}
-	if (ss->readonly_mode) {
-		mode |= TOOL_MODE_RO;
 	}
 	if (ss->minimode) {
 		mode |= TOOL_MODE_MINI;
