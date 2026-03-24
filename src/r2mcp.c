@@ -400,11 +400,8 @@ static char *handle_mcp_request(ServerState *ss, const char *method, RJson *para
 					}
 					const char *r2cmd = r_json_get_str (rj, "r2cmd");
 					if (r2cmd) {
-						char *cmd_out = r2mcp_cmd (ss, r2cmd);
-						char *res = jsonrpc_tooltext_response (cmd_out? cmd_out: "");
-						free (cmd_out);
 						r_json_free (rj);
-						result = res;
+						return jsonrpc_error_response (-32000, "Supervisor responses with 'r2cmd' are not allowed. Return 'tool' + 'arguments' instead.", id, NULL);
 					} else {
 						const char *new_tool = r_json_get_str (rj, "tool");
 						const RJson *new_args = r_json_get (rj, "arguments");
