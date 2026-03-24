@@ -929,20 +929,20 @@ static char *tool_search(ServerState *ss, RJson *tool_args) {
 		type = "string";
 	}
 	if (!strcmp (type, "hex")) {
-		return tool_cmd_response (r2mcp_cmdf (ss, "%s/x %s", fx (ss), query));
+		return tool_cmd_response (r2mcp_cmdf (ss, "'%s/x %s", fx (ss), query));
 	}
 	if (!strcmp (type, "wide")) {
-		return tool_cmd_response (r2mcp_cmdf (ss, "%s/w %s", fx (ss), query));
+		return tool_cmd_response (r2mcp_cmdf (ss, "'%s/w %s", fx (ss), query));
 	}
 	if (!strcmp (type, "value")) {
 		int value_size = (int)r_json_get_num (tool_args, "value_size");
 		if (value_size != 1 && value_size != 2 && value_size != 4 && value_size != 8) {
 			value_size = 4;
 		}
-		return tool_cmd_response (r2mcp_cmdf (ss, "%s/v%d %s", fx (ss), value_size, query));
+		return tool_cmd_response (r2mcp_cmdf (ss, "'%s/v%d %s", fx (ss), value_size, query));
 	}
 	// default: string search
-	return tool_cmd_response (r2mcp_cmdf (ss, "%s/ %s", fx (ss), query));
+	return tool_cmd_response (r2mcp_cmdf (ss, "'%s/ %s", fx (ss), query));
 }
 
 static char *tool_lookup_address(ServerState *ss, RJson *tool_args) {
