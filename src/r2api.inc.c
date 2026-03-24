@@ -129,7 +129,7 @@ static bool path_contains_parent_ref(const char *p) {
 	return p && strstr (p, "/../") != NULL;
 }
 
-static bool path_is_within_sandbox(const char *p, const char *sb) {
+static bool canonical_path_is_within_sandbox(const char *p, const char *sb) {
 	if (R_STR_ISEMPTY (sb)) {
 		return true;
 	}
@@ -142,10 +142,31 @@ static bool path_is_within_sandbox(const char *p, const char *sb) {
 		return false;
 	}
 	if (plen == slen) {
-		return true; // exact match
+		return true;
 	}
 	// ensure boundary: next char must be '/'
 	return p[slen] == '/';
+}
+
+static bool path_is_within_sandbox(const char *p, const char *sb) {
+	if (R_STR_ISEMPTY (sb)) {
+		return true;
+	}
+	char *rp = realpath (p, NULL);
+	if (!rp) {
+		R_LOG_ERROR ("Access denied: unable to resolve path");
+		return false;
+	}
+	char *rsb = realpath (sb, NULL);
+	if (!rsb) {
+		R_LOG_ERROR ("Access denied: unable to resolve sandbox path");
+		free (rp);
+		return false;
+	}
+	bool ret = canonical_path_is_within_sandbox (rp, rsb);
+	free (rp);
+	free (rsb);
+	return ret;
 }
 
 R_IPI bool r2_open_file(ServerState *ss, const char *filepath) {
