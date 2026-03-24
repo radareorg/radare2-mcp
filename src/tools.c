@@ -478,7 +478,7 @@ static char *tool_list_methods(ServerState *ss, RJson *tool_args) {
 		return jsonrpc_error_missing_param ("classname");
 	}
 	const char *prefix = ss->frida_mode? ":": "'";
-	return tool_cmd_response (r2mcp_cmdf (ss, "%sic %s", prefix, classname));
+	return tool_cmd_response (r2mcp_cmdf (ss, "'%sic %s", prefix, classname));
 }
 
 static char *tool_list_decompilers(ServerState *ss, RJson *tool_args) {
