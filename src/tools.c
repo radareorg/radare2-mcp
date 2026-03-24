@@ -877,9 +877,9 @@ static char *tool_hexdump(ServerState *ss, RJson *tool_args) {
 	}
 	const char *size = r_json_get_str (tool_args, "size");
 	if (R_STR_ISNOTEMPTY (size)) {
-		return tool_cmd_response (r2mcp_cmdf (ss, "px %s @ %s", size, address));
+		return tool_cmd_response (r2mcp_cmdf (ss, "'@%s'px %s", address, size));
 	}
-	return tool_cmd_response (r2mcp_cmdf (ss, "px @ %s", address));
+	return tool_cmd_response (r2mcp_cmdf (ss, "'@%s'px", address));
 }
 
 static char *tool_memory_map_here(ServerState *ss, RJson *tool_args) {
