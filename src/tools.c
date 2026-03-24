@@ -1040,11 +1040,11 @@ static char *tool_list_sessions(ServerState *ss, RJson *tool_args) {
 	return tool_cmd_response (res);
 }
 
-static bool is_safe_session_url(const char *url) {
+static bool is_localhost(const char *url) {
 	if (R_STR_ISEMPTY (url)) {
 		return false;
 	}
-	if (strncmp (url, "http://", 7) && strncmp (url, "https://", 8)) {
+	if (!r_str_startswith (url, "http://") && !r_str_startswith (url, "https://")) {
 		return false;
 	}
 	const char *host = strstr (url, "://");
@@ -1055,15 +1055,15 @@ static bool is_safe_session_url(const char *url) {
 	if (R_STR_ISEMPTY (host)) {
 		return false;
 	}
-	if (!strncmp (host, "localhost", 9)) {
+	if (r_str_startswith (host, "localhost")) {
 		char ch = host[9];
 		return ch == 0 || ch == ':' || ch == '/' || ch == '?';
 	}
-	if (!strncmp (host, "127.0.0.1", 9)) {
+	if (r_str_startswith (host, "127.0.0.1")) {
 		char ch = host[9];
 		return ch == 0 || ch == ':' || ch == '/' || ch == '?';
 	}
-	if (!strncmp (host, "[::1]", 5)) {
+	if (r_str_startswith (host, "[::1]")) {
 		char ch = host[5];
 		return ch == 0 || ch == ':' || ch == '/' || ch == '?';
 	}
@@ -1078,7 +1078,7 @@ static char *tool_open_session(ServerState *ss, RJson *tool_args) {
 	if (!validate_required_string_param (tool_args, "url", &url)) {
 		return jsonrpc_error_missing_param ("url");
 	}
-	if (!is_safe_session_url (url)) {
+	if (!is_localhost (url)) {
 		return jsonrpc_error_response (-32603, "Only localhost session URLs are allowed", NULL, NULL);
 	}
 
