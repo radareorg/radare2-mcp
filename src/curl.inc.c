@@ -157,12 +157,10 @@ char *curl_post_capture(const char *url, const char *msg, int *exit_code_out) {
 		close (pipefd[1]);
 
 		// Build argv; no shell is involved (safe for spaces/quotes in msg/url).
-		// Note: if msg starts with '@', curl treats it as a file. If that's unwanted,
-		// use "--data-raw" instead of "-d".
 		char *const argv[] = {
 			"curl",
 			"-sS",
-			"-d",
+			"--data-raw",
 			(char *)msg,
 			(char *)url,
 			NULL
