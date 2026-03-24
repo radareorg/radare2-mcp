@@ -1,4 +1,4 @@
-/* r2mcp - MIT - Copyright 2025 - pancake, dnakov */
+/* r2mcp - MIT - Copyright 2025-2026 - pancake, dnakov */
 
 #define _POSIX_C_SOURCE 200809L
 #include <stdio.h>

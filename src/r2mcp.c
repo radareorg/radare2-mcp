@@ -31,8 +31,8 @@ static bool is_valid_json_response(const char *str) {
 	char *copy = strdup (str);
 	RJson *json = r_json_parse (copy);
 	if (json) {
-		free (copy);
 		r_json_free (json);
+		free (copy);
 		return true;
 	}
 	free (copy);
@@ -312,10 +312,12 @@ static char *handle_call_tool(ServerState *ss, const char *tool_name, RJson *too
 	return tools_call (ss, tool_name, tool_args);
 }
 
-static char *check_supervisor_tool_override(ServerState *ss, const char *tool_name, RJson *tool_args, const char **resolved_tool_name, RJson **resolved_tool_args, RJson **supervisor_json_out, const char *id) {
+static char *check_supervisor_tool_override(ServerState *ss, const char *tool_name, RJson *tool_args, const char **resolved_tool_name, RJson **resolved_tool_args, RJson **supervisor_json_out, char **supervisor_resp_out, const char *id) {
 	if (!ss->svc_baseurl) {
 		return NULL;
 	}
+	*supervisor_json_out = NULL;
+	*supervisor_resp_out = NULL;
 	PJ *pj = pj_new ();
 	size_t i;
 	pj_o (pj);
@@ -338,32 +340,36 @@ static char *check_supervisor_tool_override(ServerState *ss, const char *tool_na
 		return NULL;
 	}
 	*supervisor_json_out = r_json_parse (resp);
-	free (resp);
 	if (!*supervisor_json_out) {
+		free (resp);
 		return NULL;
 	}
 	const char *err = r_json_get_str (*supervisor_json_out, "error");
 	if (err) {
 		r_json_free (*supervisor_json_out);
 		*supervisor_json_out = NULL;
+		free (resp);
 		return jsonrpc_error_response (-32000, err, id, NULL);
 	}
 	const char *r2cmd = r_json_get_str (*supervisor_json_out, "r2cmd");
 	if (r2cmd) {
 		r_json_free (*supervisor_json_out);
 		*supervisor_json_out = NULL;
+		free (resp);
 		return jsonrpc_error_response (-32000, "Supervisor responses with 'r2cmd' are not allowed. Return 'tool' + 'arguments' instead.", id, NULL);
-	}
-	const char *new_tool = r_json_get_str (*supervisor_json_out, "tool");
-	if (new_tool && strcmp (new_tool, tool_name)) {
-		*resolved_tool_name = new_tool;
 	}
 	const RJson *new_args = r_json_get (*supervisor_json_out, "arguments");
 	if (new_args) {
+		const char *new_tool = r_json_get_str (*supervisor_json_out, "tool");
+		if (new_tool && strcmp (new_tool, tool_name)) {
+			*resolved_tool_name = new_tool;
+		}
 		*resolved_tool_args = (RJson *)new_args;
+		*supervisor_resp_out = resp;
 	} else {
 		r_json_free (*supervisor_json_out);
 		*supervisor_json_out = NULL;
+		free (resp);
 	}
 	return NULL;
 }
@@ -429,12 +435,14 @@ static char *handle_mcp_request(ServerState *ss, const char *method, RJson *para
 			tool_args = (RJson *)r_json_get (params, "args");
 		}
 		RJson *supervisor_json = NULL;
-		char *supervisor_error = check_supervisor_tool_override (ss, tool_name, tool_args, &tool_name, &tool_args, &supervisor_json, id);
+		char *supervisor_resp = NULL;
+		char *supervisor_error = check_supervisor_tool_override (ss, tool_name, tool_args, &tool_name, &tool_args, &supervisor_json, &supervisor_resp, id);
 		if (supervisor_error) {
 			return supervisor_error;
 		}
 		result = handle_call_tool (ss, tool_name, tool_args);
 		r_json_free (supervisor_json);
+		free (supervisor_resp);
 	} else if (!strcmp (method, "prompts/list")) {
 		result = handle_list_prompts (ss, params);
 	} else if (!strcmp (method, "prompts/get")) {

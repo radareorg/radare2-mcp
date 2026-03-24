@@ -1137,10 +1137,12 @@ static char *tool_close_session(ServerState *ss, RJson *tool_args) {
 	return jsonrpc_tooltext_response ("Remote session closed successfully.");
 }
 
-static char *check_supervisor_permission(ServerState *ss, const char *tool_name, RJson *tool_args, char **new_tool_name_out, RJson **new_tool_args_out, RJson **parsed_json_out) {
+static char *check_supervisor_permission(ServerState *ss, const char *tool_name, RJson *tool_args, char **new_tool_name_out, RJson **new_tool_args_out, RJson **parsed_json_out, char **parsed_buf_out) {
 	if (!ss->svc_baseurl) {
 		return NULL;
 	}
+	*parsed_json_out = NULL;
+	*parsed_buf_out = NULL;
 	PJ *pj = pj_new ();
 	pj_o (pj);
 	pj_ks (pj, "tool", tool_name);
@@ -1164,8 +1166,8 @@ static char *check_supervisor_permission(ServerState *ss, const char *tool_name,
 		return NULL;
 	}
 	*parsed_json_out = r_json_parse (resp);
-	free (resp);
 	if (!*parsed_json_out) {
+		free (resp);
 		return NULL;
 	}
 	const char *err = r_json_get_str (*parsed_json_out, "error");
@@ -1173,24 +1175,28 @@ static char *check_supervisor_permission(ServerState *ss, const char *tool_name,
 		char *error_resp = jsonrpc_error_response (-32000, err, NULL, NULL);
 		r_json_free (*parsed_json_out);
 		*parsed_json_out = NULL;
+		free (resp);
 		return error_resp;
 	}
 	const char *r2cmd = r_json_get_str (*parsed_json_out, "r2cmd");
 	if (r2cmd) {
 		r_json_free (*parsed_json_out);
 		*parsed_json_out = NULL;
+		free (resp);
 		return jsonrpc_error_response (-32000, "Supervisor responses with 'r2cmd' are not allowed. Return 'tool' + 'arguments' instead.", NULL, NULL);
-	}
-	const char *new_tool = r_json_get_str (*parsed_json_out, "tool");
-	if (new_tool && strcmp (new_tool, tool_name)) {
-		*new_tool_name_out = strdup (new_tool);
 	}
 	const RJson *new_args = r_json_get (*parsed_json_out, "arguments");
 	if (new_args) {
+		const char *new_tool = r_json_get_str (*parsed_json_out, "tool");
+		if (new_tool && strcmp (new_tool, tool_name)) {
+			*new_tool_name_out = strdup (new_tool);
+		}
 		*new_tool_args_out = (RJson *)new_args;
+		*parsed_buf_out = resp;
 	} else {
 		r_json_free (*parsed_json_out);
 		*parsed_json_out = NULL;
+		free (resp);
 	}
 	return NULL;
 }
@@ -1205,6 +1211,7 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 	char *result = NULL;
 	char *allocated_tool_name = NULL;
 	RJson *parsed_json = NULL;
+	char *parsed_buf = NULL;
 	if (!tool_name) {
 		result = jsonrpc_error_missing_param ("name");
 		goto cleanup;
@@ -1216,7 +1223,7 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 	}
 
 	// Supervisor control check
-	char *supervisor_override = check_supervisor_permission (ss, tool_name, tool_args, &allocated_tool_name, &tool_args, &parsed_json);
+	char *supervisor_override = check_supervisor_permission (ss, tool_name, tool_args, &allocated_tool_name, &tool_args, &parsed_json, &parsed_buf);
 	if (supervisor_override) {
 		result = supervisor_override;
 		goto cleanup;
@@ -1304,6 +1311,7 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 cleanup:
 	free (allocated_tool_name);
 	r_json_free (parsed_json);
+	free (parsed_buf);
 	return result;
 }
 ToolSpec tool_specs[] = {
