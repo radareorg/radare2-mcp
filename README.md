@@ -1,7 +1,7 @@
 # Radare2 MCP Server
 
 [![ci](https://github.com/radareorg/radare2-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/radareorg/radare2-mcp/actions/workflows/ci.yml)
-[![radare2](https://img.shields.io/badge/radare2-6.0.4-green)](https://github.com/radareorg/radare2)
+[![radare2](https://img.shields.io/badge/radare2-6.1.2-green)](https://github.com/radareorg/radare2)
 
 <img width="400" alt="r2mcp logo" src="./r2mcp.png" />
 
