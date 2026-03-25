@@ -1,69 +1,106 @@
-# Agentic Coding Guidelines for the r2mcp (radare2 MCP) server
+# Agentic Coding Guidelines for r2mcp
 
-This document contains repository- and project-specific guidance for editing and building the r2mcp server. It augments the general AGENTS rules and encodes conventions observed in `src/`.
+MCP server for radare2. Source lives in `src/`. Files named `*.inc.c` are `#include`d into other `.c` files — they are not separate compilation units.
 
-**Scope**
-- The primary source lives in `src/`. Small helper headers and include-fragments (files named `*.inc.c`) are included into TUs and must be treated accordingly.
+## Build & Test
 
-**Repository layout (important files)**
-- `src/main.c` - program entry, CLI parsing, signal setup and high-level program lifecycle.
-- `src/r2mcp.c` - main server machinery: JSON-RPC handling, event loop, dispatch to `tools` and `prompts` registries.
-- `src/tools.c`, `src/prompts.c` - registries and implementations for tools and prompts.
-- `src/readbuffer.c` - framed message reader used by the MCP direct mode loop.
-- `src/r2api.inc.c`, `src/utils.inc.c` - implementation fragments included into `r2mcp.c`. These are not separate compilation units.
-- `src/r2mcp.h`, `src/tools.h`, `src/readbuffer.h`, `src/prompts.h` - public headers for the modules above.
+- `make -C src -j` — fast incremental build (from repo root)
+- `make -C src asan` — AddressSanitizer build
+- `make -C src fmt` — auto-format with `clang-format-radare2`
+- `src/r2mcp -h` — CLI help
+- `src/r2mcp -t` — list available tools
+- `src/r2mcp -T 'open_file file_path="/bin/ls"; list_functions; close_file'` — run DSL tests
+- `make test` — run test suite (`test.sh`, `test2.sh`)
 
-Coding style and rules (project-specific)
-- Indentation: use **TABS** for indentation (project convention).
-- Function calls: include a space before the parenthesis, e.g. `foo ()`.
-- Always use braces `{}` for conditionals and loops, even if a single statement.
-- `case` labels in `switch` statements must be aligned at the same column as other cases.
-- Define loop variables before the `for` statement (older C style used in this codebase).
-- Prefer `!strcmp ()` instead of `strcmp () == 0`.
-- Use `R_RETURN_*` macros in public APIs (functions exported as `R_API`) to declare preconditions and avoid returning invalid values.
+## Code Style
 
-Memory and ownership
-- `R_NEW`/`R_NEW0` macros in this project are assumed never to return NULL; code can rely on that.
-- Do not check for NULL before calling `free` or other `*_free` helpers (the codebase follows this convention).
-- `r_json_parse` does not take ownership of the input string: after calling `r_json_parse (buf)` and later `r_json_free (parser)`, the caller is still responsible for freeing the original buffer if it was dynamically allocated. When parsing string data that will be reused or freed, prefer calling `strdup` or ensure the buffer lifetime outlives the parser.
-- When using `r_strbuf_free`, `r_core_free`, `r_list_free` or similar, pass only previously-initialized objects; do not NULL-check before freeing.
+- **Tabs** for indentation
+- Space before parens: `foo ()`, `if (`, `for (`
+- Always use braces `{}` even for single-statement blocks
+- Declare loop variables before `for` (C89 style)
+- Prefer `!strcmp ()` over `strcmp () == 0`
+- Prefer `r_str_startswith ()` over `!strncmp ()`
+- Use `R_STR_ISEMPTY()` / `R_STR_ISNOTEMPTY()` instead of manual null+empty checks
+- Use `R_RETURN_VAL_IF_FAIL()` / `R_RETURN_IF_FAIL()` for preconditions in `R_API` functions
+- Use `R_LOG_ERROR()`, `R_LOG_WARN()`, `R_LOG_INFO()` for diagnostics
 
-Build and test
-- To quickly compile only the code in `src/`, run: `make -C src -j` (run this from the repo root or from `src/`). This avoids rebuilding unrelated targets.
-- The primary output binary is `src/r2mcp`. Run `src/r2mcp -t` to list available tools and `src/r2mcp -h` for CLI help.
-- Use `make -C src -j > /dev/null` when you want quieter output during iterative development.
+## Memory
 
-Guidelines for editing the code
-- Keep changes minimal and narrowly scoped; prefer fixing the root cause.
-- When adding new tools or commands, implement a `?` subcommand to print help for that tool.
-- Prefer using `r_str_newf` for formatted strings instead of manual `malloc` + `snprintf`.
-- Avoid `r_str_append` for large concatenations; favour `RStrBuf *sb = r_strbuf_new (NULL);` and `r_strbuf_appendf` / `r_strbuf_append` loops, then `r_strbuf_drain` / `r_strbuf_free`.
-- Use `r_str_pad2` to construct repeated-character strings when needed.
-- When introducing new public APIs, follow the `R_API` and `R_RETURN_*` conventions already present in the repo.
+- `R_NEW()` / `R_NEW0()` — assumed never to return NULL
+- `R_FREE(ptr)` — frees and sets to NULL
+- No NULL-check before `free()` or `*_free()` helpers
+- `r_str_newf()` for formatted string allocation (not manual malloc+snprintf)
+- `RStrBuf` for building strings in loops:
+  ```c
+  RStrBuf *sb = r_strbuf_new ("");
+  r_strbuf_appendf (sb, "...", ...);
+  return r_strbuf_drain (sb); // caller frees
+  ```
+- `r_json_parse()` does NOT own the input buffer — caller must free it separately after `r_json_free()`
 
-Working with `*.inc.c` files
-- Files such as `r2api.inc.c` and `utils.inc.c` are included into `r2mcp.c` (see `#include "utils.inc.c"`). They are not standalone translation units. Keep these files self-contained (no duplicate symbol definitions across other TUs) and avoid adding non-static global symbols there. If you need new public functions, prefer adding a `.c` + `.h` pair.
+## JSON (PJ API)
 
-Logging and diagnostics
-- This codebase uses `r2mcp_log`, `r2mcp_log_pub`, `r2mcp_log_reset` and `r2mcp_log_drain` for structured log capture surrounding r2 core operations. Use these helpers where appropriate so logs can be captured and emitted in responses.
+Build JSON responses with the `pj_*` helpers:
+```c
+PJ *pj = pj_new ();
+pj_o (pj);           // open object
+pj_ks (pj, "type", "text"); // key-string
+pj_ki (pj, "count", 5);     // key-int
+pj_kb (pj, "ok", true);     // key-bool
+pj_k (pj, "items"); pj_a (pj); /* ... */ pj_end (pj); // key + array
+pj_end (pj);         // close object
+return pj_drain (pj); // extract string, free builder
+```
 
-JSON and protocol handling
-- The server implements a JSON-RPC 2.0-like protocol. Use the existing helpers to build responses (`pj_new`/`pj_*` helpers in this repo) and follow existing patterns in `r2mcp.c` for success and error responses.
-- For request parsing: `r_json_parse` returns a parser which must be freed with `r_json_free`. The code should then free the original message buffer if it was dynamically allocated.
-- Distinguish between notifications (no `id` field) and requests (have `id`). Notifications must not produce a response.
+Parse with `r_json_parse()`, query with `r_json_get()` / `r_json_get_str()` / `r_json_get_num()`. Check types via `field->type == R_JSON_STRING`, etc.
 
-Signals and event loop
-- `setup_signals` is defined in `src/main.c`. Use `write` in signal handlers (no non-reentrant calls). Changing signal handling should be done with care.
-- The main MCP direct mode loop is in `r2mcp_eventloop` in `r2mcp.c` and uses `readbuffer.c` to accumulate framed messages. When modifying framing or message parsing, update `readbuffer.c` accordingly and test the loop with piped input.
+## Adding Tools
 
-Incidental tips
-- When making changes that affect only `src/` files, run `make -C src -j` from the repo root to recompile only `src/`.
-- Avoid adding new dependencies. This project expects to build against existing radare2 headers (`r_core.h`, `r_util/*`).
-- When adding tests or additional tooling, prefer placing small test drivers under `b/` (repo already uses `b/` for auxiliary build/test files).
+Tool handler signature — returns heap-allocated JSON, caller frees:
+```c
+static char *tool_example(ServerState *ss, RJson *tool_args) { ... }
+```
 
-Checklist before submitting a patch
-- Run `make -C src -j` and exercise the binary: `src/r2mcp -t`, `src/r2mcp -h`, and a simple direct-mode message roundtrip using `printf` or `jq`.
-- Ensure all new public APIs use `R_RETURN_*` where appropriate.
-- Follow TAB indentation and other style rules above.
+Register in `tool_specs[]` array in `tools.c`:
+```c
+{ "tool_name", "description", "{\"type\":\"object\",\"properties\":{...}}", TOOL_MODE_NORMAL, tool_example },
+```
 
-If something in the codebase looks inconsistent with these rules, point it out in the PR rather than applying large style-only changes across many files.
+Tool modes are a bitmask: `TOOL_MODE_MINI`, `TOOL_MODE_HTTP`, `TOOL_MODE_NORMAL`, `TOOL_MODE_RO`, `TOOL_MODE_SESSIONS`, `TOOL_MODE_FRIDA`. Combine with `|`.
+
+Implementation pattern:
+1. Validate params: `validate_required_string_param()`, `validate_address_param()`
+2. On failure: `return jsonrpc_error_missing_param("param_name");`
+3. Execute r2 command: `r2mcp_cmd(ss, "cmd")` or `r2mcp_cmdf(ss, "cmd %s", arg)`
+4. Wrap result: `return tool_cmd_response(res);` (wraps in JSON + frees `res`)
+5. Or build custom response with `jsonrpc_tooltext_response()`, `jsonrpc_tooltext_response_paginated()`
+
+Use `fx(ss)` prefix for commands that need Frida mode support (returns `":"` or `""`).
+
+## Protocol
+
+- JSON-RPC 2.0. Notifications (no `id`) must not produce a response.
+- Use `jsonrpc_error_response()` / `jsonrpc_success_response()` for building responses.
+- `r2_cmd_filter()` strips dangerous patterns (`!`, `$(...)`, `|`, `` ` ``, `>`) from r2 commands.
+
+## Platform
+
+- Use `R2__UNIX__` / `R2__WINDOWS__` for platform-specific code.
+- No new dependencies — build only against radare2 headers (`r_core.h`, `r_util/*`).
+
+## Logging
+
+- `r2mcp_log()` / `r2mcp_log_pub()` for structured log capture around r2 operations
+- `r2mcp_log_reset()` / `r2mcp_log_drain()` to manage log buffer lifecycle
+
+## Working with `*.inc.c`
+
+These are included into `r2mcp.c`. Keep functions `static`. For new public APIs, create a `.c` + `.h` pair instead.
+
+## Patch Checklist
+
+- `make -C src -j` compiles clean
+- Exercise: `src/r2mcp -t`, `src/r2mcp -h`, and a direct-mode roundtrip
+- New public APIs use `R_RETURN_*` macros
+- Follows tab indentation and style rules above
+- Flag style inconsistencies in the PR rather than applying large reformats
