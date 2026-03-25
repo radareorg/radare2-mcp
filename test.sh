@@ -1,5 +1,5 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/bin/sh
+set -eu
 
 echo "== Build =="
 make -C src -j > /dev/null
@@ -17,8 +17,13 @@ ${BIN} -T 'open_file file_path=/bin/ls; show_headers; get_current_address; close
 
 echo "== DSL: ensure error when missing open_file =="
 set +e
-${BIN} -T 'list_functions only_named=true' | grep -q "open_file" && echo "(expected) tool enforces open_file first" || echo "(warning) missing expected open_file hint"
+${BIN} -T 'list_functions only_named=true' | grep -q "open_file"
+STATUS=$?
 set -e
+if [ "${STATUS}" -eq 0 ]; then
+	echo "(expected) tool enforces open_file first"
+else
+	echo "(warning) missing expected open_file hint"
+fi
 
 echo "== OK =="
-

@@ -58,6 +58,8 @@ jobs:
           sudo dpkg -i *.deb
       - name: Building radare2-mcp
         run: ./configure && make
+      - name: Run tests
+        run: make test
       - name: Building Debian package
         if: startsWith(github.ref, 'refs/tags/')
         run: make -C dist/debian
