@@ -1070,10 +1070,11 @@ static char *tool_open_session(ServerState *ss, RJson *tool_args) {
 		return jsonrpc_error_response (-32603, "Only localhost session URLs are allowed", NULL, NULL);
 	}
 
-	// Store the current baseurl if we're not already in HTTP mode
+	// Preserve the previous baseurl even when reconnecting from one remote
+	// session to another, so failed probes can fully restore the old state.
 	char *old_baseurl = NULL;
 	bool old_http_mode = ss->http_mode;
-	if (!ss->http_mode && ss->baseurl) {
+	if (ss->baseurl) {
 		old_baseurl = strdup (ss->baseurl);
 	}
 

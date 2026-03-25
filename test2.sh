@@ -344,6 +344,55 @@ run_open_file_regressions() {
 	assert_marker_absent "$(response_by_id "$resp" 5)" "$INJECT_MARKER" "open_file:injection"
 }
 
+run_open_session_regression() {
+	local port="19392"
+	local good_url="http://127.0.0.1:$port/cmd/"
+	local req="$TMPDIR/open-session.req"
+	local resp="$TMPDIR/open-session.resp"
+	local server_log="$TMPDIR/open-session.server.log"
+	local server_pid=""
+	local ready="0"
+	local i="0"
+
+	r2 -q0 -e http.bind=127.0.0.1 -c "=h $port" /bin/ls > /dev/null 2>"$server_log" &
+	server_pid=$!
+	trap 'kill "$server_pid" 2>/dev/null || true; wait "$server_pid" 2>/dev/null || true; rm -rf "$TMPDIR"' EXIT INT TERM
+	while [ "$i" -lt 20 ]; do
+		if curl -fsS --data-raw i "$good_url" >/dev/null 2>&1; then
+			ready="1"
+			break
+		fi
+		i=$((i + 1))
+		sleep 1
+	done
+	[ "$ready" = "1" ] || fail "open_session: failed to start local r2 http server"
+	: > "$req"
+	append_request "$req" 1 initialize '{"capabilities":{},"clientInfo":{"name":"testsuite","version":"1"}}'
+	append_notification "$req" notifications/initialized '{}'
+	append_tool_call "$req" 2 open_session "$(jq -cn --arg url "$good_url" '{url:$url}')"
+	append_tool_call "$req" 3 get_current_address '{}'
+	append_tool_call "$req" 4 open_session "$(jq -cn '{url:"http://127.0.0.1:1"}')"
+	append_tool_call "$req" 5 get_current_address '{}'
+	append_tool_call "$req" 6 close_session '{}'
+	run_session "$req" "$resp" -L -p
+
+	printf '%s\n' "$(response_by_id "$resp" 2)" | jq -e '.result.content[0].text | contains("Successfully connected")' >/dev/null 2>&1 || {
+		fail "open_session: initial connect should succeed, got $(response_by_id "$resp" 2)"
+	}
+	printf '%s\n' "$(response_by_id "$resp" 3)" | jq -e '.result.content[0].text | type == "string"' >/dev/null 2>&1 || {
+		fail "open_session: expected active remote session before reconnect, got $(response_by_id "$resp" 3)"
+	}
+	printf '%s\n' "$(response_by_id "$resp" 4)" | jq -e '.error.code == -32603 and (.error.message | contains("Failed to connect"))' >/dev/null 2>&1 || {
+		fail "open_session: failed reconnect should report an error, got $(response_by_id "$resp" 4)"
+	}
+	printf '%s\n' "$(response_by_id "$resp" 5)" | jq -e '.result.content[0].text | type == "string"' >/dev/null 2>&1 || {
+		fail "open_session: existing remote session should survive failed reconnect, got $(response_by_id "$resp" 5)"
+	}
+	kill "$server_pid" 2>/dev/null || true
+	wait "$server_pid" 2>/dev/null || true
+	trap 'rm -rf "$TMPDIR"' EXIT INT TERM
+}
+
 run_sandbox_regressions() {
 	local sb="$TMPDIR/sandbox"
 	local req="$TMPDIR/sandbox.req"
@@ -381,6 +430,8 @@ run_sandbox_regressions() {
 
 need_cmd jq
 need_cmd mktemp
+need_cmd curl
+need_cmd r2
 
 echo "== Build =="
 make -C src all > /dev/null
@@ -424,6 +475,7 @@ run_dynamic_suite "$DANGEROUS_ONLY" "dynamic-dangerous" with-open -r
 run_dynamic_suite "$SESSION_CATALOG" "dynamic-sessions" no-open -L
 run_open_file_regressions
 run_close_file_regression
+run_open_session_regression
 run_sandbox_regressions
 
 echo "== OK =="
