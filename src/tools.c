@@ -1121,6 +1121,9 @@ static char *tool_close_session(ServerState *ss, RJson *tool_args) {
 	// Clear the HTTP mode and baseurl
 	ss->http_mode = false;
 	ss->frida_mode = false;
+	ss->rstate.file_opened = false;
+	free (ss->rstate.current_file);
+	ss->rstate.current_file = NULL;
 	free (ss->baseurl);
 	ss->baseurl = NULL;
 
