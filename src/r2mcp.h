@@ -52,7 +52,7 @@ typedef struct {
 	char *svc_baseurl;
 	/* Optional sandbox path. When set, only allow opening files under this dir */
 	char *sandbox;
-	/* Optional radare2 sandbox grain mask; "all" disables cfg.sandbox */
+	/* Optional radare2 sandbox grain mask; NULL selects a mode-aware default */
 	char *sandbox_grain;
 	/* Optional path to append debug logs when set via -l */
 	char *logfile;
@@ -99,6 +99,7 @@ void r2mcp_state_fini(ServerState *ss);
 char *r2mcp_cmd(ServerState *ss, const char *cmd);
 char *r2mcp_cmdf(ServerState *ss, const char *fmt, ...);
 void r2mcp_log_pub(ServerState *ss, const char *msg);
+const char *r2mcp_effective_sandbox_grain(const ServerState *ss);
 
 // Additional public wrappers exposed so other modules (eg. tools.c) can use
 // functionality implemented in r2api.inc.c. These simply forward to the

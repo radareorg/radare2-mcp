@@ -25,6 +25,13 @@ void r2mcp_running_set(int value) {
 	running = value? 1: 0;
 }
 
+const char *r2mcp_effective_sandbox_grain(const ServerState *ss) {
+	if (ss && R_STR_ISNOTEMPTY (ss->sandbox_grain)) {
+		return ss->sandbox_grain;
+	}
+	return (ss && ss->http_mode)? "exec,network": "exec,socket";
+}
+
 static bool is_valid_json_response(const char *str) {
 	if (!str || *str != '{') {
 		return false;

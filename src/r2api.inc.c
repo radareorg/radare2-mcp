@@ -22,7 +22,7 @@ static void r2state_settings(RCore *core) {
 }
 
 static void r2state_sandbox_settings(ServerState *ss, RCore *core) {
-	const char *sandbox_grain = (ss && ss->sandbox_grain)? ss->sandbox_grain: "exec,socket";
+	const char *sandbox_grain = r2mcp_effective_sandbox_grain (ss);
 	if (!strcmp (sandbox_grain, "all")) {
 		r_config_set_b (core->config, "cfg.sandbox", false);
 	} else {

@@ -38,7 +38,7 @@ void r2mcp_help(void) {
 		" -d [pdc]   select a different decompiler (pdc by default)\n"
 		" -D [tool]  disable the specified tool (repeatable)\n"
 		" -e [tool]  enable only the specified tool (repeatable)\n"
-		" -g [grain] set cfg.sandbox.grain (default: exec,socket; use all to disable sandbox)\n"
+		" -g [grain] set cfg.sandbox.grain (default: exec,socket; HTTP mode: exec,network; use all to disable sandbox)\n"
 		" -h         show this help\n"
 		" -i         ignore analysis level specified in analyze calls\n"
 		" -l [file]  append debug logs to this file\n"
@@ -73,6 +73,7 @@ int r2mcp_main(int argc, const char **argv) {
 	bool enable_run_command_tool = false;
 	bool readonly_mode = false;
 	bool list_tools = false;
+	char *sandbox_grain_msg = NULL;
 	RList *cmds = r_list_newf (free);
 	/* Whitelist of enabled tool names (populated via repeated -e flags) */
 	RList *enabled_tools = NULL;
@@ -83,7 +84,7 @@ int r2mcp_main(int argc, const char **argv) {
 	char *baseurl = NULL;
 	char *svc_baseurl = NULL;
 	char *sandbox = NULL;
-	char *sandbox_grain = strdup ("exec,socket");
+	char *sandbox_grain = NULL;
 	char *logfile = NULL;
 	char *prompts_dir = NULL;
 	bool load_prompts = true;
@@ -224,6 +225,9 @@ int r2mcp_main(int argc, const char **argv) {
 	};
 	/* Enable logging */
 	r2mcp_log_pub (&ss, "r2mcp starting");
+	sandbox_grain_msg = r_str_newf ("sandbox grain: %s", r2mcp_effective_sandbox_grain (&ss));
+	r2mcp_log_pub (&ss, sandbox_grain_msg);
+	free (sandbox_grain_msg);
 #if R2__UNIX__
 	setup_signals ();
 #endif

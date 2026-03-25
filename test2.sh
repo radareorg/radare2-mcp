@@ -393,6 +393,26 @@ run_open_session_regression() {
 	trap 'rm -rf "$TMPDIR"' EXIT INT TERM
 }
 
+run_http_sandbox_grain_regression() {
+	local normal_log="$TMPDIR/sandbox-grain.normal.log"
+	local http_log="$TMPDIR/sandbox-grain.http.log"
+	local override_log="$TMPDIR/sandbox-grain.override.log"
+
+	"$BIN" -t -l "$normal_log" >/dev/null
+	"$BIN" -u "http://127.0.0.1:1/cmd/" -t -l "$http_log" >/dev/null
+	"$BIN" -u "http://127.0.0.1:1/cmd/" -g "exec,socket" -t -l "$override_log" >/dev/null
+
+	grep -q "sandbox grain: exec,socket" "$normal_log" || {
+		fail "sandbox grain: normal mode should default to exec,socket"
+	}
+	grep -q "sandbox grain: exec,network" "$http_log" || {
+		fail "sandbox grain: HTTP mode should default to exec,network"
+	}
+	grep -q "sandbox grain: exec,socket" "$override_log" || {
+		fail "sandbox grain: explicit -g should override the HTTP mode default"
+	}
+}
+
 run_sandbox_regressions() {
 	local sb="$TMPDIR/sandbox"
 	local req="$TMPDIR/sandbox.req"
@@ -495,6 +515,7 @@ run_dynamic_suite "$SESSION_CATALOG" "dynamic-sessions" no-open -L
 run_open_file_regressions
 run_close_file_regression
 run_open_session_regression
+run_http_sandbox_grain_regression
 run_sandbox_regressions
 run_command_filter_regression
 
