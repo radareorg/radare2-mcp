@@ -428,6 +428,25 @@ run_sandbox_regressions() {
 	}
 }
 
+run_command_filter_regression() {
+	local req="$TMPDIR/filter.req"
+	local resp="$TMPDIR/filter.resp"
+	local payload='x$(f __R2MCP_INJECTED__=entry0)'
+	: > "$req"
+
+	append_request "$req" 1 initialize '{"capabilities":{},"clientInfo":{"name":"testsuite","version":"1"}}'
+	append_notification "$req" notifications/initialized '{}'
+	append_tool_call "$req" 2 open_file "$(jq -cn --arg file "$TEST_FILE" '{file_path:$file}')"
+	append_tool_call "$req" 3 run_command "$(jq -cn --arg command "$payload" '{command:$command}')"
+	append_tool_call "$req" 4 list_symbols "$(jq -cn --arg marker "$INJECT_MARKER" '{filter:$marker}')"
+	run_session "$req" "$resp" -r
+
+	printf '%s\n' "$(response_by_id "$resp" 3)" | jq -e '.result.content[0].text | type == "string"' >/dev/null 2>&1 || {
+		fail "command filter regression: expected run_command to return text, got $(response_by_id "$resp" 3)"
+	}
+	assert_marker_absent "$(response_by_id "$resp" 4)" "$INJECT_MARKER" "command filter regression"
+}
+
 need_cmd jq
 need_cmd mktemp
 need_cmd curl
@@ -477,5 +496,6 @@ run_open_file_regressions
 run_close_file_regression
 run_open_session_regression
 run_sandbox_regressions
+run_command_filter_regression
 
 echo "== OK =="

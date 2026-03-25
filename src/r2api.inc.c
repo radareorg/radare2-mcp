@@ -79,7 +79,7 @@ static char *r2_cmd_filter(const char *cmd, bool *changed) {
 		*changed = true;
 		*res = 0;
 	} else {
-		char *ch = strstr (res, "$ (");
+		char *ch = strstr (res, "$(");
 		if (ch) {
 			*changed = true;
 			*ch = 0;
