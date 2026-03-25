@@ -5,7 +5,8 @@ $(SRC_TARGETS): src/Makefile
 	$(MAKE) -C svc $@
 
 test:
-	sh test.sh
+	bash test.sh
+	bash test2.sh
 
 format fmt indent:
 	clang-format-radare2 src/*.c svc/*.c
