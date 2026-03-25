@@ -4,9 +4,9 @@ MCP server for radare2. Source lives in `src/`. Files named `*.inc.c` are `#incl
 
 ## Build & Test
 
-- `make -C src -j` — fast incremental build (from repo root)
-- `make -C src asan` — AddressSanitizer build
-- `make -C src fmt` — auto-format with `clang-format-radare2`
+- `make -j` — fast incremental build (from repo root)
+- `make asan` — AddressSanitizer build
+- `make fmt` — auto-format with `clang-format-radare2`
 - `src/r2mcp -h` — CLI help
 - `src/r2mcp -t` — list available tools
 - `src/r2mcp -T 'open_file file_path="/bin/ls"; list_functions; close_file'` — run DSL tests
@@ -88,19 +88,3 @@ Use `fx(ss)` prefix for commands that need Frida mode support (returns `":"` or 
 - Use `R2__UNIX__` / `R2__WINDOWS__` for platform-specific code.
 - No new dependencies — build only against radare2 headers (`r_core.h`, `r_util/*`).
 
-## Logging
-
-- `r2mcp_log()` / `r2mcp_log_pub()` for structured log capture around r2 operations
-- `r2mcp_log_reset()` / `r2mcp_log_drain()` to manage log buffer lifecycle
-
-## Working with `*.inc.c`
-
-These are included into `r2mcp.c`. Keep functions `static`. For new public APIs, create a `.c` + `.h` pair instead.
-
-## Patch Checklist
-
-- `make -C src -j` compiles clean
-- Exercise: `src/r2mcp -t`, `src/r2mcp -h`, and a direct-mode roundtrip
-- New public APIs use `R_RETURN_*` macros
-- Follows tab indentation and style rules above
-- Flag style inconsistencies in the PR rather than applying large reformats
