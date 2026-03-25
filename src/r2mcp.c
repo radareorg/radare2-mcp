@@ -223,6 +223,9 @@ static bool check_capabilities(ServerState *ss, const char *method, char **error
 // static char *jsonrpc_error_response (int code, const char *message, const char *id, const char *uri) { ... }
 
 static char *handle_initialize(ServerState *ss, RJson *params) {
+	if (!params || params->type != R_JSON_OBJECT) {
+		return jsonrpc_error_response (-32602, "Invalid params: expected object", NULL, NULL);
+	}
 	ss->client_capabilities = r_json_get (params, "capabilities");
 	ss->client_info = r_json_get (params, "clientInfo");
 
