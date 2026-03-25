@@ -157,18 +157,26 @@ R_IPI bool r2_open_file(ServerState *ss, const char *filepath) {
 		return false;
 	}
 	bool is_uri = strstr (filepath, "://") != NULL;
-	// Filesystem security checks only apply to local paths, not URI schemes
-	if (!is_uri) {
-		if (!r_file_is_abspath (filepath)) {
+	const char *local_path = filepath;
+	if (is_uri) {
+		if (r_str_startswith (filepath, "file://")) {
+			local_path = filepath + strlen ("file://");
+		} else if (ss->sandbox && *ss->sandbox) {
+			R_LOG_ERROR ("URI schemes are not allowed in sandbox mode");
+			return false;
+		}
+	}
+	if (local_path != filepath || !is_uri) {
+		if (!r_file_is_abspath (local_path)) {
 			R_LOG_ERROR ("Relative paths are not allowed. Use an absolute path");
 			return false;
 		}
-		if (path_contains_parent_ref (filepath)) {
+		if (path_contains_parent_ref (local_path)) {
 			R_LOG_ERROR ("Path traversal is not allowed (contains '/../')");
 			return false;
 		}
 		if (ss->sandbox && *ss->sandbox) {
-			if (!path_is_within_sandbox (filepath, ss->sandbox)) {
+			if (!path_is_within_sandbox (local_path, ss->sandbox)) {
 				R_LOG_ERROR ("Access denied: path is outside of the sandbox");
 				return false;
 			}
