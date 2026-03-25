@@ -21,17 +21,22 @@ static bool r2mcp_path_is_within_sandbox(const char *path, const char *sandbox) 
 		return true;
 	}
 	R_RETURN_VAL_IF_FAIL (path, false);
-	char *rp = r_file_abspath (path);
-	char *rs = r_file_abspath (sandbox);
-	bool ret = false;
-	if (rp && rs) {
-		size_t sl = strlen (rs);
-		if (r_str_startswith (rp, rs)) {
-			char c = rp[sl];
-			ret = (c == '\0' || c == '/' || c == '\\' || rs[sl - 1] == '/' || rs[sl - 1] == '\\');
-		}
-	} else {
+	char *rp = realpath (path, NULL);
+	if (!rp) {
 		R_LOG_ERROR ("Access denied: unable to resolve path");
+		return false;
+	}
+	char *rs = realpath (sandbox, NULL);
+	if (!rs) {
+		R_LOG_ERROR ("Access denied: unable to resolve sandbox path");
+		free (rp);
+		return false;
+	}
+	bool ret = false;
+	size_t sl = strlen (rs);
+	if (r_str_startswith (rp, rs)) {
+		char c = rp[sl];
+		ret = (c == '\0' || c == '/' || c == '\\' || rs[sl - 1] == '/' || rs[sl - 1] == '\\');
 	}
 	free (rp);
 	free (rs);
