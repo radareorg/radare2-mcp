@@ -10,7 +10,7 @@
 
 #ifndef R2MCP_VERSION
 #warning R2MCP_VERSION is not defined
-#define R2MCP_VERSION "1.6.0"
+#define R2MCP_VERSION "1.7.0"
 #endif
 
 #define LATEST_PROTOCOL_VERSION "2025-06-18"
