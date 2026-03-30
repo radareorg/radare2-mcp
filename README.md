@@ -20,6 +20,10 @@ This implementation provides:
 - 🔁 Direct stdin/stdout communication model
 - 🛠️ Optional raw access to run r2 commands or r2js scripts
 
+## Hosted deployment
+
+A hosted deployment is available on [Fronteir AI](https://fronteir.ai/mcp/radareorg-r2mcp).
+
 ## Installation
 
 <img width="400" alt="Screenshot_2025-03-22_at_5 34 47_PM" src="https://github.com/user-attachments/assets/5322c3fc-fc07-4770-96a3-5a6d82d439c2" />
