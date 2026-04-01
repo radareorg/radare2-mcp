@@ -4,6 +4,7 @@
   "description": "Use radare2 from Codex through the r2mcp MCP server for reverse engineering, disassembly, and binary analysis.",
   "author": {
     "name": "radareorg",
+    "email": "pancake@nopcode.org",
     "url": "https://github.com/radareorg"
   },
   "homepage": "https://github.com/radareorg/radare2-mcp",
@@ -30,13 +31,15 @@
       "Write"
     ],
     "websiteURL": "https://github.com/radareorg/radare2-mcp",
+    "privacyPolicyURL": "https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement",
+    "termsOfServiceURL": "https://docs.github.com/en/site-policy/github-terms/github-terms-of-service",
     "defaultPrompt": [
       "Use r2mcp to inspect this binary and summarize the entry point",
       "Analyze this executable with radare2 and list suspicious functions",
       "Use r2mcp to explain what this function does"
     ],
     "brandColor": "#F15A24",
-    "composerIcon": "./assets/icon.svg",
+    "composerIcon": "./assets/logo.png",
     "logo": "./assets/logo.png",
     "screenshots": []
   }

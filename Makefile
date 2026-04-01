@@ -22,4 +22,10 @@ doc:
 codex-plugin:
 	VERSION="$(if $(strip $(VERSION)),$(VERSION),$(R2MCP_VERSION))" sh dist/scripts/package-codex-plugin.sh
 
-.PHONY: $(SRC_TARGETS) help doc test codex-plugin
+codex-plugin-install:
+	sh dist/scripts/install-codex-plugin.sh
+
+codex-plugin-uninstall:
+	sh dist/scripts/uninstall-codex-plugin.sh
+
+.PHONY: $(SRC_TARGETS) help doc test codex-plugin codex-plugin-install codex-plugin-uninstall

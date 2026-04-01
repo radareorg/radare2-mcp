@@ -70,6 +70,20 @@ with:
 
 Use this when you want the plugin to show up only for one repository.
 
+From this repository, the fastest path is:
+
+```sh
+make codex-plugin-install
+```
+
+That copies `dist/codex-plugin` to `./plugins/r2mcp` and creates or updates `./.agents/plugins/marketplace.json` for this repo.
+
+To remove the repo-local install again:
+
+```sh
+make codex-plugin-uninstall
+```
+
 1. Build or install `r2mcp` first.
 
 ```sh

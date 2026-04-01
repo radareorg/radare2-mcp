@@ -1,0 +1,20 @@
+{
+   "interface" : {
+      "displayName" : "Local Repo Plugins"
+   },
+   "name" : "local-repo",
+   "plugins" : [
+      {
+         "category" : "Coding",
+         "name" : "r2mcp",
+         "policy" : {
+            "authentication" : "ON_INSTALL",
+            "installation" : "AVAILABLE"
+         },
+         "source" : {
+            "path" : "./plugins/r2mcp",
+            "source" : "local"
+         }
+      }
+   ]
+}

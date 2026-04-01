@@ -1,6 +1,7 @@
 {
   "mcpServers": {
     "r2mcp": {
+      "type": "stdio",
       "command": "r2pm",
       "args": [
         "-r",
