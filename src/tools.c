@@ -269,43 +269,21 @@ static char *filter_lines_by_regex(const char *input, const char *pattern) {
 	if (!pattern || !*pattern) {
 		return strdup (src);
 	}
-	RStrBuf *sb = r_strbuf_new ("");
 	RRegex rx;
 	int re_flags = r_regex_flags ("e");
 	if (r_regex_init (&rx, pattern, re_flags) != 0) {
-		r_strbuf_appendf (sb, "Invalid regex used in filter parameter, try a simpler expression");
-		return r_strbuf_drain (sb);
+		return strdup ("Invalid regex used in filter parameter, try a simpler expression");
 	}
-	const char *line_begin = src;
-	const char *p = src;
-	size_t line_buf_size = 0;
-	char *line = NULL;
-	for (;;) {
-		if (*p == '\n' || *p == '\0') {
-			size_t len = (size_t) (p - line_begin);
-			if (len + 1 > line_buf_size) {
-				size_t new_size = len + 1;
-				line = realloc (line, new_size);
-				if (!line) {
-					break;
-				}
-				line_buf_size = new_size;
-			}
-			memcpy (line, line_begin, len);
-			line[len] = '\0';
-			if (r_regex_exec (&rx, line, 0, 0, 0) == 0) {
-				r_strbuf_appendf (sb, "%s\n", line);
-			}
-			if (*p == '\0') {
-				break;
-			}
-			p++;
-			line_begin = p;
-			continue;
+	RStrBuf *sb = r_strbuf_new ("");
+	RList *lines = r_str_split_list (strdup (src), "\n", 0);
+	RListIter *it;
+	char *line;
+	r_list_foreach (lines, it, line) {
+		if (r_regex_exec (&rx, line, 0, 0, 0) == 0) {
+			r_strbuf_appendf (sb, "%s\n", line);
 		}
-		p++;
 	}
-	free (line);
+	r_list_free (lines);
 	r_regex_fini (&rx);
 	return r_strbuf_drain (sb);
 }
@@ -313,43 +291,16 @@ static char *filter_lines_by_regex(const char *input, const char *pattern) {
 static char *filter_named_functions_only(const char *input) {
 	const char *src = input? input: "";
 	RStrBuf *sb = r_strbuf_new ("");
-	const char *line_begin = src;
-	const char *p = src;
-	size_t line_buf_size = 0;
-	char *line = NULL;
-	for (;;) {
-		if (*p == '\n' || *p == '\0') {
-			size_t len = (size_t) (p - line_begin);
-			if (len + 1 > line_buf_size) {
-				size_t new_size = len + 1;
-				line = realloc (line, new_size);
-				if (!line) {
-					break;
-				}
-				line_buf_size = new_size;
-			}
-			memcpy (line, line_begin, len);
-			line[len] = '\0';
-			bool is_named = true;
-			const char *last_dot = r_str_lchr (line, '.');
-			if (last_dot && last_dot[1]) {
-				if (isdigit (last_dot[1])) {
-					is_named = false;
-				}
-			}
-			if (is_named) {
-				r_strbuf_appendf (sb, "%s\n", line);
-			}
-			if (*p == '\0') {
-				break;
-			}
-			p++;
-			line_begin = p;
-			continue;
+	RList *lines = r_str_split_list (strdup (src), "\n", 0);
+	RListIter *it;
+	char *line;
+	r_list_foreach (lines, it, line) {
+		const char *last_dot = r_str_lchr (line, '.');
+		if (!last_dot || !last_dot[1] || !isdigit (last_dot[1])) {
+			r_strbuf_appendf (sb, "%s\n", line);
 		}
-		p++;
 	}
-	free (line);
+	r_list_free (lines);
 	return r_strbuf_drain (sb);
 }
 
@@ -793,14 +744,10 @@ static char *tool_rename_flag(ServerState *ss, RJson *tool_args) {
 		return jsonrpc_error_missing_param ("address, name, and new_name");
 	}
 	char *remove_res = r2mcp_cmdf (ss, "'@%s'fr %s %s", address, name, new_name);
-
 	if (R_STR_ISNOTEMPTY (remove_res)) {
-
 		return tool_cmd_response (remove_res);
 	}
-
 	free (remove_res);
-
 	return jsonrpc_tooltext_response ("ok");
 }
 
@@ -973,12 +920,9 @@ static char *tool_run_javascript(ServerState *ss, RJson *tool_args) {
 		return jsonrpc_error_missing_param ("script");
 	}
 	char *encoded = r_base64_encode_dyn ((const ut8 *)script, strlen (script));
-
 	if (!encoded) {
-
 		return jsonrpc_error_response (-32603, "Failed to encode script", NULL, NULL);
 	}
-
 	char *cmd = r_str_newf ("js base64:%s", encoded);
 	char *res = r2mcp_cmd (ss, cmd);
 	free (cmd);

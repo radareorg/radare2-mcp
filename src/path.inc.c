@@ -7,7 +7,9 @@
 #endif
 
 static bool r2mcp_path_contains_parent_ref(const char *path) {
-	R_RETURN_VAL_IF_FAIL (path, false);
+	if (!path) {
+		return false;
+	}
 	const char *p = path;
 	while ((p = strstr (p, ".."))) {
 		bool at_start = (p == path || p[-1] == '/' || p[-1] == '\\');
@@ -22,7 +24,9 @@ static bool r2mcp_path_contains_parent_ref(const char *path) {
 
 #if R2__WINDOWS__
 static char *r2mcp_path_realpath(const char *path) {
-	R_RETURN_VAL_IF_FAIL (path, NULL);
+	if (!path) {
+		return NULL;
+	}
 	HANDLE h = CreateFileA (path, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
 	if (h == INVALID_HANDLE_VALUE) {
 		return NULL;
@@ -58,7 +62,9 @@ static char *r2mcp_path_realpath(const char *path) {
 }
 #else
 static char *r2mcp_path_realpath(const char *path) {
-	R_RETURN_VAL_IF_FAIL (path, NULL);
+	if (!path) {
+		return NULL;
+	}
 	return realpath (path, NULL);
 }
 #endif
@@ -67,7 +73,9 @@ static bool r2mcp_path_is_within_sandbox(const char *path, const char *sandbox) 
 	if (R_STR_ISEMPTY (sandbox)) {
 		return true;
 	}
-	R_RETURN_VAL_IF_FAIL (path, false);
+	if (!path) {
+		return false;
+	}
 	char *rp = r2mcp_path_realpath (path);
 	if (!rp) {
 		R_LOG_ERROR ("Access denied: unable to resolve path");

@@ -81,12 +81,12 @@ static char *expand_template(const char *template, RJson *arguments) {
 					p = end + 1;
 					free (arg);
 				} else {
-					r_strbuf_appendf (sb, "%c", *p);
+					r_strbuf_append_n (sb, p, 1);
 					p++;
 				}
 			}
 		} else {
-			r_strbuf_appendf (sb, "%c", *p);
+			r_strbuf_append_n (sb, p, 1);
 			p++;
 		}
 	}
@@ -334,7 +334,7 @@ static PromptSpec *prompts_find(const ServerState *ss, const char *nm) {
 
 char *prompts_build_list_json(const ServerState *ss, const char *cursor, int pagesz) {
 	PromptRegistry *reg = (ss && ss->prompts)? (PromptRegistry *)ss->prompts: NULL;
-	int total = 0;
+	int total = reg? r_list_length (reg->lst): 0;
 	int eidx = 0;
 	PJ *pj = pj_new ();
 	pj_o (pj);
@@ -342,7 +342,6 @@ char *prompts_build_list_json(const ServerState *ss, const char *cursor, int pag
 	pj_a (pj);
 	if (reg) {
 		int idx = 0;
-		int total = r_list_length (reg->lst);
 		int sidx = 0;
 		if (cursor) {
 			sidx = atoi (cursor);

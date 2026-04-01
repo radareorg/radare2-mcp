@@ -43,21 +43,6 @@ char *jsonrpc_tooltext_response_paginated(const char *text, bool has_more, const
 	return pj_drain (pj);
 }
 
-// Render tool output as a JSON array of lines for frontend filtering compatibility
-char *jsonrpc_tooltext_response_lines(const char *text) {
-	PJ *pj = pj_new ();
-	pj_o (pj);
-	pj_k (pj, "content");
-	pj_a (pj);
-	pj_o (pj);
-	pj_ks (pj, "type", "text");
-	pj_ks (pj, "text", text);
-	pj_end (pj);
-	pj_end (pj);
-	pj_end (pj);
-	return pj_drain (pj);
-}
-
 // JSON-RPC error response builder. Returns heap-allocated JSON string (caller frees).
 char *jsonrpc_error_response(int code, const char *message, const char *id, const char *uri) {
 	PJ *pj = pj_new ();

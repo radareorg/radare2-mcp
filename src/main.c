@@ -305,6 +305,7 @@ int r2mcp_main(int argc, const char **argv) {
 	r2mcp_state_fini (&ss);
 	/* Cleanup */
 	free (ss.baseurl);
+	free (ss.svc_baseurl);
 	free (ss.sandbox);
 	free (ss.sandbox_grain);
 	free (ss.logfile);

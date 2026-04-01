@@ -225,10 +225,6 @@ static bool check_capabilities(ServerState *ss, const char *method, char **error
 	return check_cap (ss, server_caps, has_server_cap, method, error);
 }
 
-// Helper function to create JSON-RPC error responses
-// (moved to utils.inc.c earlier, keep this for compatibility if needed)
-// static char *jsonrpc_error_response (int code, const char *message, const char *id, const char *uri) { ... }
-
 static char *handle_initialize(ServerState *ss, RJson *params) {
 	if (!params || params->type != R_JSON_OBJECT) {
 		return jsonrpc_error_response (-32602, "Invalid params: expected object", NULL, NULL);
@@ -317,74 +313,6 @@ static char *handle_get_prompt(ServerState *ss, RJson *params) {
 	return prompt;
 }
 
-// Thin wrapper that delegates to the tools module. This keeps r2mcp.c small
-// and moves the tool-specific logic into tools.c where it belongs.
-static char *handle_call_tool(ServerState *ss, const char *tool_name, RJson *tool_args) {
-	return tools_call (ss, tool_name, tool_args);
-}
-
-static char *check_supervisor_tool_override(ServerState *ss, const char *tool_name, RJson *tool_args, const char **resolved_tool_name, RJson **resolved_tool_args, RJson **supervisor_json_out, char **supervisor_resp_out, const char *id) {
-	if (!ss->svc_baseurl) {
-		return NULL;
-	}
-	*supervisor_json_out = NULL;
-	*supervisor_resp_out = NULL;
-	PJ *pj = pj_new ();
-	size_t i;
-	pj_o (pj);
-	pj_ks (pj, "tool", tool_name);
-	pj_k (pj, "arguments");
-	pj_append_rjson (pj, tool_args);
-	pj_k (pj, "available_tools");
-	pj_a (pj);
-	for (i = 0; tool_specs[i].name; i++) {
-		pj_s (pj, tool_specs[i].name);
-	}
-	pj_end (pj);
-	pj_end (pj);
-	char *req = pj_drain (pj);
-	int rc;
-	char *resp = curl_post_capture (ss->svc_baseurl, req, &rc);
-	free (req);
-	if (!resp || rc != 0) {
-		free (resp);
-		return NULL;
-	}
-	*supervisor_json_out = r_json_parse (resp);
-	if (!*supervisor_json_out) {
-		free (resp);
-		return NULL;
-	}
-	const char *err = r_json_get_str (*supervisor_json_out, "error");
-	if (err) {
-		r_json_free (*supervisor_json_out);
-		*supervisor_json_out = NULL;
-		free (resp);
-		return jsonrpc_error_response (-32000, err, id, NULL);
-	}
-	const char *r2cmd = r_json_get_str (*supervisor_json_out, "r2cmd");
-	if (r2cmd) {
-		r_json_free (*supervisor_json_out);
-		*supervisor_json_out = NULL;
-		free (resp);
-		return jsonrpc_error_response (-32000, "Supervisor responses with 'r2cmd' are not allowed. Return 'tool' + 'arguments' instead.", id, NULL);
-	}
-	const RJson *new_args = r_json_get (*supervisor_json_out, "arguments");
-	if (new_args) {
-		const char *new_tool = r_json_get_str (*supervisor_json_out, "tool");
-		if (new_tool && strcmp (new_tool, tool_name)) {
-			*resolved_tool_name = new_tool;
-		}
-		*resolved_tool_args = (RJson *)new_args;
-		*supervisor_resp_out = resp;
-	} else {
-		r_json_free (*supervisor_json_out);
-		*supervisor_json_out = NULL;
-		free (resp);
-	}
-	return NULL;
-}
-
 static bool is_valid_mcp_method(const char *method) {
 	if (!method || !*method) {
 		return false;
@@ -445,15 +373,7 @@ static char *handle_mcp_request(ServerState *ss, const char *method, RJson *para
 		if (!tool_args) {
 			tool_args = (RJson *)r_json_get (params, "args");
 		}
-		RJson *supervisor_json = NULL;
-		char *supervisor_resp = NULL;
-		char *supervisor_error = check_supervisor_tool_override (ss, tool_name, tool_args, &tool_name, &tool_args, &supervisor_json, &supervisor_resp, id);
-		if (supervisor_error) {
-			return supervisor_error;
-		}
-		result = handle_call_tool (ss, tool_name, tool_args);
-		r_json_free (supervisor_json);
-		free (supervisor_resp);
+		result = tools_call (ss, tool_name, tool_args);
 	} else if (!strcmp (method, "prompts/list")) {
 		result = handle_list_prompts (ss, params);
 	} else if (!strcmp (method, "prompts/get")) {

@@ -30,8 +30,6 @@ extern ToolSpec tool_specs[];
 // Tool flags (for future use). For now, we use one to require an open file.
 #define TOOL_FLAG_REQUIRES_OPENFILE (1 << 0)
 
-
-
 // Build catalog JSON for the current server mode with optional pagination
 char *tools_build_catalog_json(const ServerState *ss, const char *cursor, int page_size);
 

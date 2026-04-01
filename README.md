@@ -52,6 +52,16 @@ That's the common mcpServer JSON configuration file:
 }
 ```
 
+### Codex
+
+To install the codex plugin just run the following command:
+
+```bash
+make codex-plugin-install
+```
+
+This will create a personal marketplace in your home and copy the files from dist/codex-plugin inside.
+
 ### Using Docker
 
 Alternatively, you can build the Docker image:
