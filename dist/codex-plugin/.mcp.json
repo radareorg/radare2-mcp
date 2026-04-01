@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "r2mcp": {
+      "command": "r2pm",
+      "args": [
+        "-r",
+        "r2mcp"
+      ],
+      "startup_timeout_sec": 20,
+      "tool_timeout_sec": 120,
+      "note": "Recommended launcher for r2mcp. Install r2mcp with `r2pm -Uci r2mcp` before enabling this plugin. If you prefer a standalone binary, change `command` to `r2mcp`."
+    }
+  }
+}

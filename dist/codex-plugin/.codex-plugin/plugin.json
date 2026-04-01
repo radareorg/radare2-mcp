@@ -1,0 +1,43 @@
+{
+  "name": "r2mcp",
+  "version": "1.7.2",
+  "description": "Use radare2 from Codex through the r2mcp MCP server for reverse engineering, disassembly, and binary analysis.",
+  "author": {
+    "name": "radareorg",
+    "url": "https://github.com/radareorg"
+  },
+  "homepage": "https://github.com/radareorg/radare2-mcp",
+  "repository": "https://github.com/radareorg/radare2-mcp",
+  "license": "MIT",
+  "keywords": [
+    "radare2",
+    "r2mcp",
+    "reverse-engineering",
+    "binary-analysis",
+    "mcp",
+    "codex"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "r2mcp",
+    "shortDescription": "Reverse-engineering tools for Codex",
+    "longDescription": "Bundle the r2mcp MCP server and a reverse-engineering skill so Codex can inspect binaries, disassemble code, analyze functions, and drive radare2 workflows from the Codex app or CLI.",
+    "developerName": "radareorg",
+    "category": "Coding",
+    "capabilities": [
+      "Interactive",
+      "Write"
+    ],
+    "websiteURL": "https://github.com/radareorg/radare2-mcp",
+    "defaultPrompt": [
+      "Use r2mcp to inspect this binary and summarize the entry point",
+      "Analyze this executable with radare2 and list suspicious functions",
+      "Use r2mcp to explain what this function does"
+    ],
+    "brandColor": "#F15A24",
+    "composerIcon": "./assets/icon.svg",
+    "logo": "./assets/logo.png",
+    "screenshots": []
+  }
+}
