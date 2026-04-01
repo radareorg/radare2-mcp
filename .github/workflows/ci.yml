@@ -93,6 +93,25 @@ jobs:
       - name: Compile
         run: meson compile -C builddir
 
+  codex-plugin:
+    runs-on: ubuntu-22.04
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Package Codex plugin
+        run: make codex-plugin VERSION="${{ github.ref_name }}"
+      - name: List Codex plugin artifacts
+        run: ls -la release/r2mcp-codex-plugin-*
+      - name: Upload Codex plugin artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: codex-plugin
+          path: |
+            release/r2mcp-codex-plugin-*.tar.gz
+            release/r2mcp-codex-plugin-*.zip
+            release/r2mcp-codex-plugin-*.sha256
+
   macos:
     runs-on: macos-latest
     strategy:
@@ -216,7 +235,7 @@ jobs:
           path: r2mcp-windows.zip
 
   release:
-    needs: [r2git, linux-deb, linux-meson, macos, windows]
+    needs: [r2git, linux-deb, linux-meson, codex-plugin, macos, windows]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     permissions:
@@ -238,5 +257,7 @@ jobs:
         with:
           files: |
             release-artifacts/**/*.zip
+            release-artifacts/**/*.tar.gz
             release-artifacts/**/*.deb
+            release-artifacts/**/*.sha256
           generate_release_notes: true

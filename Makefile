@@ -1,4 +1,5 @@
 SRC_TARGETS=all clean install user-install uninstall user-uninstall asan
+R2MCP_VERSION=$(shell awk '/^VERSION[[:space:]]+/ { print $$2; exit }' configure.acr)
 
 $(SRC_TARGETS): src/Makefile
 	$(MAKE) -C src $@
@@ -18,4 +19,7 @@ src/Makefile:
 doc:
 	cat INSTALL.md
 
-.PHONY: $(SRC_TARGETS) help doc test
+codex-plugin:
+	VERSION="$(if $(strip $(VERSION)),$(VERSION),$(R2MCP_VERSION))" sh dist/scripts/package-codex-plugin.sh
+
+.PHONY: $(SRC_TARGETS) help doc test codex-plugin

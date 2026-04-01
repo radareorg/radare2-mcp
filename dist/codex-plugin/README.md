@@ -30,6 +30,8 @@ OpenAI's current public docs also say official Plugin Directory publishing is no
 - `examples/repo-marketplace.json`: ready-to-copy repo marketplace entry
 - `examples/personal-marketplace.json`: ready-to-copy personal marketplace entry
 
+The release packaging in this repository wraps this directory into archives that extract as a top-level `r2mcp/` plugin folder, which matches the plugin id and the expected marketplace path examples.
+
 ## Runtime expectation
 
 The bundled MCP configuration launches:
@@ -188,6 +190,24 @@ Based on the current Codex docs, local plugin distribution is file based:
 - install the plugin from the plugin directory
 
 At the moment, the public docs do not describe a self-serve public publishing flow for third-party Codex plugins. For now, the reliable path is private or team distribution through repo or personal marketplaces.
+
+## Release artifacts
+
+This repository can package this plugin as release artifacts. The recommended artifact names are:
+
+- `r2mcp-codex-plugin-<version>.tar.gz`
+- `r2mcp-codex-plugin-<version>.zip`
+
+Both archives extract to:
+
+```text
+r2mcp/
+```
+
+That folder can then be copied directly to one of the locations documented above:
+
+- repo install target: `./plugins/r2mcp`
+- personal install target: `~/.codex/plugins/r2mcp`
 
 ## Notes and limitations
 
