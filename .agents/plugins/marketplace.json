@@ -15,6 +15,18 @@
             "path" : "./plugins/r2mcp",
             "source" : "local"
          }
+      },
+      {
+         "category" : "Coding",
+         "name" : null,
+         "policy" : {
+            "authentication" : "ON_INSTALL",
+            "installation" : "AVAILABLE"
+         },
+         "source" : {
+            "path" : null,
+            "source" : "local"
+         }
       }
    ]
 }

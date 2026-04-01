@@ -66,9 +66,7 @@ with:
 "command": "r2mcp"
 ```
 
-## Repo-scoped install
-
-Use this when you want the plugin to show up only for one repository.
+## Install
 
 From this repository, the fastest path is:
 
@@ -76,13 +74,22 @@ From this repository, the fastest path is:
 make codex-plugin-install
 ```
 
-That copies `dist/codex-plugin` to `./plugins/r2mcp` and creates or updates `./.agents/plugins/marketplace.json` for this repo.
+That installs `r2mcp` in both places:
 
-To remove the repo-local install again:
+- repo-local: `./plugins/r2mcp` with `./.agents/plugins/marketplace.json`
+- user-local: `~/.codex/plugins/r2mcp` with `~/.agents/plugins/marketplace.json`
+
+This makes the plugin visible in both the Codex CLI for this repo and the graphical app.
+
+To remove both installs again:
 
 ```sh
 make codex-plugin-uninstall
 ```
+
+## Repo-scoped install
+
+Use this when you want the plugin to show up only for one repository.
 
 1. Build or install `r2mcp` first.
 
