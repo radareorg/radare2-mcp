@@ -92,6 +92,7 @@ int r2mcp_main(int argc, const char **argv) {
 	bool ignore_analysis_level = false;
 	bool use_sessions = false;
 	R2McpContentMode content_mode = R2MCP_CONTENT_TEXT;
+	bool content_mode_set = false;
 	const char *dsl_tests = NULL;
 	RList *disabled_tools = NULL;
 	RGetopt opt;
@@ -101,6 +102,7 @@ int r2mcp_main(int argc, const char **argv) {
 		switch (c) {
 		case 'C':
 			content_mode = r2mcp_content_mode_from_string (opt.arg);
+			content_mode_set = true;
 			if (content_mode == R2MCP_CONTENT_INVALID) {
 				R_LOG_ERROR ("Invalid content mode '%s' (use: text, json, structured, both)", opt.arg);
 				return 1;
@@ -205,7 +207,7 @@ int r2mcp_main(int argc, const char **argv) {
 		}
 	}
 	/* Handle environment variable for content mode (overridden by -C flag) */
-	if (content_mode == R2MCP_CONTENT_TEXT) {
+	if (!content_mode_set) {
 		const char *env_content_mode = getenv ("R2MCP_CONTENT_MODE");
 		if (env_content_mode) {
 			R2McpContentMode m = r2mcp_content_mode_from_string (env_content_mode);

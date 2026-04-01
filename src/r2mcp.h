@@ -25,6 +25,9 @@ typedef enum {
 } R2McpContentMode;
 
 static inline R2McpContentMode r2mcp_content_mode_from_string(const char *s) {
+	if (R_STR_ISEMPTY (s)) {
+		return R2MCP_CONTENT_INVALID;
+	}
 	if (!strcmp (s, "text")) {
 		return R2MCP_CONTENT_TEXT;
 	}
