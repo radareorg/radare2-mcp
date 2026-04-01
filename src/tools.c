@@ -31,10 +31,17 @@ static bool validate_address_param(RJson *args, const char *param_name, const ch
 	return validate_required_string_param (args, param_name, out_address);
 }
 
-// Helper to wrap command result in JSON response and free the result
 static char *tool_cmd_response(char *res) {
 	char *response = jsonrpc_tooltext_response (res);
 	free (res);
+	return response;
+}
+
+// Mode-aware variant of tool_cmd_response, frees both inputs
+R_UNUSED static char *tool_mode_response(ServerState *ss, char *text, char *structured_json) {
+	char *response = jsonrpc_tool_response (text, structured_json, ss->content_mode);
+	free (text);
+	free (structured_json);
 	return response;
 }
 

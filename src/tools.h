@@ -13,7 +13,7 @@ typedef enum {
 } ToolMode;
 
 // Tool handler signature: returns heap-allocated JSON string describing
-// the tool result (typically jsonrpc_tooltext_response() content or other
+// the tool result (typically jsonrpc_tooltext_response () content or other
 // structured JSON). Caller must free the returned string.
 typedef char *(*ToolHandler)(ServerState *ss, RJson *args);
 

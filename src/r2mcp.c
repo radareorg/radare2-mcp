@@ -283,7 +283,7 @@ static char *handle_list_tools(ServerState *ss, RJson *params) {
 	if (params && params->type != R_JSON_OBJECT) {
 		return NULL;
 	}
-	const char *cursor = params ? r_json_get_str (params, "cursor") : NULL;
+	const char *cursor = params? r_json_get_str (params, "cursor"): NULL;
 	int page_size = 32;
 	return tools_build_catalog_json (ss, cursor, page_size);
 }
@@ -292,7 +292,7 @@ static char *handle_list_prompts(ServerState *ss, RJson *params) {
 	if (params && params->type != R_JSON_OBJECT) {
 		return NULL;
 	}
-	const char *cursor = params ? r_json_get_str (params, "cursor") : NULL;
+	const char *cursor = params? r_json_get_str (params, "cursor"): NULL;
 	int page_size = 32;
 	return prompts_build_list_json (ss, cursor, page_size);
 }

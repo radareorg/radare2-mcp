@@ -15,7 +15,7 @@ typedef struct PromptSpec {
 	PromptArg *args;
 	int nargs;
 	// Render returns a JSON object string with { messages: [...] }
-	char *(*render)(const struct PromptSpec *spec, RJson *arguments);
+	char *(*render) (const struct PromptSpec *spec, RJson *arguments);
 	void *render_data;
 } PromptSpec;
 
@@ -28,4 +28,3 @@ char *prompts_build_list_json(const ServerState *ss, const char *cursor, int pag
 
 // Resolve a prompt by name and arguments, returning a JSON object string
 char *prompts_get_json(const ServerState *ss, const char *name, RJson *arguments);
-
