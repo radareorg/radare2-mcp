@@ -43,7 +43,7 @@ static char *expand_template(const char *template, RJson *arguments) {
 				char *end = strchr (p, '}');
 				if (end) {
 					char *arg = r_str_ndup (arg_start, end - arg_start);
-					const char *val = arguments ? r_json_get_str (arguments, arg) : NULL;
+					const char *val = arguments? r_json_get_str (arguments, arg): NULL;
 					p = end + 1;
 					const char *if_content = p;
 					const char *else_pos = strstr (p, "{else}");
@@ -74,7 +74,7 @@ static char *expand_template(const char *template, RJson *arguments) {
 				char *end = strchr (p, '}');
 				if (end) {
 					char *arg = r_str_ndup (p + 1, end - p - 1);
-					const char *val = arguments ? r_json_get_str (arguments, arg) : NULL;
+					const char *val = arguments? r_json_get_str (arguments, arg): NULL;
 					if (val) {
 						r_strbuf_append (sb, val);
 					}

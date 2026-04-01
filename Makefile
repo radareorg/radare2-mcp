@@ -10,7 +10,7 @@ test:
 	bash test2.sh
 
 format fmt indent:
-	clang-format-radare2 src/*.c svc/*.c
+	clang-format-radare2 src/*.c svc/*.c src/*.h
 	#clang-format -i src/*.c svc/*.c
 
 src/Makefile:

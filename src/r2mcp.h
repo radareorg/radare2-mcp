@@ -15,6 +15,42 @@
 #define R2MCP_MAX_PAGE_SIZE 10000
 #define R2MCP_ANALYZE_TIMEOUT_UNSET (-1)
 
+// Content mode: text, json, structured, both (-C flag / R2MCP_CONTENT_MODE)
+typedef enum {
+	R2MCP_CONTENT_TEXT = 0,
+	R2MCP_CONTENT_JSON = 1,
+	R2MCP_CONTENT_STRUCTURED = 2,
+	R2MCP_CONTENT_BOTH = 3,
+	R2MCP_CONTENT_INVALID = -1
+} R2McpContentMode;
+
+static inline R2McpContentMode r2mcp_content_mode_from_string(const char *s) {
+	if (R_STR_ISEMPTY (s)) {
+		return R2MCP_CONTENT_INVALID;
+	}
+	if (!strcmp (s, "text")) {
+		return R2MCP_CONTENT_TEXT;
+	}
+	if (!strcmp (s, "json")) {
+		return R2MCP_CONTENT_JSON;
+	}
+	if (!strcmp (s, "structured")) {
+		return R2MCP_CONTENT_STRUCTURED;
+	}
+	if (!strcmp (s, "both")) {
+		return R2MCP_CONTENT_BOTH;
+	}
+	return R2MCP_CONTENT_INVALID;
+}
+
+static inline bool r2mcp_content_wants_json(R2McpContentMode m) {
+	return m == R2MCP_CONTENT_JSON || m == R2MCP_CONTENT_STRUCTURED || m == R2MCP_CONTENT_BOTH;
+}
+
+static inline bool r2mcp_content_wants_text(R2McpContentMode m) {
+	return m == R2MCP_CONTENT_TEXT || m == R2MCP_CONTENT_BOTH;
+}
+
 typedef struct {
 	const char *name;
 	const char *version;
@@ -71,16 +107,18 @@ typedef struct {
 	/* Optional whitelist of tool names enabled via command line -e options.
 	 * When non-NULL, only tools whose name appears in this list will be
 	 * registered in the runtime tools registry. Items are heap-allocated
-	 * strings and the list should be created with `r_list_newf(free)`.
+	 * strings and the list should be created with `r_list_newf (free)`.
 	 */
 	RList *enabled_tools;
 	/* Optional blacklist of tool names disabled via command line -D options.
 	 * Tools in this list will be excluded from the available tools regardless
 	 * of other settings. Items are heap-allocated strings and the list should
-	 * be created with `r_list_newf(free)`.
+	 * be created with `r_list_newf (free)`.
 	 */
 	RList *disabled_tools;
-	void *prompts; // registry of PromptSpec* (RList*), opaque here
+	/* Controls which content fields appear in tool responses (text, structured, both) */
+	R2McpContentMode content_mode;
+	void *prompts; // registry of PromptSpec*(RList*), opaque here
 } ServerState;
 
 /* Entry point wrapper implemented in r2mcp.c */

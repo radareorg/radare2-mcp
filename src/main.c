@@ -34,6 +34,7 @@ void setup_signals(void) {
 void r2mcp_help(void) {
 	const char help_text[] =
 		"Usage: r2mcp [-flags]\n"
+		" -C [mode]  content mode: text (default), json, structured, both\n"
 		" -c [cmd]   run those commands before entering the mcp loop\n"
 		" -d [pdc]   select a different decompiler (pdc by default)\n"
 		" -D [tool]  disable the specified tool (repeatable)\n"
@@ -90,13 +91,23 @@ int r2mcp_main(int argc, const char **argv) {
 	bool load_prompts = true;
 	bool ignore_analysis_level = false;
 	bool use_sessions = false;
+	R2McpContentMode content_mode = R2MCP_CONTENT_TEXT;
+	bool content_mode_set = false;
 	const char *dsl_tests = NULL;
 	RList *disabled_tools = NULL;
 	RGetopt opt;
-	r_getopt_init (&opt, argc, argv, "hmvpd:nc:u:g:l:s:rite:D:RT:S:P:NL");
+	r_getopt_init (&opt, argc, argv, "C:hmvpd:nc:u:g:l:s:rite:D:RT:S:P:NL");
 	int c;
 	while ((c = r_getopt_next (&opt)) != -1) {
 		switch (c) {
+		case 'C':
+			content_mode = r2mcp_content_mode_from_string (opt.arg);
+			content_mode_set = true;
+			if (content_mode == R2MCP_CONTENT_INVALID) {
+				R_LOG_ERROR ("Invalid content mode '%s' (use: text, json, structured, both)", opt.arg);
+				return 1;
+			}
+			break;
 		case 'h':
 			r2mcp_help ();
 			return 0;
@@ -195,6 +206,18 @@ int r2mcp_main(int argc, const char **argv) {
 			prompts_dir = strdup (env_prompts_dir);
 		}
 	}
+	/* Handle environment variable for content mode (overridden by -C flag) */
+	if (!content_mode_set) {
+		const char *env_content_mode = getenv ("R2MCP_CONTENT_MODE");
+		if (env_content_mode) {
+			R2McpContentMode m = r2mcp_content_mode_from_string (env_content_mode);
+			if (m == R2MCP_CONTENT_INVALID) {
+				R_LOG_WARN ("Unknown R2MCP_CONTENT_MODE '%s', using 'text'", env_content_mode);
+			} else {
+				content_mode = m;
+			}
+		}
+	}
 
 	ServerState ss = {
 		.info = {
@@ -217,6 +240,7 @@ int r2mcp_main(int argc, const char **argv) {
 		.prompts_dir = prompts_dir,
 		.load_prompts = load_prompts,
 		.ignore_analysis_level = ignore_analysis_level,
+		.content_mode = content_mode,
 		.client_capabilities = NULL,
 		.client_info = NULL,
 		.enabled_tools = enabled_tools,
