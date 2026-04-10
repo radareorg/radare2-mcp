@@ -100,21 +100,10 @@ typedef struct {
 	bool ignore_analysis_level;
 	/* When true, operate in Frida mode */
 	bool frida_mode;
-	const RJson *client_capabilities;
-	const RJson *client_info;
+	RList *client_capability_keys;
 	RadareState rstate;
 	RStrBuf *sb;
-	/* Optional whitelist of tool names enabled via command line -e options.
-	 * When non-NULL, only tools whose name appears in this list will be
-	 * registered in the runtime tools registry. Items are heap-allocated
-	 * strings and the list should be created with `r_list_newf (free)`.
-	 */
 	RList *enabled_tools;
-	/* Optional blacklist of tool names disabled via command line -D options.
-	 * Tools in this list will be excluded from the available tools regardless
-	 * of other settings. Items are heap-allocated strings and the list should
-	 * be created with `r_list_newf (free)`.
-	 */
 	RList *disabled_tools;
 	/* Controls which content fields appear in tool responses (text, structured, both) */
 	R2McpContentMode content_mode;

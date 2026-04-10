@@ -11,9 +11,6 @@ typedef struct {
 	char *error_message;
 } ValidationResult;
 
-/* Validate tool arguments against the JSON schema in ToolSpec.
- * Returns ValidationResult with valid=true if args match schema.
- * error_message is set if validation fails (caller must free). */
 ValidationResult validate_arguments(RJson *args, const char *schema_json);
 
 /* Helper: Check if a required string parameter exists and is a string */

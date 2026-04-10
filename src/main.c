@@ -241,8 +241,7 @@ int r2mcp_main(int argc, const char **argv) {
 		.load_prompts = load_prompts,
 		.ignore_analysis_level = ignore_analysis_level,
 		.content_mode = content_mode,
-		.client_capabilities = NULL,
-		.client_info = NULL,
+		.client_capability_keys = NULL,
 		.enabled_tools = enabled_tools,
 		.disabled_tools = disabled_tools,
 		.frida_mode = false

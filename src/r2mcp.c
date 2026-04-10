@@ -126,6 +126,8 @@ void r2mcp_state_fini(ServerState *ss) {
 		ss->rstate.file_opened = false;
 		ss->rstate.current_file = NULL;
 	}
+	r_list_free (ss->client_capability_keys);
+	ss->client_capability_keys = NULL;
 }
 
 char *r2mcp_cmd(ServerState *ss, const char *cmd) {
@@ -185,8 +187,15 @@ static const CapMap client_caps[] = {
 };
 
 static bool has_client_cap(ServerState *ss, const char *cap) {
-	if (ss->client_capabilities) {
-		return r_json_get (ss->client_capabilities, cap) != NULL;
+	if (!ss->client_capability_keys) {
+		return false;
+	}
+	RListIter *it;
+	const char *k;
+	r_list_foreach (ss->client_capability_keys, it, k) {
+		if (!strcmp (k, cap)) {
+			return true;
+		}
 	}
 	return false;
 }
@@ -229,8 +238,21 @@ static char *handle_initialize(ServerState *ss, RJson *params) {
 	if (!params || params->type != R_JSON_OBJECT) {
 		return jsonrpc_error_response (-32602, "Invalid params: expected object", NULL, NULL);
 	}
-	ss->client_capabilities = r_json_get (params, "capabilities");
-	ss->client_info = r_json_get (params, "clientInfo");
+	// Snapshot client capability keys: the params JSON tree is owned by the
+	// caller and freed when this request is done, so we must not store
+	// pointers into it.
+	r_list_free (ss->client_capability_keys);
+	ss->client_capability_keys = r_list_newf (free);
+	const RJson *caps = r_json_get (params, "capabilities");
+	if (caps && caps->type == R_JSON_OBJECT) {
+		const RJson *child = caps->children.first;
+		while (child) {
+			if (child->key) {
+				r_list_append (ss->client_capability_keys, strdup (child->key));
+			}
+			child = child->next;
+		}
+	}
 
 	// Create a proper initialize response
 	PJ *pj = pj_new ();

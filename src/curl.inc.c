@@ -18,17 +18,7 @@
 #error please define R2__WINDOWS__ or R2__UNIX__ for platform detection
 #endif
 
-/**
- * Execute: curl -sS -d "<msg>" <url>
- * Capture stdout (HTTP response body) and return it as a malloc'd NUL-terminated string.
- *
- * @param url  Target URL (non-NULL)
- * @param msg  Message for -d (non-NULL), e.g. "key=value" or JSON string
- * @param exit_code_out Optional: receives curl's exit code (0 on success). Pass NULL if not needed.
- *
- * @return malloc'd buffer with the response (caller must free), or NULL on error.
- *         On error, *exit_code_out (if provided) is set to a negative number when possible.
- */
+// POST msg to url via `curl -sS -d`; returns response body (caller frees) or NULL on error.
 char *curl_post_capture(const char *url, const char *msg, int *exit_code_out) {
 	if (exit_code_out) {
 		*exit_code_out = -1;
