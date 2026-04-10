@@ -160,11 +160,11 @@ R_IPI bool r2_open_file(ServerState *ss, const char *filepath) {
 		return true;
 	}
 
-	RCore *core = ss->rstate.core;
-	if (!core && !r2mcp_state_init (ss)) {
+	if (!ss->rstate.core && !r2mcp_state_init (ss)) {
 		R_LOG_ERROR ("Failed to initialize r2 core\n");
 		return false;
 	}
+	RCore *core = ss->rstate.core;
 	r_config_set_b (core->config, "cfg.sandbox", false);
 
 	if (ss->rstate.file_opened) {
