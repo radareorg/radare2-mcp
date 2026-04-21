@@ -157,6 +157,7 @@ char *r2mcp_cmd(ServerState *ss, const char *cmd) {
 	// r2state_settings (core);
 	if (err) {
 		char *newres = r_str_newf ("%s<log>\n%s\n</log>\n", res, err);
+		free (err);
 		free (res);
 		res = newres;
 	}
