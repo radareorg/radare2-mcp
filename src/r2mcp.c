@@ -152,7 +152,7 @@ char *r2mcp_cmd(ServerState *ss, const char *cmd) {
 	char *err = r2mcp_log_drain (ss);
 	free (filteredCommand);
 	if (!res) {
-		res = strdup ("");
+		res = strdup ("Error: command returned NULL");
 	}
 	// r2state_settings (core);
 	if (err) {
