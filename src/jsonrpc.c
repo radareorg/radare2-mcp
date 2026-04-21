@@ -9,7 +9,7 @@ char *jsonrpc_tooltext_response(const char *text) {
 	pj_a (pj);
 	pj_o (pj);
 	pj_ks (pj, "type", "text");
-	pj_ks (pj, "text", text);
+	pj_ks (pj, "text", text? text: "");
 	pj_end (pj);
 	pj_end (pj);
 	pj_end (pj);
