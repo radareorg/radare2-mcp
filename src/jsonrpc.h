@@ -14,4 +14,6 @@ char *jsonrpc_error_missing_param(const char *param_name);
 char *jsonrpc_error_tool_not_allowed(const char *tool_name);
 char *jsonrpc_error_file_required(void);
 
+void pj_append_rjson(PJ *pj, RJson *j);
+
 #endif

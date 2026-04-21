@@ -327,6 +327,9 @@ static char *tool_close_file(ServerState *ss, RJson *tool_args) {
 }
 
 static char *tool_list_functions(ServerState *ss, RJson *tool_args) {
+	if (ss->frida_mode) {
+		return jsonrpc_tooltext_response ("In Frida mode we won't list functions. List exports or classes instead.");
+	}
 	const RJson *only_named_parameter = r_json_get (tool_args, "only_named");
 	bool only_named = false;
 	if (only_named_parameter) {
@@ -334,8 +337,6 @@ static char *tool_list_functions(ServerState *ss, RJson *tool_args) {
 			only_named = only_named_parameter->num.u_value;
 		}
 	}
-
-	// Acquire additional parameters `start` and `max_length`.
 	int start = 0;
 	int max_length = 50;
 	const RJson *start_json = r_json_get (tool_args, "start");
@@ -346,50 +347,121 @@ static char *tool_list_functions(ServerState *ss, RJson *tool_args) {
 	if (max_length_json && max_length_json->type == R_JSON_INTEGER) {
 		max_length = (int)max_length_json->num.s_value;
 	}
-
 	const char *filter = r_json_get_str (tool_args, "filter");
-	char *res;
-	if (ss->frida_mode) {
-		return jsonrpc_tooltext_response ("In Frida mode we won't list functions. List exports or classes instead.");
-	} else {
-		res = r2mcp_cmd (ss, "afl,addr/cols/name");
-		r_str_trim (res);
-		if (R_STR_ISEMPTY (res)) {
-			free (res);
+
+	bool wants_text = r2mcp_content_wants_text (ss->content_mode);
+	bool wants_json = r2mcp_content_wants_json (ss->content_mode);
+	char *text_result = NULL;
+	char *json_result = NULL;
+	bool has_more = false;
+	char *next_cursor = NULL;
+
+	// Ensure analysis has been run
+	{
+		char *check = r2mcp_cmd (ss, "aflc");
+		r_str_trim (check);
+		if (R_STR_ISEMPTY (check) || !strcmp (check, "0")) {
+			free (check);
 			free (r2mcp_cmd (ss, "aaa"));
-			res = r2mcp_cmd (ss, "afl,addr/cols/name");
-			r_str_trim (res);
-			if (R_STR_ISEMPTY (res)) {
-				free (res);
-				res = strdup ("No functions found. Run the analysis first.");
+			check = r2mcp_cmd (ss, "aflc");
+			r_str_trim (check);
+			if (R_STR_ISEMPTY (check) || !strcmp (check, "0")) {
+				free (check);
+				return jsonrpc_tool_response ("No functions found. Run the analysis first.", NULL, ss->content_mode);
 			}
 		}
+		free (check);
 	}
-	// Apply filtering if only_named is true
-	if (only_named && R_STR_ISNOTEMPTY (res)) {
-		char *filtered = filter_named_functions_only (res);
-		if (filtered) {
-			free (res);
-			res = filtered;
+
+	// Text path: run afl
+	if (wants_text) {
+		char *res = r2mcp_cmd (ss, "afl,addr/cols/name");
+		r_str_trim (res);
+		if (only_named && R_STR_ISNOTEMPTY (res)) {
+			char *filtered = filter_named_functions_only (res);
+			if (filtered) {
+				free (res);
+				res = filtered;
+			}
 		}
-	}
-	// Apply regex filter if provided
-	if (R_STR_ISNOTEMPTY (filter) && R_STR_ISNOTEMPTY (res)) {
-		char *r = filter_lines_by_regex (res, filter);
+		if (R_STR_ISNOTEMPTY (filter) && R_STR_ISNOTEMPTY (res)) {
+			char *r = filter_lines_by_regex (res, filter);
+			free (res);
+			res = r;
+		}
+		int total_lines = r_str_char_count (res, '\n') - 2;
+		int page_size = (max_length < 0)? total_lines: max_length;
+		char cursor_buf[32];
+		snprintf (cursor_buf, sizeof (cursor_buf), "%d", start + 2);
+		text_result = paginate_text_by_lines (res, cursor_buf, page_size, &has_more, &next_cursor);
 		free (res);
-		res = r;
 	}
-	// Apply pagination, offset by 2 to skip the header lines
-	int total_lines = r_str_char_count (res, '\n') - 2;
-	int page_size = (max_length < 0)? total_lines: max_length;
-	char cursor_buf[32];
-	snprintf (cursor_buf, sizeof (cursor_buf), "%d", start + 2);
-	char *next_cursor = NULL;
-	bool has_more = false;
-	char *paginated = paginate_text_by_lines (res, cursor_buf, page_size, &has_more, &next_cursor);
-	free (res);
+
+	// JSON path: run aflj
+	if (wants_json) {
+		char *res = r2mcp_cmd (ss, "aflj");
+		r_str_trim (res);
+		RJson *json = r_json_parse (res);
+		if (json && json->type == R_JSON_ARRAY) {
+			PJ *pj = pj_new ();
+			pj_a (pj);
+			int idx = 0;
+			int emitted = 0;
+			bool json_has_more = false;
+			RRegex rx;
+			bool rx_ok = false;
+			if (R_STR_ISNOTEMPTY (filter)) {
+				rx_ok = r_regex_init (&rx, filter, r_regex_flags ("e")) == 0;
+			}
+			const RJson *child;
+			for (child = json->children.first; child; child = child->next) {
+				const RJson *name_j = r_json_get (child, "name");
+				const char *name = (name_j && name_j->type == R_JSON_STRING)? name_j->str_value: NULL;
+				if (only_named && name) {
+					const char *last_dot = r_str_lchr (name, '.');
+					if (last_dot && last_dot[1] && isdigit ((unsigned char)last_dot[1])) {
+						continue;
+					}
+				}
+				if (rx_ok && name) {
+					if (r_regex_exec (&rx, name, 0, 0, 0) != 0) {
+						continue;
+					}
+				}
+				if (idx < start) {
+					idx++;
+					continue;
+				}
+				if (max_length >= 0 && emitted >= max_length) {
+					json_has_more = true;
+					break;
+				}
+				pj_append_rjson (pj, (RJson *)child);
+				idx++;
+				emitted++;
+			}
+			if (rx_ok) {
+				r_regex_fini (&rx);
+			}
+			pj_end (pj);
+			json_result = pj_drain (pj);
+			// Use JSON pagination when text path didn't run
+			if (!wants_text) {
+				has_more = json_has_more;
+				if (json_has_more) {
+					next_cursor = r_str_newf ("%d", start + emitted);
+				}
+			}
+		}
+		r_json_free (json);
+		free (res);
+	}
+
+	char *response = jsonrpc_tool_response_paginated (text_result, json_result, ss->content_mode, has_more, next_cursor);
+	free (text_result);
+	free (json_result);
 	free (next_cursor);
-	return tool_cmd_response (paginated);
+	return response;
 }
 
 static char *tool_list_files(ServerState *ss, RJson *tool_args) {
@@ -1083,7 +1155,7 @@ static char *tool_close_session(ServerState *ss, RJson *tool_args) {
 }
 
 // AITODO: move move into pj API?
-static void pj_append_rjson(PJ *pj, RJson *j) {
+void pj_append_rjson(PJ *pj, RJson *j) {
 	if (!j) {
 		pj_null (pj);
 		return;
