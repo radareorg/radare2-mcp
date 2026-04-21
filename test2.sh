@@ -448,6 +448,26 @@ run_sandbox_regressions() {
 	}
 }
 
+run_command_smoke_regression() {
+	local req="$TMPDIR/runcmd_smoke.req"
+	local resp="$TMPDIR/runcmd_smoke.resp"
+	: > "$req"
+
+	append_request "$req" 1 initialize '{"capabilities":{},"clientInfo":{"name":"testsuite","version":"1"}}'
+	append_notification "$req" notifications/initialized '{}'
+	append_tool_call "$req" 2 open_file "$(jq -cn --arg file "$TEST_FILE" '{file_path:$file}')"
+	append_tool_call "$req" 3 run_command '{"command":"px"}'
+	append_tool_call "$req" 4 run_command '{"command":""}'
+	run_session "$req" "$resp" -r
+
+	printf '%s\n' "$(response_by_id "$resp" 3)" | jq -e '.result.content[0].text | type == "string" and length > 0' >/dev/null 2>&1 || {
+		fail "run_command smoke: expected px to return non-empty text, got $(response_by_id "$resp" 3)"
+	}
+	printf '%s\n' "$(response_by_id "$resp" 4)" | jq -e '.result.content[0].text | type == "string"' >/dev/null 2>&1 || {
+		fail "run_command smoke: expected empty command to return text, got $(response_by_id "$resp" 4)"
+	}
+}
+
 run_command_filter_regression() {
 	local req="$TMPDIR/filter.req"
 	local resp="$TMPDIR/filter.resp"
@@ -517,6 +537,7 @@ run_close_file_regression
 run_open_session_regression
 run_http_sandbox_grain_regression
 run_sandbox_regressions
+run_command_smoke_regression
 run_command_filter_regression
 
 echo "== OK =="
