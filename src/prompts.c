@@ -312,8 +312,10 @@ void prompts_registry_fini(ServerState *ss) {
 		return;
 	}
 	PromptRegistry *reg = (PromptRegistry *)ss->prompts;
-	r_list_free (reg->lst);
-	free (reg);
+	if (reg) {
+		r_list_free (reg->lst);
+		free (reg);
+	}
 	ss->prompts = NULL;
 }
 
