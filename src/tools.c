@@ -317,7 +317,14 @@ static char *tool_close_file(ServerState *ss, RJson *tool_args) {
 		return jsonrpc_tooltext_response ("In r2pipe mode we won't close the file.");
 	}
 	if (ss->rstate.core) {
+		bool was_sandboxed = r_sandbox_enable (false);
+		if (was_sandboxed) {
+			r_sandbox_disable (true);
+		}
 		free (r2mcp_cmd (ss, "o-*"));
+		if (was_sandboxed) {
+			r_sandbox_disable (false);
+		}
 		ss->rstate.file_opened = false;
 		ss->frida_mode = false;
 		free (ss->rstate.current_file);
@@ -1240,9 +1247,35 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 
 		char *filteredpath = strdup (filepath);
 		r_str_replace_ch (filteredpath, '`', 0, true);
+		if (ss->rstate.file_opened && ss->rstate.current_file && !strcmp (ss->rstate.current_file, filteredpath)) {
+			char *text = r_str_newf ("File already opened: %s", ss->rstate.current_file);
+			result = jsonrpc_tooltext_response (text);
+			free (text);
+			free (filteredpath);
+			goto cleanup;
+		}
+
+		bool is_uri = strstr (filteredpath, "://") != NULL;
+		bool had_file_opened = ss->rstate.file_opened;
+		char *previous_file = (had_file_opened && ss->rstate.current_file)? strdup (ss->rstate.current_file): NULL;
+		if (had_file_opened && !is_uri && r2mcp_sandbox_check (ss, filteredpath)) {
+			had_file_opened = false;
+			R_FREE (previous_file);
+		}
+		if (had_file_opened) {
+			char *close_res = tool_close_file (ss, &nil);
+			free (close_res);
+		}
 		bool success = r2_open_file (ss, filteredpath);
 		free (filteredpath);
-		result = jsonrpc_tooltext_response (success? "File opened successfully.": "Failed to open file.");
+		if (success && previous_file) {
+			char *text = r_str_newf ("Closed previously opened file: %s\nFile opened successfully.", previous_file);
+			result = jsonrpc_tooltext_response (text);
+			free (text);
+		} else {
+			result = jsonrpc_tooltext_response (success? "File opened successfully.": "Failed to open file.");
+		}
+		free (previous_file);
 		goto cleanup;
 	}
 

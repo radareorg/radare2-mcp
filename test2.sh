@@ -344,6 +344,47 @@ run_open_file_regressions() {
 	assert_marker_absent "$(response_by_id "$resp" 5)" "$INJECT_MARKER" "open_file:injection"
 }
 
+run_repeated_open_file_regression() {
+	local req="$TMPDIR/open-repeat.req"
+	local resp="$TMPDIR/open-repeat.resp"
+	: > "$req"
+	append_request "$req" 1 initialize '{"capabilities":{},"clientInfo":{"name":"testsuite","version":"1"}}'
+	append_notification "$req" notifications/initialized '{}'
+	append_tool_call "$req" 2 open_file "$(jq -cn --arg file "$TEST_FILE" '{file_path:$file}')"
+	append_tool_call "$req" 3 open_file "$(jq -cn --arg file "$TEST_FILE" '{file_path:$file}')"
+	append_tool_call "$req" 4 get_current_address '{}'
+	run_session "$req" "$resp"
+
+	printf '%s\n' "$(response_by_id "$resp" 2)" | jq -e '.result.content[0].text == "File opened successfully."' >/dev/null 2>&1 || {
+		fail "open_file: first open should succeed"
+	}
+	printf '%s\n' "$(response_by_id "$resp" 3)" | jq -e '.result.content[0].text | contains("File already opened:")' >/dev/null 2>&1 || {
+		fail "open_file: repeated open of the same file should be a no-op"
+	}
+	printf '%s\n' "$(response_by_id "$resp" 4)" | jq -e '.result.content[0].text | contains("0x")' >/dev/null 2>&1 || {
+		fail "open_file: tool call after repeated open should still work"
+	}
+}
+
+run_different_open_file_regression() {
+	local req="$TMPDIR/open-different.req"
+	local resp="$TMPDIR/open-different.resp"
+	: > "$req"
+	append_request "$req" 1 initialize '{"capabilities":{},"clientInfo":{"name":"testsuite","version":"1"}}'
+	append_notification "$req" notifications/initialized '{}'
+	append_tool_call "$req" 2 open_file "$(jq -cn --arg file "$TEST_FILE" '{file_path:$file}')"
+	append_tool_call "$req" 3 open_file "$(jq -cn --arg file "$TEST_FILE2" '{file_path:$file}')"
+	append_tool_call "$req" 4 get_current_address '{}'
+	run_session "$req" "$resp"
+
+	printf '%s\n' "$(response_by_id "$resp" 3)" | jq -e '.result.content[0].text | contains("Closed previously opened file:") and contains("File opened successfully.")' >/dev/null 2>&1 || {
+		fail "open_file: opening a different file should close the previous file and succeed"
+	}
+	printf '%s\n' "$(response_by_id "$resp" 4)" | jq -e '.result.content[0].text | contains("0x")' >/dev/null 2>&1 || {
+		fail "open_file: tool call after opening a different file should still work"
+	}
+}
+
 run_open_session_regression() {
 	local port="19392"
 	local good_url="http://127.0.0.1:$port/cmd/"
@@ -499,8 +540,10 @@ TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"' EXIT INT TERM
 TEST_DIR="$TMPDIR/work"
 TEST_FILE="$TEST_DIR/ls.bin"
+TEST_FILE2="$TEST_DIR/cat.bin"
 mkdir -p "$TEST_DIR"
 cp /bin/ls "$TEST_FILE"
+cp /bin/cat "$TEST_FILE2"
 
 NORMAL_CATALOG="$TMPDIR/catalog.normal.json"
 DANGEROUS_CATALOG="$TMPDIR/catalog.dangerous.json"
@@ -533,6 +576,8 @@ run_dynamic_suite "$NORMAL_RUNTIME_CATALOG" "dynamic-normal" with-open
 run_dynamic_suite "$DANGEROUS_ONLY" "dynamic-dangerous" with-open -r
 run_dynamic_suite "$SESSION_CATALOG" "dynamic-sessions" no-open -L
 run_open_file_regressions
+run_repeated_open_file_regression
+run_different_open_file_regression
 run_close_file_regression
 run_open_session_regression
 run_http_sandbox_grain_regression

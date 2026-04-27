@@ -165,47 +165,40 @@ R_IPI bool r2_open_file(ServerState *ss, const char *filepath) {
 		return false;
 	}
 	RCore *core = ss->rstate.core;
+	bool was_sandboxed = r_sandbox_enable (false);
+	if (was_sandboxed) {
+		r_sandbox_disable (true);
+	}
 	r_config_set_b (core->config, "cfg.sandbox", false);
 
-	if (ss->rstate.file_opened) {
-		R_LOG_INFO ("Closing previously opened file: %s", ss->rstate.current_file);
-		r_core_cmd0 (core, "o-*");
-		ss->rstate.file_opened = false;
-		free (ss->rstate.current_file);
-		ss->rstate.current_file = NULL;
-	}
-
-	const bool is_frida = strstr (filepath, "frida://") != NULL;
-	if (is_frida) {
-		ss->frida_mode = true;
-	} else {
+	ss->frida_mode = strstr (filepath, "frida://") != NULL;
+	if (!ss->frida_mode) {
 		r_core_cmd0 (core, "e bin.relocs.apply=true");
 		r_core_cmd0 (core, "e bin.cache=true");
-		R_LOG_INFO ("Loading binary information");
-		r_core_cmd0 (core, "ob");
 	}
 
-	char *cmd = r_str_newf ("'o %s", filepath);
+	R_LOG_INFO ("Opening file: %s", filepath);
+	char *escaped = r_str_arg_escape (filepath);
+	char *cmd = r_str_newf ("'o %s", escaped);
+	free (escaped);
 	R_LOG_INFO ("Running r2 command: %s", cmd);
-	char *result = r_core_cmd_str (core, cmd);
+	r_core_cmd0 (core, cmd);
 	free (cmd);
-	bool success = R_STR_ISNOTEMPTY (result);
-	free (result);
-
-	if (!success) {
-		R_LOG_INFO ("Trying alternative method to open file");
-		RIODesc *fd = r_core_file_open (core, filepath, R_PERM_R, 0);
-		if (!fd) {
-			R_LOG_ERROR ("Failed to open file: %s", filepath);
-			return false;
+	if (!core->io || !core->io->desc) {
+		R_LOG_ERROR ("Failed to open file: %s", filepath);
+		if (was_sandboxed) {
+			r2state_sandbox_settings (ss, core);
+			r_sandbox_disable (false);
 		}
-		r_core_bin_load (core, filepath, 0);
-		R_LOG_INFO ("File opened using r_core_file_open");
+		return false;
 	}
 	free (ss->rstate.current_file);
 	ss->rstate.current_file = strdup (filepath);
 	ss->rstate.file_opened = true;
 	r2state_sandbox_settings (ss, core);
+	if (was_sandboxed) {
+		r_sandbox_disable (false);
+	}
 	R_LOG_INFO ("File opened successfully: %s", filepath);
 
 	return true;
