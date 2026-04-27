@@ -64,6 +64,32 @@ static const char *json_type_name(RJsonType type) {
 	}
 }
 
+static bool is_numeric_string(const RJson *field, bool integer_only) {
+	if (!field || field->type != R_JSON_STRING || R_STR_ISEMPTY (field->str_value)) {
+		return false;
+	}
+	const char *s = field->str_value;
+	while (IS_WHITESPACE (*s)) {
+		s++;
+	}
+	if (R_STR_ISEMPTY (s)) {
+		return false;
+	}
+	char *end = NULL;
+	if (integer_only) {
+		(void)strtoll (s, &end, 0);
+	} else {
+		(void)strtod (s, &end);
+	}
+	if (end == s) {
+		return false;
+	}
+	while (IS_WHITESPACE (*end)) {
+		end++;
+	}
+	return !*end;
+}
+
 static bool json_matches_schema_type(const RJson *field, const char *expected_type) {
 	if (!field || !expected_type) {
 		return false;
@@ -75,10 +101,10 @@ static bool json_matches_schema_type(const RJson *field, const char *expected_ty
 		return field->type == R_JSON_BOOLEAN;
 	}
 	if (!strcmp (expected_type, "integer")) {
-		return field->type == R_JSON_INTEGER;
+		return field->type == R_JSON_INTEGER || is_numeric_string (field, true);
 	}
 	if (!strcmp (expected_type, "number")) {
-		return field->type == R_JSON_INTEGER || field->type == R_JSON_DOUBLE;
+		return field->type == R_JSON_INTEGER || field->type == R_JSON_DOUBLE || is_numeric_string (field, false);
 	}
 	if (!strcmp (expected_type, "object")) {
 		return field->type == R_JSON_OBJECT;

@@ -31,6 +31,35 @@ static bool validate_address_param(RJson *args, const char *param_name, const ch
 	return validate_required_string_param (args, param_name, out_address);
 }
 
+static bool rjson_get_int_param(RJson *args, const char *param_name, int *out_value) {
+	const RJson *field = r_json_get (args, param_name);
+	if (!field) {
+		return false;
+	}
+	if (field->type == R_JSON_INTEGER) {
+		*out_value = (int)field->num.s_value;
+		return true;
+	}
+	if (field->type == R_JSON_DOUBLE) {
+		*out_value = (int)field->num.dbl_value;
+		return true;
+	}
+	if (field->type == R_JSON_STRING && R_STR_ISNOTEMPTY (field->str_value)) {
+		char *end = NULL;
+		double n = strtod (field->str_value, &end);
+		if (end != field->str_value) {
+			while (IS_WHITESPACE (*end)) {
+				end++;
+			}
+			if (!*end) {
+				*out_value = (int)n;
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
 static char *tool_cmd_response(char *res) {
 	char *response = jsonrpc_tooltext_response (res);
 	free (res);
@@ -345,14 +374,8 @@ static char *tool_list_functions(ServerState *ss, RJson *tool_args) {
 	// Acquire additional parameters `start` and `max_length`.
 	int start = 0;
 	int max_length = 50;
-	const RJson *start_json = r_json_get (tool_args, "start");
-	if (start_json && start_json->type == R_JSON_INTEGER) {
-		start = (int)start_json->num.u_value;
-	}
-	const RJson *max_length_json = r_json_get (tool_args, "max_length");
-	if (max_length_json && max_length_json->type == R_JSON_INTEGER) {
-		max_length = (int)max_length_json->num.s_value;
-	}
+	rjson_get_int_param (tool_args, "start", &start);
+	rjson_get_int_param (tool_args, "max_length", &max_length);
 
 	const char *filter = r_json_get_str (tool_args, "filter");
 	char *res;
@@ -388,7 +411,7 @@ static char *tool_list_functions(ServerState *ss, RJson *tool_args) {
 	}
 	// Apply pagination, offset by 2 to skip the header lines
 	int total_lines = r_str_char_count (res, '\n') - 2;
-	int page_size = (max_length < 0)? total_lines: max_length;
+	int page_size = (max_length < 1)? total_lines: max_length;
 	char cursor_buf[32];
 	snprintf (cursor_buf, sizeof (cursor_buf), "%d", start + 2);
 	char *next_cursor = NULL;
@@ -575,7 +598,8 @@ static char *tool_get_function_prototype(ServerState *ss, RJson *tool_args) {
 static char *tool_list_strings(ServerState *ss, RJson *tool_args) {
 	const char *filter = r_json_get_str (tool_args, "filter");
 	const char *cursor = r_json_get_str (tool_args, "cursor");
-	int page_size = (int)r_json_get_num (tool_args, "page_size");
+	int page_size = 0;
+	rjson_get_int_param (tool_args, "page_size", &page_size);
 	if (page_size <= 0) {
 		page_size = R2MCP_DEFAULT_PAGE_SIZE;
 	}
@@ -602,7 +626,8 @@ static char *tool_list_strings(ServerState *ss, RJson *tool_args) {
 static char *tool_list_all_strings(ServerState *ss, RJson *tool_args) {
 	const char *filter = r_json_get_str (tool_args, "filter");
 	const char *cursor = r_json_get_str (tool_args, "cursor");
-	int page_size = (int)r_json_get_num (tool_args, "page_size");
+	int page_size = 0;
+	rjson_get_int_param (tool_args, "page_size", &page_size);
 	if (page_size <= 0) {
 		page_size = R2MCP_DEFAULT_PAGE_SIZE;
 	}
@@ -634,11 +659,12 @@ static char *tool_analyze(ServerState *ss, RJson *tool_args) {
 	if (ss->frida_mode) {
 		return jsonrpc_tooltext_response ("Analysis is not available in frida mode. Use list_functions to see exports or run_command with r2frida commands.");
 	}
-	const int level = (int)r_json_get_num (tool_args, "level");
+	int level = 0;
+	rjson_get_int_param (tool_args, "level", &level);
 	const RJson *timeout_json = r_json_get (tool_args, "timeout_seconds");
 	int timeout_seconds = R2MCP_ANALYZE_TIMEOUT_UNSET;
 	if (timeout_json) {
-		timeout_seconds = (int)r_json_get_num (tool_args, "timeout_seconds");
+		rjson_get_int_param (tool_args, "timeout_seconds", &timeout_seconds);
 		if (timeout_seconds < 0) {
 			timeout_seconds = 0;
 		}
@@ -677,11 +703,8 @@ static char *tool_disassemble(ServerState *ss, RJson *tool_args) {
 		return jsonrpc_error_missing_param ("address");
 	}
 
-	RJson *num_instr_json = (RJson *)r_json_get (tool_args, "num_instructions");
 	int num_instructions = 10;
-	if (num_instr_json && num_instr_json->type == R_JSON_INTEGER) {
-		num_instructions = (int)num_instr_json->num.u_value;
-	}
+	rjson_get_int_param (tool_args, "num_instructions", &num_instructions);
 
 	return tool_cmd_response (r2mcp_cmdf (ss, "'@%s'pd %d", address, num_instructions));
 }
@@ -732,7 +755,8 @@ static char *tool_disassemble_function(ServerState *ss, RJson *tool_args) {
 		return jsonrpc_error_missing_param ("address");
 	}
 	const char *cursor = r_json_get_str (tool_args, "cursor");
-	int page_size = (int)r_json_get_num (tool_args, "page_size");
+	int page_size = 0;
+	rjson_get_int_param (tool_args, "page_size", &page_size);
 	if (page_size <= 0) {
 		page_size = R2MCP_DEFAULT_PAGE_SIZE;
 	}
@@ -781,7 +805,8 @@ static char *tool_decompile_function(ServerState *ss, RJson *tool_args) {
 		return jsonrpc_error_missing_param ("address");
 	}
 	const char *cursor = r_json_get_str (tool_args, "cursor");
-	int page_size = (int)r_json_get_num (tool_args, "page_size");
+	int page_size = 0;
+	rjson_get_int_param (tool_args, "page_size", &page_size);
 	if (page_size <= 0) {
 		page_size = R2MCP_DEFAULT_PAGE_SIZE;
 	}
@@ -812,10 +837,10 @@ static char *tool_list_threads(ServerState *ss, RJson *tool_args) {
 static char *tool_dump_registers(ServerState *ss, RJson *tool_args) {
 	const RJson *thread_id_json = r_json_get (tool_args, "thread_id");
 	if (thread_id_json) {
-		if (thread_id_json->type != R_JSON_INTEGER && thread_id_json->type != R_JSON_DOUBLE) {
+		int thread_id;
+		if (!rjson_get_int_param (tool_args, "thread_id", &thread_id)) {
 			return jsonrpc_error_response (-32602, "'thread_id' must be a number", NULL, NULL);
 		}
-		int thread_id = (int)r_json_get_num (tool_args, "thread_id");
 		return tool_cmd_response (r2mcp_cmdf (ss, "%sdr %d", fx (ss), thread_id));
 	}
 	return tool_cmd_response (r2mcp_cmdf (ss, "%sdr", fx (ss)));
@@ -848,7 +873,8 @@ static char *tool_alloc_memory(ServerState *ss, RJson *tool_args) {
 	if (R_STR_ISNOTEMPTY (string_value)) {
 		return tool_cmd_response (r2mcp_cmdf (ss, ":dmas %s", string_value));
 	}
-	int size = (int)r_json_get_num (tool_args, "size");
+	int size = 0;
+	rjson_get_int_param (tool_args, "size", &size);
 	if (size <= 0) {
 		return jsonrpc_error_response (-32602, "Provide either 'size' (number of bytes) or 'string' to allocate", NULL, NULL);
 	}
@@ -860,7 +886,8 @@ static char *tool_change_memory_protection(ServerState *ss, RJson *tool_args) {
 	if (!validate_address_param (tool_args, "address", &address)) {
 		return jsonrpc_error_missing_param ("address");
 	}
-	int size = (int)r_json_get_num (tool_args, "size");
+	int size = 0;
+	rjson_get_int_param (tool_args, "size", &size);
 	if (size <= 0) {
 		return jsonrpc_error_missing_param ("size");
 	}
@@ -886,7 +913,8 @@ static char *tool_search(ServerState *ss, RJson *tool_args) {
 		return tool_cmd_response (r2mcp_cmdf (ss, "'%s/w %s", fx (ss), query));
 	}
 	if (!strcmp (type, "value")) {
-		int value_size = (int)r_json_get_num (tool_args, "value_size");
+		int value_size = 0;
+		rjson_get_int_param (tool_args, "value_size", &value_size);
 		if (value_size != 1 && value_size != 2 && value_size != 4 && value_size != 8) {
 			value_size = 4;
 		}

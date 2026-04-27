@@ -385,6 +385,25 @@ run_different_open_file_regression() {
 	}
 }
 
+run_numeric_string_regression() {
+	local req="$TMPDIR/numeric-string.req"
+	local resp="$TMPDIR/numeric-string.resp"
+	: > "$req"
+	append_request "$req" 1 initialize '{"capabilities":{},"clientInfo":{"name":"testsuite","version":"1"}}'
+	append_notification "$req" notifications/initialized '{}'
+	append_tool_call "$req" 2 open_file "$(jq -cn --arg file "$TEST_FILE" '{file_path:$file}')"
+	append_tool_call "$req" 3 list_functions "$(jq -cn '{max_length:"-1"}')"
+	append_tool_call "$req" 4 list_functions '{}'
+	run_session "$req" "$resp"
+
+	printf '%s\n' "$(response_by_id "$resp" 3)" | jq -e '.result.content[0].text and (.error | not)' >/dev/null 2>&1 || {
+		fail "list_functions: numeric string max_length should be accepted"
+	}
+	printf '%s\n' "$(response_by_id "$resp" 4)" | jq -e '.result.content[0].text and (.error | not)' >/dev/null 2>&1 || {
+		fail "list_functions: max_length should be optional"
+	}
+}
+
 run_open_session_regression() {
 	local port="19392"
 	local good_url="http://127.0.0.1:$port/cmd/"
@@ -578,6 +597,7 @@ run_dynamic_suite "$SESSION_CATALOG" "dynamic-sessions" no-open -L
 run_open_file_regressions
 run_repeated_open_file_regression
 run_different_open_file_regression
+run_numeric_string_regression
 run_close_file_regression
 run_open_session_regression
 run_http_sandbox_grain_regression
