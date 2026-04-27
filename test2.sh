@@ -324,6 +324,20 @@ run_close_file_regression() {
 	}
 }
 
+run_list_functions_without_open_regression() {
+	local req="$TMPDIR/list-functions-no-open.req"
+	local resp="$TMPDIR/list-functions-no-open.resp"
+	: > "$req"
+	append_request "$req" 1 initialize '{"capabilities":{},"clientInfo":{"name":"testsuite","version":"1"}}'
+	append_notification "$req" notifications/initialized '{}'
+	append_tool_call "$req" 2 list_functions '{}'
+	run_session "$req" "$resp"
+
+	printf '%s\n' "$(response_by_id "$resp" 2)" | jq -e '.result.content[0].text | contains("Call open_file first")' >/dev/null 2>&1 || {
+		fail "list_functions without open_file should return a tool response, not an RPC error"
+	}
+}
+
 run_open_file_regressions() {
 	local req="$TMPDIR/open.req"
 	local resp="$TMPDIR/open.resp"
@@ -595,6 +609,7 @@ run_dynamic_suite "$NORMAL_RUNTIME_CATALOG" "dynamic-normal" with-open
 run_dynamic_suite "$DANGEROUS_ONLY" "dynamic-dangerous" with-open -r
 run_dynamic_suite "$SESSION_CATALOG" "dynamic-sessions" no-open -L
 run_open_file_regressions
+run_list_functions_without_open_regression
 run_repeated_open_file_regression
 run_different_open_file_regression
 run_numeric_string_regression

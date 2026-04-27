@@ -378,21 +378,24 @@ static char *tool_list_functions(ServerState *ss, RJson *tool_args) {
 	rjson_get_int_param (tool_args, "max_length", &max_length);
 
 	const char *filter = r_json_get_str (tool_args, "filter");
+	if (filter && strchr (filter, '/')) {
+		filter = NULL;
+	}
 	char *res;
 	if (ss->frida_mode) {
 		return jsonrpc_tooltext_response ("In Frida mode we won't list functions. List exports or classes instead.");
-	} else {
+	}
+	res = r2mcp_cmd (ss, "afl,addr/cols/name");
+	r_str_trim (res);
+	if (R_STR_ISEMPTY (res)) {
+		free (res);
+		free (r2mcp_cmd (ss, "aaa"));
 		res = r2mcp_cmd (ss, "afl,addr/cols/name");
 		r_str_trim (res);
 		if (R_STR_ISEMPTY (res)) {
 			free (res);
-			free (r2mcp_cmd (ss, "aaa"));
-			res = r2mcp_cmd (ss, "afl,addr/cols/name");
-			r_str_trim (res);
-			if (R_STR_ISEMPTY (res)) {
-				free (res);
-				res = strdup ("No functions found. Run the analysis first.");
-			}
+			char *err = strdup ("No functions found. Run the analysis first.");
+			return tool_cmd_response (err);
 		}
 	}
 	// Apply filtering if only_named is true
@@ -408,6 +411,12 @@ static char *tool_list_functions(ServerState *ss, RJson *tool_args) {
 		char *r = filter_lines_by_regex (res, filter);
 		free (res);
 		res = r;
+	}
+	r_str_trim (res);
+	if (R_STR_ISEMPTY (res)) {
+		free (res);
+		char *err = strdup ("No functions found. Run the analysis first.");
+		return tool_cmd_response (err);
 	}
 	// Apply pagination, offset by 2 to skip the header lines
 	int total_lines = r_str_char_count (res, '\n') - 2;
@@ -1320,6 +1329,10 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 	}
 
 	if (!ss->http_mode && !ss->rstate.file_opened) {
+		if (!strcmp (tool_name, "list_functions")) {
+			result = jsonrpc_tooltext_response ("No file is currently open. Call open_file first, then call list_functions again.");
+			goto cleanup;
+		}
 		result = jsonrpc_error_file_required ();
 		goto cleanup;
 	}
