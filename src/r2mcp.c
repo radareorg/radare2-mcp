@@ -126,10 +126,17 @@ bool r2mcp_state_init(ServerState *ss) {
 		R_LOG_ERROR ("Failed to initialize radare2 core");
 		return false;
 	}
-	/* r_core_new installs its own SIGINT handler via r_cons. Tell cons we're
-	 * thread-managed so it does not hook signals; this lets our handler in
-	 * main.c stay in charge and ^C terminates the event loop cleanly. */
-	r_cons_thready ();
+	/* r_core_new installs its own SIGINT handler via r_cons_break_push, and
+	 * the matching pop restores SIG_IGN — which would clobber our handler
+	 * from main.c on every analysis. Disabling r_sys signal installation
+	 * keeps our handler in charge. We avoid r_cons_thready() because in
+	 * 6.1.x it swaps the thread-local cons singleton with a zero-initialised
+	 * RCons (NULL context), corrupting any r2 code path that reaches for
+	 * r_cons_singleton() instead of core->cons. */
+	r_sys_signable (false);
+	if (core->cons && core->cons->context) {
+		core->cons->context->unbreakable = true;
+	}
 	r2state_settings (core);
 	ss->rstate.core = core;
 	R_LOG_INFO ("Radare2 core initialized");
