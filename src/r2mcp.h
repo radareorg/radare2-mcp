@@ -122,6 +122,8 @@ void r2mcp_eventloop_http(ServerState *ss, const char *port);
 void r2mcp_help(void);
 void r2mcp_version(void);
 void r2mcp_running_set(int value);
+/* Request the active event loop to wake up and exit (signal-safe). */
+void r2mcp_break(void);
 
 /* Public wrappers for internal r2 helpers (implemented in r2mcp.c) */
 bool r2mcp_state_init(ServerState *ss);

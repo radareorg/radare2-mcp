@@ -1,6 +1,9 @@
 /* r2mcp - MIT - Copyright 2025-2026 - pancake, dnakov */
 
 #include <signal.h>
+#if R2__UNIX__
+#include <sys/socket.h>
+#endif
 #include <r_core.h>
 #include "config.h"
 #include "jsonrpc.h"
@@ -21,8 +24,22 @@
 #include "r2api.inc.c"
 
 static volatile sig_atomic_t running = 1;
+/* fd of the active listening socket, or -1. Used by r2mcp_break to wake
+ * accept()/select() from a signal handler. */
+static volatile sig_atomic_t http_server_fd = -1;
+
 void r2mcp_running_set(int value) {
 	running = value? 1: 0;
+}
+
+void r2mcp_break(void) {
+	running = 0;
+#if R2__UNIX__
+	int fd = http_server_fd;
+	if (fd >= 0) {
+		shutdown (fd, SHUT_RDWR);
+	}
+#endif
 }
 
 const char *r2mcp_effective_sandbox_grain(const ServerState *ss) {
@@ -109,6 +126,10 @@ bool r2mcp_state_init(ServerState *ss) {
 		R_LOG_ERROR ("Failed to initialize radare2 core");
 		return false;
 	}
+	/* r_core_new installs its own SIGINT handler via r_cons. Tell cons we're
+	 * thread-managed so it does not hook signals; this lets our handler in
+	 * main.c stay in charge and ^C terminates the event loop cleanly. */
+	r_cons_thready ();
 	r2state_settings (core);
 	ss->rstate.core = core;
 	R_LOG_INFO ("Radare2 core initialized");
@@ -373,10 +394,10 @@ static char *handle_mcp_request(ServerState *ss, const char *method, RJson *para
 		return response;
 	}
 
-	// All requests except 'initialize' require the client to have sent notifications/initialized
-	if (strcmp (method, "initialize") && !ss->initialized) {
-		return jsonrpc_error_response (-32000, "Client must send notifications/initialized before sending requests", id, NULL);
-	}
+	/* The MCP spec asks clients to send notifications/initialized before any
+	 * other requests, but several clients in the wild skip it. Be permissive:
+	 * accept requests regardless and let the notification (if it ever arrives)
+	 * still flip the flag below. */
 
 	if (!strcmp (method, "initialize")) {
 		result = handle_initialize (ss, params);
@@ -596,6 +617,7 @@ void r2mcp_eventloop_http(ServerState *ss, const char *port) {
 		r_socket_free (server);
 		return;
 	}
+	http_server_fd = server->fd;
 	R_LOG_INFO ("r2mcp HTTP server listening on port %s", port);
 	{
 		char *msg = r_str_newf ("Starting MCP HTTP mode on port %s", port);
@@ -649,6 +671,7 @@ void r2mcp_eventloop_http(ServerState *ss, const char *port) {
 		r_socket_http_free (rs);
 	}
 
+	http_server_fd = -1;
 	r_socket_free (server);
 	r2mcp_log (ss, "HTTP mode loop terminated");
 }

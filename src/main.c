@@ -15,12 +15,14 @@
 static void signal_handler(int signum) {
 	const char msg[] = "\nInterrupt received, shutting down...\n";
 	(void)write (STDERR_FILENO, msg, sizeof (msg) - 1);
-	r2mcp_running_set (0);
-	signal (signum, SIG_DFL);
+	r2mcp_break ();
+	(void)signum;
 }
 void setup_signals(void) {
 	struct sigaction sa = { 0 };
-	sa.sa_flags = 0;
+	/* SA_RESETHAND: a second signal restores the default disposition,
+	 * so a second ^C kills the process even if the first one is mid-shutdown. */
+	sa.sa_flags = SA_RESETHAND;
 	sa.sa_handler = signal_handler;
 	sigemptyset (&sa.sa_mask);
 	sigaction (SIGINT, &sa, NULL);
@@ -258,9 +260,6 @@ int r2mcp_main(int argc, const char **argv) {
 	sandbox_grain_msg = r_str_newf ("sandbox grain: %s", r2mcp_effective_sandbox_grain (&ss));
 	r2mcp_log_pub (&ss, sandbox_grain_msg);
 	free (sandbox_grain_msg);
-#if R2__UNIX__
-	setup_signals ();
-#endif
 	/* Initialize registries */
 	if (list_tools) {
 		/* Print tools and exit early */
@@ -329,6 +328,12 @@ int r2mcp_main(int argc, const char **argv) {
 	}
 	r_list_free (cmds);
 	r2mcp_running_set (1);
+#if R2__UNIX__
+	/* Install signals AFTER r_core_new so we override any handlers it may
+	 * have hooked. r2mcp_state_init also calls r_cons_thready to disable
+	 * future cons re-hooking. */
+	setup_signals ();
+#endif
 	if (http_server_port) {
 		r2mcp_eventloop_http (&ss, http_server_port);
 	} else {
