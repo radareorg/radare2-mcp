@@ -244,7 +244,8 @@ int r2mcp_main(int argc, const char **argv) {
 		.client_capability_keys = NULL,
 		.enabled_tools = enabled_tools,
 		.disabled_tools = disabled_tools,
-		.frida_mode = false
+		.frida_mode = false,
+		.rstate = { .analyze_level = -1 }
 	};
 	/* Enable logging */
 	r2mcp_log_pub (&ss, "r2mcp starting");

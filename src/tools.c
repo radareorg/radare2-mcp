@@ -358,6 +358,7 @@ static char *tool_close_file(ServerState *ss, RJson *tool_args) {
 		ss->frida_mode = false;
 		free (ss->rstate.current_file);
 		ss->rstate.current_file = NULL;
+		ss->rstate.analyze_level = -1;
 	}
 	return jsonrpc_tooltext_response ("File closed successfully.");
 }
@@ -390,11 +391,15 @@ static char *tool_list_functions(ServerState *ss, RJson *tool_args) {
 	if (R_STR_ISEMPTY (res)) {
 		free (res);
 		free (r2mcp_cmd (ss, "aaa"));
+		int implicit_level = ss->ignore_analysis_level ? 0 : 2;
+		if (implicit_level > ss->rstate.analyze_level) {
+			ss->rstate.analyze_level = implicit_level;
+		}
 		res = r2mcp_cmd (ss, "afl,addr/cols/name");
 		r_str_trim (res);
 		if (R_STR_ISEMPTY (res)) {
 			free (res);
-			char *err = strdup ("No functions found. Run the analysis first.");
+			char *err = strdup ("No functions found after running analysis (aaa). The binary may have no recognizable code, try analyze with a higher level (3 or 4) or inspect entrypoints/imports.");
 			return tool_cmd_response (err);
 		}
 	}
@@ -415,8 +420,13 @@ static char *tool_list_functions(ServerState *ss, RJson *tool_args) {
 	r_str_trim (res);
 	if (R_STR_ISEMPTY (res)) {
 		free (res);
-		char *err = strdup ("No functions found. Run the analysis first.");
-		return tool_cmd_response (err);
+		const char *msg;
+		if (R_STR_ISNOTEMPTY (filter) || only_named) {
+			msg = "No functions matched the given filter.";
+		} else {
+			msg = "No functions found. Run analyze first.";
+		}
+		return tool_cmd_response (strdup (msg));
 	}
 	// Apply pagination, offset by 2 to skip the header lines
 	int total_lines = r_str_char_count (res, '\n') - 2;
@@ -677,6 +687,20 @@ static char *tool_analyze(ServerState *ss, RJson *tool_args) {
 		if (timeout_seconds < 0) {
 			timeout_seconds = 0;
 		}
+	}
+	int effective_level = ss->ignore_analysis_level ? 0 : level;
+	int prev_level = ss->rstate.analyze_level;
+	int func_count_before = r2_function_count (ss);
+	if (func_count_before > 0 && prev_level >= effective_level) {
+		char *text;
+		if (prev_level == effective_level) {
+			text = r_str_newf ("File was already analyzed at level %d. Found %d functions. Re-analysis skipped.", effective_level, func_count_before);
+		} else {
+			text = r_str_newf ("File was already analyzed at level %d (>= requested level %d). Found %d functions. Re-analysis skipped.", prev_level, effective_level, func_count_before);
+		}
+		char *response = jsonrpc_tooltext_response (text);
+		free (text);
+		return response;
 	}
 	char *err = r2_analyze (ss, level, timeout_seconds);
 	char *cmd_result = r2mcp_cmd (ss, "aflc");
@@ -1097,6 +1121,7 @@ static char *tool_open_session(ServerState *ss, RJson *tool_args) {
 	free (old_baseurl);
 
 	ss->rstate.file_opened = true;
+	ss->rstate.analyze_level = -1;
 
 	char *success_msg = r_str_newf ("Successfully connected to remote r2 instance at %s", url);
 	char *response = jsonrpc_tooltext_response (success_msg);
@@ -1120,6 +1145,7 @@ static char *tool_close_session(ServerState *ss, RJson *tool_args) {
 	ss->rstate.file_opened = false;
 	free (ss->rstate.current_file);
 	ss->rstate.current_file = NULL;
+	ss->rstate.analyze_level = -1;
 	free (ss->baseurl);
 	ss->baseurl = NULL;
 
@@ -1285,7 +1311,17 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 		char *filteredpath = strdup (filepath);
 		r_str_replace_ch (filteredpath, '`', 0, true);
 		if (ss->rstate.file_opened && ss->rstate.current_file && !strcmp (ss->rstate.current_file, filteredpath)) {
-			char *text = r_str_newf ("File already opened: %s", ss->rstate.current_file);
+			int func_count = r2_function_count (ss);
+			int prev_level = ss->rstate.analyze_level;
+			char *text;
+			if (func_count > 0 && prev_level >= 0) {
+				text = r_str_newf ("File already opened and analyzed: %s (level %d, %d functions). Skip calling analyze again unless you want a deeper level.", ss->rstate.current_file, prev_level, func_count);
+			} else if (prev_level >= 0) {
+				text = r_str_newf ("File already opened: %s (analyze ran at level %d but no functions were found; consider a higher level).", ss->rstate.current_file, prev_level);
+				ss->rstate.analyze_level = -1;
+			} else {
+				text = r_str_newf ("File already opened: %s (not yet analyzed; call analyze to discover functions).", ss->rstate.current_file);
+			}
 			result = jsonrpc_tooltext_response (text);
 			free (text);
 			free (filteredpath);

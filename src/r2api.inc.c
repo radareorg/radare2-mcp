@@ -157,6 +157,7 @@ R_IPI bool r2_open_file(ServerState *ss, const char *filepath) {
 		free (ss->rstate.current_file);
 		ss->rstate.current_file = strdup (filepath);
 		ss->rstate.file_opened = true;
+		ss->rstate.analyze_level = -1;
 		return true;
 	}
 
@@ -195,6 +196,7 @@ R_IPI bool r2_open_file(ServerState *ss, const char *filepath) {
 	free (ss->rstate.current_file);
 	ss->rstate.current_file = strdup (filepath);
 	ss->rstate.file_opened = true;
+	ss->rstate.analyze_level = -1;
 	r2state_sandbox_settings (ss, core);
 	if (was_sandboxed) {
 		r_sandbox_disable (false);
@@ -214,12 +216,13 @@ R_IPI char *r2_analyze(ServerState *ss, int level, int timeout_seconds) {
 		return NULL;
 	}
 	const char *cmd = "aa";
+	int effective_level = 0;
 	if (!ss->ignore_analysis_level) {
 		switch (level) {
-		case 1: cmd = "aac"; break;
-		case 2: cmd = "aaa"; break;
-		case 3: cmd = "aaaa"; break;
-		case 4: cmd = "aaaaa"; break;
+		case 1: cmd = "aac"; effective_level = 1; break;
+		case 2: cmd = "aaa"; effective_level = 2; break;
+		case 3: cmd = "aaaa"; effective_level = 3; break;
+		case 4: cmd = "aaaaa"; effective_level = 4; break;
 		}
 	}
 	if (timeout_seconds >= 0) {
@@ -230,5 +233,18 @@ R_IPI char *r2_analyze(ServerState *ss, int level, int timeout_seconds) {
 	if (timeout_seconds >= 0) {
 		r_config_set_i (core->config, "anal.timeout", 0);
 	}
+	if (effective_level > ss->rstate.analyze_level) {
+		ss->rstate.analyze_level = effective_level;
+	}
 	return r2mcp_log_drain (ss);
+}
+
+R_IPI int r2_function_count(ServerState *ss) {
+	if (!ss || ss->http_mode) {
+		return 0;
+	}
+	char *cnt = r2mcp_cmd (ss, "aflc");
+	int n = (cnt && R_STR_ISNOTEMPTY (cnt)) ? atoi (cnt) : 0;
+	free (cnt);
+	return n;
 }

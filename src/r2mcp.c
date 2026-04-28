@@ -125,6 +125,7 @@ void r2mcp_state_fini(ServerState *ss) {
 		ss->rstate.core = NULL;
 		ss->rstate.file_opened = false;
 		ss->rstate.current_file = NULL;
+		ss->rstate.analyze_level = -1;
 	}
 	r_list_free (ss->client_capability_keys);
 	ss->client_capability_keys = NULL;

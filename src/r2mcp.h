@@ -66,6 +66,8 @@ typedef struct {
 	RCore *core;
 	bool file_opened;
 	char *current_file;
+	/* Highest analysis level run on the current file. -1 means not analyzed. */
+	int analyze_level;
 } RadareState;
 
 typedef struct {
@@ -133,6 +135,7 @@ const char *r2mcp_effective_sandbox_grain(const ServerState *ss);
 // internal static helpers so we keep the original separation.
 bool r2_open_file(ServerState *ss, const char *filepath);
 char *r2_analyze(ServerState *ss, int level, int timeout_seconds);
+int r2_function_count(ServerState *ss);
 
 // Run a small domain-specific language (DSL) used for testing tools from the
 // command-line. The DSL describes a sequence of tool calls with arguments and
