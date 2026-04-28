@@ -117,7 +117,8 @@ int r2mcp_main(int argc, const char **argv);
 
 /* Exposed helpers implemented in r2mcp.c */
 void setup_signals(void);
-void r2mcp_eventloop(ServerState *ss);
+void r2mcp_eventloop_stdio(ServerState *ss);
+void r2mcp_eventloop_http(ServerState *ss, const char *port);
 void r2mcp_help(void);
 void r2mcp_version(void);
 void r2mcp_running_set(int value);

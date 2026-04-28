@@ -475,25 +475,22 @@ static void send_response(ServerState *ss, const char *response) {
 #endif
 }
 
-// Process a JSON-RPC message from the client
-static void process_mcp_message(ServerState *ss, const char *msg) {
+// Build a JSON-RPC response string for an incoming message. Returns NULL when
+// the message is a notification (no response expected). Caller must free.
+static char *build_mcp_response(ServerState *ss, const char *msg) {
 	r2mcp_log (ss, "<<<");
 	r2mcp_log (ss, msg);
 
 	RJson *request = r_json_parse ((char *)msg);
 	if (!request) {
-		R_LOG_ERROR ("process_mcp_message: received invalid JSON from client");
-		char *err = jsonrpc_error_response (-32700, "Parse error: invalid JSON", NULL, NULL);
-		send_response (ss, err);
-		free (err);
-		return;
+		R_LOG_ERROR ("build_mcp_response: received invalid JSON from client");
+		return jsonrpc_error_response (-32700, "Parse error: invalid JSON", NULL, NULL);
 	}
 
 	RJson *id_json = (RJson *)r_json_get (request, "id");
 	const char *method = r_json_get_str (request, "method");
 	RJson *params = (RJson *)r_json_get (request, "params");
 
-	// Extract id for error responses (may be NULL for notifications)
 	const char *id = NULL;
 	char id_buf[32] = { 0 };
 	bool has_id = false;
@@ -506,25 +503,13 @@ static void process_mcp_message(ServerState *ss, const char *msg) {
 			id = id_buf;
 			has_id = true;
 		}
-		// Note: R_JSON_NULL means id is explicitly null, which is a notification per JSON-RPC 2.0
 	}
 
+	char *response = NULL;
 	if (!method) {
-		// Per JSON-RPC 2.0, missing method is an invalid request
-		char *err = jsonrpc_error_response (-32600, "Invalid Request: missing method", id, NULL);
-		send_response (ss, err);
-		free (err);
-		r_json_free (request);
-		return;
-	}
-
-	if (has_id) {
-		// Request: requires a response (has a non-null id)
-		char *response = handle_mcp_request (ss, method, params, id);
-		if (response) {
-			send_response (ss, response);
-			free (response);
-		}
+		response = jsonrpc_error_response (-32600, "Invalid Request: missing method", id, NULL);
+	} else if (has_id) {
+		response = handle_mcp_request (ss, method, params, id);
 	} else {
 		// Notification: no response (no id or id is null)
 		if (!strcmp (method, "notifications/cancelled")) {
@@ -538,10 +523,20 @@ static void process_mcp_message(ServerState *ss, const char *msg) {
 	}
 
 	r_json_free (request);
+	return response;
+}
+
+// Process a JSON-RPC message from the client (stdio path)
+static void process_mcp_message(ServerState *ss, const char *msg) {
+	char *response = build_mcp_response (ss, msg);
+	if (response) {
+		send_response (ss, response);
+		free (response);
+	}
 }
 
 // MCPO protocol-compliant direct mode loop
-void r2mcp_eventloop(ServerState *ss) {
+void r2mcp_eventloop_stdio(ServerState *ss) {
 	r2mcp_log (ss, "Starting MCP direct mode (stdin/stdout)");
 
 	// Use consistent unbuffered mode for stdout
@@ -583,4 +578,77 @@ void r2mcp_eventloop(ServerState *ss) {
 	free (chunk);
 	read_buffer_free (buffer);
 	r2mcp_log (ss, "Direct mode loop terminated");
+}
+
+// HTTP MCP server loop. Single-threaded: accept one client at a time,
+// read the JSON-RPC POST body, dispatch, write the JSON response and close.
+void r2mcp_eventloop_http(ServerState *ss, const char *port) {
+	if (R_STR_ISEMPTY (port)) {
+		port = "3000";
+	}
+	RSocket *server = r_socket_new (false);
+	if (!server) {
+		R_LOG_ERROR ("Failed to create HTTP server socket");
+		return;
+	}
+	if (!r_socket_listen (server, port, NULL)) {
+		R_LOG_ERROR ("Cannot listen on port %s", port);
+		r_socket_free (server);
+		return;
+	}
+	R_LOG_INFO ("r2mcp HTTP server listening on port %s", port);
+	{
+		char *msg = r_str_newf ("Starting MCP HTTP mode on port %s", port);
+		r2mcp_log (ss, msg);
+		free (msg);
+	}
+
+	const char *cors_post_headers =
+		"Content-Type: application/json\r\n"
+		"Access-Control-Allow-Origin: *\r\n";
+	const char *cors_options_headers =
+		"Access-Control-Allow-Origin: *\r\n"
+		"Access-Control-Allow-Methods: POST, GET, OPTIONS\r\n"
+		"Access-Control-Allow-Headers: Content-Type, Authorization, Accept\r\n";
+
+	while (running) {
+		RSocketHTTPOptions so = { 0 };
+		so.accept_timeout = true; // non-blocking accept (~1s) so the loop can re-check running
+		so.timeout = 2;           // close socket after 2s of no data
+		RSocketHTTPRequest *rs = r_socket_http_accept (server, &so);
+		if (!rs) {
+			continue;
+		}
+		if (!rs->method) {
+			r_socket_http_response (rs, 400, "Bad Request", 0, NULL);
+			r_socket_http_close (rs);
+			r_socket_http_free (rs);
+			continue;
+		}
+		if (!strcmp (rs->method, "POST")) {
+			const char *body = rs->data? (const char *)rs->data: "";
+			char *response = build_mcp_response (ss, body);
+			if (response) {
+				r2mcp_log (ss, ">>>");
+				r2mcp_log (ss, response);
+				r_socket_http_response (rs, 200, response, 0, cors_post_headers);
+				free (response);
+			} else {
+				// notification - no body expected
+				r_socket_http_response (rs, 204, "", 0, cors_post_headers);
+			}
+		} else if (!strcmp (rs->method, "GET")) {
+			const char *info = "{\"name\":\"r2mcp\",\"version\":\"" R2MCP_VERSION "\"}";
+			r_socket_http_response (rs, 200, info, 0, cors_post_headers);
+		} else if (!strcmp (rs->method, "OPTIONS")) {
+			r_socket_http_response (rs, 200, "", 0, cors_options_headers);
+		} else {
+			r_socket_http_response (rs, 405, "Method Not Allowed", 0, NULL);
+		}
+		r_socket_http_close (rs);
+		r_socket_http_free (rs);
+	}
+
+	r_socket_free (server);
+	r2mcp_log (ss, "HTTP mode loop terminated");
 }

@@ -41,6 +41,7 @@ void r2mcp_help(void) {
 		" -e [tool]  enable only the specified tool (repeatable)\n"
 		" -g [grain] sandbox grain mask (disk,files,exec,socket,network,environ,all,none)\n"
 		" -h         show this help\n"
+		" -H [port]  start an HTTP MCP server on the given port (instead of stdio)\n"
 		" -i         ignore analysis level specified in analyze calls\n"
 		" -l [file]  append debug logs to this file\n"
 		" -L         enable session management tools (list/open/close sessions)\n"
@@ -84,6 +85,7 @@ int r2mcp_main(int argc, const char **argv) {
 	bool permissive = false;
 	char *baseurl = NULL;
 	char *svc_baseurl = NULL;
+	char *http_server_port = NULL;
 	char *sandbox = NULL;
 	char *sandbox_grain = NULL;
 	char *logfile = NULL;
@@ -96,7 +98,7 @@ int r2mcp_main(int argc, const char **argv) {
 	const char *dsl_tests = NULL;
 	RList *disabled_tools = NULL;
 	RGetopt opt;
-	r_getopt_init (&opt, argc, argv, "C:hmvpd:nc:u:g:l:s:rite:D:RT:S:P:NL");
+	r_getopt_init (&opt, argc, argv, "C:H:hmvpd:nc:u:g:l:s:rite:D:RT:S:P:NL");
 	int c;
 	while ((c = r_getopt_next (&opt)) != -1) {
 		switch (c) {
@@ -111,6 +113,10 @@ int r2mcp_main(int argc, const char **argv) {
 		case 'h':
 			r2mcp_help ();
 			return 0;
+		case 'H':
+			free (http_server_port);
+			http_server_port = strdup (opt.arg);
+			break;
 		case 'c':
 			r_list_append (cmds, strdup (opt.arg));
 			break;
@@ -307,6 +313,7 @@ int r2mcp_main(int argc, const char **argv) {
 		free (ss.sandbox_grain);
 		free (ss.logfile);
 		free (ss.prompts_dir);
+		free (http_server_port);
 		if (ss.enabled_tools) {
 			r_list_free (ss.enabled_tools);
 		}
@@ -322,7 +329,11 @@ int r2mcp_main(int argc, const char **argv) {
 	}
 	r_list_free (cmds);
 	r2mcp_running_set (1);
-	r2mcp_eventloop (&ss);
+	if (http_server_port) {
+		r2mcp_eventloop_http (&ss, http_server_port);
+	} else {
+		r2mcp_eventloop_stdio (&ss);
+	}
 	if (ss.load_prompts) {
 		prompts_registry_fini (&ss);
 	}
@@ -334,6 +345,7 @@ int r2mcp_main(int argc, const char **argv) {
 	free (ss.sandbox_grain);
 	free (ss.logfile);
 	free (ss.prompts_dir);
+	free (http_server_port);
 	if (ss.enabled_tools) {
 		r_list_free (ss.enabled_tools);
 	}
