@@ -160,7 +160,7 @@ endif
 executable(
   'r2mcp',
   srcs,
-  dependencies: [r_core_dep, r_util_dep, r_cons_dep, r_config_dep],
+  dependencies: [r_core_dep, r_socket_dep, r_util_dep, r_cons_dep, r_config_dep],
   c_args: c_args,
   link_args: link_args,
   install: true,
@@ -169,7 +169,7 @@ executable(
 plugin_lib = shared_library(
   'core_r2mcp',
   plugin_srcs,
-  dependencies: [r_core_dep, r_util_dep, r_cons_dep, r_config_dep],
+  dependencies: [r_core_dep, r_socket_dep, r_util_dep, r_cons_dep, r_config_dep],
   c_args: c_args,
   link_args: link_args,
   install: false,
