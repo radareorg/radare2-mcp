@@ -90,6 +90,16 @@ static bool is_numeric_string(const RJson *field, bool integer_only) {
 	return !*end;
 }
 
+static bool is_boolean_string(const RJson *field) {
+	if (!field || field->type != R_JSON_STRING || R_STR_ISEMPTY (field->str_value)) {
+		return false;
+	}
+	const char *s = field->str_value;
+	return !r_str_casecmp (s, "true") || !r_str_casecmp (s, "false")
+		|| !r_str_casecmp (s, "yes") || !r_str_casecmp (s, "no")
+		|| !strcmp (s, "1") || !strcmp (s, "0");
+}
+
 static bool json_matches_schema_type(const RJson *field, const char *expected_type) {
 	if (!field || !expected_type) {
 		return false;
@@ -98,7 +108,13 @@ static bool json_matches_schema_type(const RJson *field, const char *expected_ty
 		return field->type == R_JSON_STRING;
 	}
 	if (!strcmp (expected_type, "boolean")) {
-		return field->type == R_JSON_BOOLEAN;
+		if (field->type == R_JSON_BOOLEAN || is_boolean_string (field)) {
+			return true;
+		}
+		if (field->type == R_JSON_INTEGER && (field->num.s_value == 0 || field->num.s_value == 1)) {
+			return true;
+		}
+		return false;
 	}
 	if (!strcmp (expected_type, "integer")) {
 		return field->type == R_JSON_INTEGER || is_numeric_string (field, true);
