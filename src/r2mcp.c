@@ -11,11 +11,6 @@
 #include "tools.h"
 #include "prompts.h"
 
-#ifndef R2MCP_VERSION
-#warning R2MCP_VERSION is not defined
-#define R2MCP_VERSION "1.7.2"
-#endif
-
 #define LATEST_PROTOCOL_VERSION "2025-06-18"
 // #define LATEST_PROTOCOL_VERSION "2024-11-05"
 

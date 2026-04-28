@@ -126,12 +126,12 @@ done
 : ${INSTALL_PROGRAM_STRIP:=${INSTALL} -m 755 -s}
 : ${INSTALL_MAN:=${INSTALL} -m 444}
 : ${INSTALL_LIB:=${INSTALL} -m 755 -c}
- PKGNAME='r2mcp' ; VERSION='1.7.2' ; VERSION_MAJOR=1; VERSION_MINOR=7; VERSION_PATCH=2; VERSION_NUMBER=10702; CONTACT_MAIL="pancake@nopcode.org" ; CONTACT_NAME="pancake" ; CONTACT="pancake <pancake@nopcode.org>" ;
+ PKGNAME='r2mcp' ; VERSION='1.8.0' ; VERSION_MAJOR=1; VERSION_MINOR=8; VERSION_PATCH=0; VERSION_NUMBER=10800; CONTACT_MAIL="pancake@nopcode.org" ; CONTACT_NAME="pancake" ; CONTACT="pancake <pancake@nopcode.org>" ;
 }
 
 show_usage() {
 cat <<EOF2
-'configure' configures r2mcp-1.7.2 to adapt to many kinds of systems.
+'configure' configures r2mcp-1.8.0 to adapt to many kinds of systems.
 
 Usage: ./configure [OPTION]... [VAR=VALUE]...
 
@@ -208,10 +208,10 @@ ocho() {
 
 show_version() {
 if [ "$QUIET" = 1 ]; then
-	echo "1.7.2"
+	echo "1.8.0"
 	exit 0
 fi
-echo "r2mcp-1.7.2 configuration script done with acr v2.2.6.
+echo "r2mcp-1.8.0 configuration script done with acr v2.2.6.
 The 'Free Software Foundation' message is only for autodetection.
 Originally written by pancake <nopcode.org>."
 exit 0
@@ -240,7 +240,7 @@ case $flag in
 	show_version ; ;;
 -r|--r|--report)
 echo "PKGNAME:     r2mcp"
-echo "VERSION:     1.7.2"
+echo "VERSION:     1.8.0"
 echo "AUTHOR:      pancake"
 echo "EMAIL:       pancake@nopcode.org"
 echo "LANGS:       c"
