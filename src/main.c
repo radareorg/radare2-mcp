@@ -39,7 +39,7 @@ void r2mcp_help(void) {
 		" -d [pdc]   select a different decompiler (pdc by default)\n"
 		" -D [tool]  disable the specified tool (repeatable)\n"
 		" -e [tool]  enable only the specified tool (repeatable)\n"
-		" -g [grain] set cfg.sandbox.grain (default: exec,socket; HTTP mode: exec,network; use all to disable sandbox)\n"
+		" -g [grain] sandbox grain mask (disk,files,exec,socket,network,environ,all,none)\n"
 		" -h         show this help\n"
 		" -i         ignore analysis level specified in analyze calls\n"
 		" -l [file]  append debug logs to this file\n"

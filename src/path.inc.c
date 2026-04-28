@@ -105,6 +105,9 @@ static const char *r2mcp_sandbox_check(ServerState *ss, const char *path) {
 	if (r2mcp_path_contains_parent_ref (path)) {
 		return "Path traversal is not allowed (contains '..' path segments)";
 	}
+	if (*path == '.' || strstr (path, "/.") || strstr (path, "\\.")) {
+		return "Access denied: hidden paths are not allowed";
+	}
 	if (ss->sandbox && *ss->sandbox && !r2mcp_path_is_within_sandbox (path, ss->sandbox)) {
 		return "Access denied: path is outside of the sandbox";
 	}
