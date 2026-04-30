@@ -10,6 +10,17 @@
 #define R2MCP_VERSION "1.8.0"
 #endif
 
+/* r_socket_http_header () and generic HTTP request headers are available from
+ * radare2 ABI 91. Older ABIs can still serve HTTP, but cannot route requests
+ * by X-Session-ID. */
+#ifndef R2MCP_HAS_HTTP_HEADERS
+#if defined(R2_ABIVERSION) && R2_ABIVERSION >= 91
+#define R2MCP_HAS_HTTP_HEADERS 1
+#else
+#define R2MCP_HAS_HTTP_HEADERS 0
+#endif
+#endif
+
 /* Pagination limits for tool responses */
 #define R2MCP_DEFAULT_PAGE_SIZE 1000
 #define R2MCP_MAX_PAGE_SIZE 10000
@@ -109,7 +120,7 @@ typedef struct {
 	/* Default RadareState used when no session is active (stdio mode, plugin
 	 * mode, or HTTP without sessions). Owned by ServerState. */
 	RadareState default_rstate;
-	/* Optional session registry; non-NULL when -S is used in HTTP mode. */
+	/* Optional session registry; non-NULL when -X is used in HTTP mode. */
 	struct r2mcp_sessions_t *sessions;
 	RStrBuf *sb;
 	RList *enabled_tools;

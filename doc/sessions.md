@@ -12,6 +12,10 @@ The HTTP server is enabled with `-H <port>`. By itself, `-H` runs a single
 shared `RadareState` for every request, like before. To enable per-client
 state isolation, add `-X`.
 
+`-X` requires radare2 ABI 91 or newer. Older radare2 headers do not expose the
+HTTP request header API needed to read `X-Session-ID`, so builds against older
+ABIs keep `-H` working but ignore `-X`/`R2MCP_SESSIONS`.
+
 ```sh
 # Single shared state (legacy behavior)
 r2mcp -H 8765

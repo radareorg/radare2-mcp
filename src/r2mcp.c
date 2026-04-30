@@ -673,6 +673,7 @@ void r2mcp_eventloop_http(ServerState *ss, const char *port) {
 		 * without that header fall back to the default state. */
 		RadareState *prev_rstate = ss->rstate;
 		R2McpSession *sess = NULL;
+#if R2MCP_HAS_HTTP_HEADERS
 		if (ss->sessions) {
 			const char *sid = r_socket_http_header (rs, "X-Session-ID");
 			if (R_STR_ISNOTEMPTY (sid)) {
@@ -682,6 +683,7 @@ void r2mcp_eventloop_http(ServerState *ss, const char *port) {
 				}
 			}
 		}
+#endif
 		if (!strcmp (rs->method, "POST")) {
 			const char *body = rs->data? (const char *)rs->data: "";
 			char *response = build_mcp_response (ss, body);

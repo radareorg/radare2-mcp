@@ -61,7 +61,11 @@ void r2mcp_help(void) {
 		" -T [tests] run DSL tests and exit\n"
 		" -u [url]   use remote r2 webserver base URL (HTTP r2pipe client mode)\n"
 		" -v         show version\n"
+#if R2MCP_HAS_HTTP_HEADERS
 		" -X [n[:t]] enable HTTP X-Session-ID multiplexing (max n sessions, t s idle timeout; default 8:600)\n";
+#else
+		" -X [n[:t]] enable HTTP X-Session-ID multiplexing (requires radare2 ABI >= 91; disabled in this build)\n";
+#endif
 	printf ("%s", help_text);
 }
 
@@ -381,9 +385,15 @@ int r2mcp_main(int argc, const char **argv) {
 #endif
 	if (http_server_port) {
 		if (http_sessions_max > 0) {
+#if R2MCP_HAS_HTTP_HEADERS
 			ss.sessions = r2mcp_sessions_new (http_sessions_max, http_sessions_timeout);
 			R_LOG_INFO ("[R2MCP] X-Session-ID multiplexing: max=%d timeout=%ds",
-				http_sessions_max, http_sessions_timeout);
+				http_sessions_max,
+				http_sessions_timeout);
+#else
+			R_LOG_WARN ("[R2MCP] X-Session-ID multiplexing requires radare2 ABI >= 91; ignoring -X/R2MCP_SESSIONS");
+			r2mcp_log_pub (&ss, "X-Session-ID multiplexing unavailable with radare2 ABI < 91");
+#endif
 		}
 		r2mcp_eventloop_http (&ss, http_server_port);
 	} else {
