@@ -18,6 +18,7 @@ This implementation provides:
 - 🔒 Supports readonly mode, sandbox lock and restrict tools
 - 🔩 Fine grained tools configuration
 - 🔁 Direct stdin/stdout communication model
+- 🌐 HTTP MCP server mode with optional `X-Session-ID` multiplexing
 - 🛠️ Optional raw access to run r2 commands or r2js scripts
 
 ## Installation
@@ -76,6 +77,26 @@ Update your MCP client configuration file (see below) to use the Docker image to
 - `"args": ["run", "--rm", "-i", "-v", "/tmp/data:/data", "r2mcp"]`.
 
 ## Configuration
+
+### HTTP Server Mode
+
+Use `-H <port>` to run r2mcp as an HTTP MCP server instead of using
+stdin/stdout:
+
+```bash
+r2mcp -H 8765
+```
+
+Per-session HTTP state is enabled with `-X max[:idle_seconds]` and routed by
+the `X-Session-ID` request header:
+
+```bash
+r2mcp -H 8765 -X 8:600
+```
+
+`-X` requires radare2 ABI 91 or newer because older radare2 headers do not
+expose the HTTP request header API. With older ABIs, `-H` still works as a
+single shared HTTP server, but `-X` is ignored.
 
 ### Claude Desktop Integration
 

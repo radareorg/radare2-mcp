@@ -4,6 +4,7 @@
 
 #include "tools.h"
 #include "prompts.h"
+#include "sessions.h"
 
 #ifndef R_CORE_LOADLIBS_ALL
 #define R_CORE_LOADLIBS_ALL R_LIB_LOAD_ALL
@@ -59,7 +60,12 @@ void r2mcp_help(void) {
 		" -t         list available tools and exit\n"
 		" -T [tests] run DSL tests and exit\n"
 		" -u [url]   use remote r2 webserver base URL (HTTP r2pipe client mode)\n"
-		" -v         show version\n";
+		" -v         show version\n"
+#if R2MCP_HAS_HTTP_HEADERS
+		" -X [n[:t]] enable HTTP X-Session-ID multiplexing (max n sessions, t s idle timeout; default 8:600)\n";
+#else
+		" -X [n[:t]] enable HTTP X-Session-ID multiplexing (requires radare2 ABI >= 91; disabled in this build)\n";
+#endif
 	printf ("%s", help_text);
 }
 
@@ -95,12 +101,15 @@ int r2mcp_main(int argc, const char **argv) {
 	bool load_prompts = true;
 	bool ignore_analysis_level = false;
 	bool use_sessions = false;
+	/* HTTP X-Session-ID multiplexing: -X max[:idle_timeout]. 0/0 = disabled */
+	int http_sessions_max = 0;
+	int http_sessions_timeout = 0;
 	R2McpContentMode content_mode = R2MCP_CONTENT_TEXT;
 	bool content_mode_set = false;
 	const char *dsl_tests = NULL;
 	RList *disabled_tools = NULL;
 	RGetopt opt;
-	r_getopt_init (&opt, argc, argv, "C:H:hmvpd:nc:u:g:l:s:rite:D:RT:S:P:NL");
+	r_getopt_init (&opt, argc, argv, "C:H:hmvpd:nc:u:g:l:s:rite:D:RT:S:P:NLX:");
 	int c;
 	while ((c = r_getopt_next (&opt)) != -1) {
 		switch (c) {
@@ -201,6 +210,25 @@ int r2mcp_main(int argc, const char **argv) {
 		case 'L':
 			use_sessions = true;
 			break;
+		case 'X':
+			if (opt.arg) {
+				char *colon = strchr (opt.arg, ':');
+				if (colon) {
+					*colon = 0;
+					http_sessions_max = atoi (opt.arg);
+					http_sessions_timeout = atoi (colon + 1);
+					*colon = ':';
+				} else {
+					http_sessions_max = atoi (opt.arg);
+				}
+			}
+			if (http_sessions_max <= 0) {
+				http_sessions_max = 8;
+			}
+			if (http_sessions_timeout <= 0) {
+				http_sessions_timeout = 600;
+			}
+			break;
 		default:
 			R_LOG_ERROR ("Invalid flag -%c", c);
 			return 1;
@@ -223,6 +251,26 @@ int r2mcp_main(int argc, const char **argv) {
 				R_LOG_WARN ("Unknown R2MCP_CONTENT_MODE '%s', using 'text'", env_content_mode);
 			} else {
 				content_mode = m;
+			}
+		}
+	}
+	/* Sessions env fallback (overridden by -X flag) */
+	if (http_sessions_max == 0) {
+		const char *env_sessions = getenv ("R2MCP_SESSIONS");
+		if (env_sessions) {
+			char *dup = strdup (env_sessions);
+			char *colon = strchr (dup, ':');
+			if (colon) {
+				*colon++ = 0;
+				http_sessions_timeout = atoi (colon);
+			}
+			http_sessions_max = atoi (dup);
+			free (dup);
+			if (http_sessions_max <= 0) {
+				http_sessions_max = 8;
+			}
+			if (http_sessions_timeout <= 0) {
+				http_sessions_timeout = 600;
 			}
 		}
 	}
@@ -253,8 +301,9 @@ int r2mcp_main(int argc, const char **argv) {
 		.enabled_tools = enabled_tools,
 		.disabled_tools = disabled_tools,
 		.frida_mode = false,
-		.rstate = { .analyze_level = -1 }
+		.default_rstate = { .analyze_level = -1 }
 	};
+	ss.rstate = &ss.default_rstate;
 	/* Enable logging */
 	r2mcp_log_pub (&ss, "r2mcp starting");
 	sandbox_grain_msg = r_str_newf ("sandbox grain: %s", r2mcp_effective_sandbox_grain (&ss));
@@ -277,8 +326,8 @@ int r2mcp_main(int argc, const char **argv) {
 			return 1;
 		}
 		if (loadplugins) {
-			r_core_loadlibs (ss.rstate.core, R_CORE_LOADLIBS_ALL, NULL);
-			r_core_parse_radare2rc (ss.rstate.core);
+			r_core_loadlibs (ss.rstate->core, R_CORE_LOADLIBS_ALL, NULL);
+			r_core_parse_radare2rc (ss.rstate->core);
 		}
 		if (deco) {
 			if (!strcmp (deco, "decai")) {
@@ -335,12 +384,27 @@ int r2mcp_main(int argc, const char **argv) {
 	setup_signals ();
 #endif
 	if (http_server_port) {
+		if (http_sessions_max > 0) {
+#if R2MCP_HAS_HTTP_HEADERS
+			ss.sessions = r2mcp_sessions_new (http_sessions_max, http_sessions_timeout);
+			R_LOG_INFO ("[R2MCP] X-Session-ID multiplexing: max=%d timeout=%ds",
+				http_sessions_max,
+				http_sessions_timeout);
+#else
+			R_LOG_WARN ("[R2MCP] X-Session-ID multiplexing requires radare2 ABI >= 91; ignoring -X/R2MCP_SESSIONS");
+			r2mcp_log_pub (&ss, "X-Session-ID multiplexing unavailable with radare2 ABI < 91");
+#endif
+		}
 		r2mcp_eventloop_http (&ss, http_server_port);
 	} else {
 		r2mcp_eventloop_stdio (&ss);
 	}
 	if (ss.load_prompts) {
 		prompts_registry_fini (&ss);
+	}
+	if (ss.sessions) {
+		r2mcp_sessions_free (ss.sessions);
+		ss.sessions = NULL;
 	}
 	r2mcp_state_fini (&ss);
 	/* Cleanup */

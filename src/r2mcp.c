@@ -8,6 +8,7 @@
 #include "config.h"
 #include "jsonrpc.h"
 #include "r2mcp.h"
+#include "sessions.h"
 #include "tools.h"
 #include "prompts.h"
 
@@ -115,7 +116,7 @@ static void set_nonblocking_io(bool nonblocking) {
 }
 
 /* Public wrappers to expose internal static helpers from r2api.inc.c */
-bool r2mcp_state_init(ServerState *ss) {
+bool r2mcp_rstate_init(RadareState *rs) {
 	RCore *core = r_core_new ();
 	if (!core) {
 		R_LOG_ERROR ("Failed to initialize radare2 core");
@@ -133,23 +134,38 @@ bool r2mcp_state_init(ServerState *ss) {
 		core->cons->context->unbreakable = true;
 	}
 	r2state_settings (core);
-	ss->rstate.core = core;
+	rs->core = core;
+	rs->analyze_level = -1;
+	return true;
+}
+
+void r2mcp_rstate_fini(RadareState *rs) {
+	if (!rs) {
+		return;
+	}
+	if (rs->core) {
+		r_core_free (rs->core);
+		rs->core = NULL;
+	}
+	free (rs->current_file);
+	rs->current_file = NULL;
+	rs->file_opened = false;
+	rs->analyze_level = -1;
+}
+
+bool r2mcp_state_init(ServerState *ss) {
+	if (!r2mcp_rstate_init (ss->rstate)) {
+		return false;
+	}
 	R_LOG_INFO ("Radare2 core initialized");
 	r_log_add_callback (logcb, ss);
 	return true;
 }
 
 void r2mcp_state_fini(ServerState *ss) {
-	RCore *core = ss->rstate.core;
-	if (core) {
-		r_core_free (core);
-		r_strbuf_free (ss->sb);
-		ss->sb = NULL;
-		ss->rstate.core = NULL;
-		ss->rstate.file_opened = false;
-		ss->rstate.current_file = NULL;
-		ss->rstate.analyze_level = -1;
-	}
+	r2mcp_rstate_fini (ss->rstate);
+	r_strbuf_free (ss->sb);
+	ss->sb = NULL;
 	r_list_free (ss->client_capability_keys);
 	ss->client_capability_keys = NULL;
 }
@@ -162,8 +178,8 @@ char *r2mcp_cmd(ServerState *ss, const char *cmd) {
 		}
 		return res;
 	}
-	RCore *core = ss->rstate.core;
-	if (!core || !ss->rstate.file_opened) {
+	RCore *core = ss->rstate->core;
+	if (!core || !ss->rstate->file_opened) {
 		return strdup ("Cannot run commands without calling the `open_file` tool first");
 	}
 	bool changed = false;
@@ -636,6 +652,9 @@ void r2mcp_eventloop_http(ServerState *ss, const char *port) {
 		"Access-Control-Allow-Headers: Content-Type, Authorization, Accept\r\n";
 
 	while (running) {
+		if (ss->sessions) {
+			r2mcp_sessions_sweep (ss->sessions);
+		}
 		RSocketHTTPOptions so = { 0 };
 		so.accept_timeout = true; // non-blocking accept (~1s) so the loop can re-check running
 		so.timeout = 2;           // close socket after 2s of no data
@@ -649,6 +668,22 @@ void r2mcp_eventloop_http(ServerState *ss, const char *port) {
 			r_socket_http_free (rs);
 			continue;
 		}
+		/* Per-request session swap. With sessions enabled, every request
+		 * is routed to its own RadareState keyed by X-Session-ID. Requests
+		 * without that header fall back to the default state. */
+		RadareState *prev_rstate = ss->rstate;
+		R2McpSession *sess = NULL;
+#if R2MCP_HAS_HTTP_HEADERS
+		if (ss->sessions) {
+			const char *sid = r_socket_http_header (rs, "X-Session-ID");
+			if (R_STR_ISNOTEMPTY (sid)) {
+				sess = r2mcp_sessions_acquire (ss->sessions, sid);
+				if (sess) {
+					ss->rstate = &sess->rstate;
+				}
+			}
+		}
+#endif
 		if (!strcmp (rs->method, "POST")) {
 			const char *body = rs->data? (const char *)rs->data: "";
 			char *response = build_mcp_response (ss, body);
@@ -668,6 +703,10 @@ void r2mcp_eventloop_http(ServerState *ss, const char *port) {
 			r_socket_http_response (rs, 200, "", 0, cors_options_headers);
 		} else {
 			r_socket_http_response (rs, 405, "Method Not Allowed", 0, NULL);
+		}
+		ss->rstate = prev_rstate;
+		if (sess) {
+			sess->last_used = r_time_now_mono ();
 		}
 		r_socket_http_close (rs);
 		r_socket_http_free (rs);
