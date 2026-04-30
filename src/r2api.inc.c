@@ -154,18 +154,18 @@ R_IPI bool r2_open_file(ServerState *ss, const char *filepath) {
 	}
 
 	if (ss->http_mode) {
-		free (ss->rstate.current_file);
-		ss->rstate.current_file = strdup (filepath);
-		ss->rstate.file_opened = true;
-		ss->rstate.analyze_level = -1;
+		free (ss->rstate->current_file);
+		ss->rstate->current_file = strdup (filepath);
+		ss->rstate->file_opened = true;
+		ss->rstate->analyze_level = -1;
 		return true;
 	}
 
-	if (!ss->rstate.core && !r2mcp_state_init (ss)) {
+	if (!ss->rstate->core && !r2mcp_state_init (ss)) {
 		R_LOG_ERROR ("Failed to initialize r2 core\n");
 		return false;
 	}
-	RCore *core = ss->rstate.core;
+	RCore *core = ss->rstate->core;
 	bool was_sandboxed = r_sandbox_enable (false);
 	if (was_sandboxed) {
 		r_sandbox_disable (true);
@@ -193,10 +193,10 @@ R_IPI bool r2_open_file(ServerState *ss, const char *filepath) {
 		}
 		return false;
 	}
-	free (ss->rstate.current_file);
-	ss->rstate.current_file = strdup (filepath);
-	ss->rstate.file_opened = true;
-	ss->rstate.analyze_level = -1;
+	free (ss->rstate->current_file);
+	ss->rstate->current_file = strdup (filepath);
+	ss->rstate->file_opened = true;
+	ss->rstate->analyze_level = -1;
 	r2state_sandbox_settings (ss, core);
 	if (was_sandboxed) {
 		r_sandbox_disable (false);
@@ -211,8 +211,8 @@ R_IPI char *r2_analyze(ServerState *ss, int level, int timeout_seconds) {
 		/* In HTTP mode we won't run local analysis; return empty string. */
 		return strdup ("");
 	}
-	RCore *core = ss->rstate.core;
-	if (!core || !ss->rstate.file_opened) {
+	RCore *core = ss->rstate->core;
+	if (!core || !ss->rstate->file_opened) {
 		return NULL;
 	}
 	const char *cmd = "aa";
@@ -233,8 +233,8 @@ R_IPI char *r2_analyze(ServerState *ss, int level, int timeout_seconds) {
 	if (timeout_seconds >= 0) {
 		r_config_set_i (core->config, "anal.timeout", 0);
 	}
-	if (effective_level > ss->rstate.analyze_level) {
-		ss->rstate.analyze_level = effective_level;
+	if (effective_level > ss->rstate->analyze_level) {
+		ss->rstate->analyze_level = effective_level;
 	}
 	return r2mcp_log_drain (ss);
 }

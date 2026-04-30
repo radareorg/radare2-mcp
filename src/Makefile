@@ -24,6 +24,7 @@ SRC += prompts.c
 SRC += plugin.c
 SRC += jsonrpc.c
 SRC += validation.c
+SRC += sessions.c
 INC += utils.inc.c
 INC += r2api.inc.c
 OBJS:=$(subst .c,.o,$(SRC))

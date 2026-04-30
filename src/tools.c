@@ -449,7 +449,7 @@ static char *tool_close_file(ServerState *ss, RJson *tool_args) {
 	if (ss->http_mode) {
 		return jsonrpc_tooltext_response ("In r2pipe mode we won't close the file.");
 	}
-	if (ss->rstate.core) {
+	if (ss->rstate->core) {
 		bool was_sandboxed = r_sandbox_enable (false);
 		if (was_sandboxed) {
 			r_sandbox_disable (true);
@@ -458,11 +458,11 @@ static char *tool_close_file(ServerState *ss, RJson *tool_args) {
 		if (was_sandboxed) {
 			r_sandbox_disable (false);
 		}
-		ss->rstate.file_opened = false;
+		ss->rstate->file_opened = false;
 		ss->frida_mode = false;
-		free (ss->rstate.current_file);
-		ss->rstate.current_file = NULL;
-		ss->rstate.analyze_level = -1;
+		free (ss->rstate->current_file);
+		ss->rstate->current_file = NULL;
+		ss->rstate->analyze_level = -1;
 	}
 	return jsonrpc_tooltext_response ("File closed successfully.");
 }
@@ -497,8 +497,8 @@ static char *tool_list_functions(ServerState *ss, RJson *tool_args) {
 			// nothing yet, try implicit analysis once
 			free (r2mcp_cmd (ss, "aaa"));
 			int implicit_level = ss->ignore_analysis_level ? 0 : 2;
-			if (implicit_level > ss->rstate.analyze_level) {
-				ss->rstate.analyze_level = implicit_level;
+			if (implicit_level > ss->rstate->analyze_level) {
+				ss->rstate->analyze_level = implicit_level;
 			}
 			if (R_STR_ISNOTEMPTY (filter)) {
 				n = r2_grep_count (ss, "aflq", filter);
@@ -526,8 +526,8 @@ static char *tool_list_functions(ServerState *ss, RJson *tool_args) {
 		free (res);
 		free (r2mcp_cmd (ss, "aaa"));
 		int implicit_level = ss->ignore_analysis_level ? 0 : 2;
-		if (implicit_level > ss->rstate.analyze_level) {
-			ss->rstate.analyze_level = implicit_level;
+		if (implicit_level > ss->rstate->analyze_level) {
+			ss->rstate->analyze_level = implicit_level;
 		}
 		res = r2mcp_cmd (ss, "afl,addr/cols/name");
 		r_str_trim (res);
@@ -708,10 +708,10 @@ static char *tool_calculate(ServerState *ss, RJson *tool_args) {
 	if (!validate_required_string_param (tool_args, "expression", &expression)) {
 		return jsonrpc_error_missing_param ("expression");
 	}
-	if (!ss->rstate.core || !ss->rstate.core->num) {
+	if (!ss->rstate->core || !ss->rstate->core->num) {
 		return jsonrpc_error_response (-32611, "Core or number parser unavailable (open a file first)", NULL, NULL);
 	}
-	RCore *core = ss->rstate.core;
+	RCore *core = ss->rstate->core;
 	ut64 calc_result = r_num_math (core->num, expression);
 	char *numstr = r_str_newf ("0x%" PFMT64x, (ut64)calc_result);
 	char *resp = jsonrpc_tooltext_response (numstr);
@@ -869,7 +869,7 @@ static char *tool_analyze(ServerState *ss, RJson *tool_args) {
 		}
 	}
 	int effective_level = ss->ignore_analysis_level ? 0 : level;
-	int prev_level = ss->rstate.analyze_level;
+	int prev_level = ss->rstate->analyze_level;
 	int func_count_before = r2_function_count (ss);
 	if (func_count_before > 0 && prev_level >= effective_level) {
 		char *text;
@@ -1300,8 +1300,8 @@ static char *tool_open_session(ServerState *ss, RJson *tool_args) {
 	free (test_result);
 	free (old_baseurl);
 
-	ss->rstate.file_opened = true;
-	ss->rstate.analyze_level = -1;
+	ss->rstate->file_opened = true;
+	ss->rstate->analyze_level = -1;
 
 	char *success_msg = r_str_newf ("Successfully connected to remote r2 instance at %s", url);
 	char *response = jsonrpc_tooltext_response (success_msg);
@@ -1322,10 +1322,10 @@ static char *tool_close_session(ServerState *ss, RJson *tool_args) {
 	// Clear the HTTP mode and baseurl
 	ss->http_mode = false;
 	ss->frida_mode = false;
-	ss->rstate.file_opened = false;
-	free (ss->rstate.current_file);
-	ss->rstate.current_file = NULL;
-	ss->rstate.analyze_level = -1;
+	ss->rstate->file_opened = false;
+	free (ss->rstate->current_file);
+	ss->rstate->current_file = NULL;
+	ss->rstate->analyze_level = -1;
 	free (ss->baseurl);
 	ss->baseurl = NULL;
 
@@ -1490,17 +1490,17 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 
 		char *filteredpath = strdup (filepath);
 		r_str_replace_ch (filteredpath, '`', 0, true);
-		if (ss->rstate.file_opened && ss->rstate.current_file && !strcmp (ss->rstate.current_file, filteredpath)) {
+		if (ss->rstate->file_opened && ss->rstate->current_file && !strcmp (ss->rstate->current_file, filteredpath)) {
 			int func_count = r2_function_count (ss);
-			int prev_level = ss->rstate.analyze_level;
+			int prev_level = ss->rstate->analyze_level;
 			char *text;
 			if (func_count > 0 && prev_level >= 0) {
-				text = r_str_newf ("File already opened and analyzed: %s (level %d, %d functions). Skip calling analyze again unless you want a deeper level.", ss->rstate.current_file, prev_level, func_count);
+				text = r_str_newf ("File already opened and analyzed: %s (level %d, %d functions). Skip calling analyze again unless you want a deeper level.", ss->rstate->current_file, prev_level, func_count);
 			} else if (prev_level >= 0) {
-				text = r_str_newf ("File already opened: %s (analyze ran at level %d but no functions were found; consider a higher level).", ss->rstate.current_file, prev_level);
-				ss->rstate.analyze_level = -1;
+				text = r_str_newf ("File already opened: %s (analyze ran at level %d but no functions were found; consider a higher level).", ss->rstate->current_file, prev_level);
+				ss->rstate->analyze_level = -1;
 			} else {
-				text = r_str_newf ("File already opened: %s (not yet analyzed; call analyze to discover functions).", ss->rstate.current_file);
+				text = r_str_newf ("File already opened: %s (not yet analyzed; call analyze to discover functions).", ss->rstate->current_file);
 			}
 			result = jsonrpc_tooltext_response (text);
 			free (text);
@@ -1509,8 +1509,8 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 		}
 
 		bool is_uri = strstr (filteredpath, "://") != NULL;
-		bool had_file_opened = ss->rstate.file_opened;
-		char *previous_file = (had_file_opened && ss->rstate.current_file)? strdup (ss->rstate.current_file): NULL;
+		bool had_file_opened = ss->rstate->file_opened;
+		char *previous_file = (had_file_opened && ss->rstate->current_file)? strdup (ss->rstate->current_file): NULL;
 		if (had_file_opened && !is_uri && r2mcp_sandbox_check (ss, filteredpath)) {
 			had_file_opened = false;
 			R_FREE (previous_file);
@@ -1544,7 +1544,7 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 		goto cleanup;
 	}
 
-	if (!ss->http_mode && !ss->rstate.file_opened) {
+	if (!ss->http_mode && !ss->rstate->file_opened) {
 		if (!strcmp (tool_name, "list_functions")) {
 			result = jsonrpc_tooltext_response ("No file is currently open. Call open_file first, then call list_functions again.");
 			goto cleanup;

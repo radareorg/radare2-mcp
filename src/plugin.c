@@ -28,9 +28,9 @@ static bool r2mcp_call(RCorePluginSession *cps, const char *input) {
 		data->ss = R_NEW0 (ServerState);
 		// Initialize the tools registry
 		// Set up the core reference
-		data->ss->rstate.core = core;
-		data->ss->rstate.file_opened = true; // We're already in r2 with a file
-		data->ss->rstate.analyze_level = -1;
+		data->ss->rstate->core = core;
+		data->ss->rstate->file_opened = true; // We're already in r2 with a file
+		data->ss->rstate->analyze_level = -1;
 	}
 
 	if (R_STR_ISEMPTY (args)) {

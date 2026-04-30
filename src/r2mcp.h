@@ -103,7 +103,14 @@ typedef struct {
 	/* When true, operate in Frida mode */
 	bool frida_mode;
 	RList *client_capability_keys;
-	RadareState rstate;
+	/* Active RadareState pointer. Points either to the default state or to a
+	 * per-request session's state (when sessions are enabled in HTTP mode). */
+	RadareState *rstate;
+	/* Default RadareState used when no session is active (stdio mode, plugin
+	 * mode, or HTTP without sessions). Owned by ServerState. */
+	RadareState default_rstate;
+	/* Optional session registry; non-NULL when -S is used in HTTP mode. */
+	struct r2mcp_sessions_t *sessions;
 	RStrBuf *sb;
 	RList *enabled_tools;
 	RList *disabled_tools;
@@ -128,6 +135,9 @@ void r2mcp_break(void);
 /* Public wrappers for internal r2 helpers (implemented in r2mcp.c) */
 bool r2mcp_state_init(ServerState *ss);
 void r2mcp_state_fini(ServerState *ss);
+/* Per-RadareState init/fini used by the session manager. */
+bool r2mcp_rstate_init(RadareState *rs);
+void r2mcp_rstate_fini(RadareState *rs);
 char *r2mcp_cmd(ServerState *ss, const char *cmd);
 char *r2mcp_cmdf(ServerState *ss, const char *fmt, ...);
 void r2mcp_log_pub(ServerState *ss, const char *msg);

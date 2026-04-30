@@ -120,6 +120,7 @@ srcs = [
   'src/dsltest.c',
   'src/prompts.c',
   'src/jsonrpc.c',
+  'src/sessions.c',
 ]
 
 plugin_srcs = [
@@ -131,6 +132,7 @@ plugin_srcs = [
   'src/dsltest.c',
   'src/prompts.c',
   'src/jsonrpc.c',
+  'src/sessions.c',
 ]
 
 if host_machine.system() == 'windows'
