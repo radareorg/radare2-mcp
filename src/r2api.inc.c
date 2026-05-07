@@ -190,7 +190,7 @@ R_IPI bool r2_open_file(ServerState *ss, const char *filepath, ut64 baddr) {
 		return false;
 	}
 	(void)r_core_bin_load (core, filepath, baddr);
-	RBinFile *bi = r_bin_cur (core->bin);
+	RBinFile *bi = core->bin->cur;
 	bool have_bin_info = bi && bi->bo && bi->bo->info && bi->bo->info->type;
 	if (!have_bin_info && baddr != UT64_MAX) {
 		R_LOG_WARN ("Don't use baddr on unknown files. Consider mapping the file instead.");
