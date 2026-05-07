@@ -60,6 +60,31 @@ static bool rjson_get_int_param(RJson *args, const char *param_name, int *out_va
 	return false;
 }
 
+static bool rjson_get_baddr_param(RJson *args, ut64 *out_baddr, char **out_error) {
+	const RJson *field = r_json_get (args, "baddr");
+	*out_baddr = UT64_MAX;
+	if (out_error) {
+		*out_error = NULL;
+	}
+	if (!field) {
+		return true;
+	}
+	if (field->type != R_JSON_STRING || R_STR_ISEMPTY (field->str_value)) {
+		if (out_error) {
+			*out_error = strdup ("Invalid parameter 'baddr': expected numeric string");
+		}
+		return false;
+	}
+	if (!r_num_is_valid_input (NULL, field->str_value)) {
+		if (out_error) {
+			*out_error = strdup ("Invalid parameter 'baddr': expected numeric expression");
+		}
+		return false;
+	}
+	*out_baddr = r_num_math (NULL, field->str_value);
+	return true;
+}
+
 // Read an optional boolean flag. Accepts JSON booleans, integers (non-zero
 // means true), and strings ("true"/"yes"/"1" mean true; everything else is
 // false). Missing or unrecognized values yield false.
@@ -459,6 +484,7 @@ static char *tool_close_file(ServerState *ss, RJson *tool_args) {
 			r_sandbox_disable (false);
 		}
 		ss->rstate->file_opened = false;
+		ss->rstate->current_baddr = UT64_MAX;
 		ss->frida_mode = false;
 		free (ss->rstate->current_file);
 		ss->rstate->current_file = NULL;
@@ -1301,6 +1327,7 @@ static char *tool_open_session(ServerState *ss, RJson *tool_args) {
 	free (old_baseurl);
 
 	ss->rstate->file_opened = true;
+	ss->rstate->current_baddr = UT64_MAX;
 	ss->rstate->analyze_level = -1;
 
 	char *success_msg = r_str_newf ("Successfully connected to remote r2 instance at %s", url);
@@ -1323,6 +1350,7 @@ static char *tool_close_session(ServerState *ss, RJson *tool_args) {
 	ss->http_mode = false;
 	ss->frida_mode = false;
 	ss->rstate->file_opened = false;
+	ss->rstate->current_baddr = UT64_MAX;
 	free (ss->rstate->current_file);
 	ss->rstate->current_file = NULL;
 	ss->rstate->analyze_level = -1;
@@ -1487,10 +1515,17 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 			result = jsonrpc_error_missing_param ("file_path");
 			goto cleanup;
 		}
+		ut64 baddr = UT64_MAX;
+		char *baddr_error = NULL;
+		if (!rjson_get_baddr_param (tool_args, &baddr, &baddr_error)) {
+			result = jsonrpc_error_response (-32602, baddr_error, NULL, NULL);
+			free (baddr_error);
+			goto cleanup;
+		}
 
 		char *filteredpath = strdup (filepath);
 		r_str_replace_ch (filteredpath, '`', 0, true);
-		if (ss->rstate->file_opened && ss->rstate->current_file && !strcmp (ss->rstate->current_file, filteredpath)) {
+		if (ss->rstate->file_opened && ss->rstate->current_file && !strcmp (ss->rstate->current_file, filteredpath) && ss->rstate->current_baddr == baddr) {
 			int func_count = r2_function_count (ss);
 			int prev_level = ss->rstate->analyze_level;
 			char *text;
@@ -1519,7 +1554,7 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 			char *close_res = tool_close_file (ss, &nil);
 			free (close_res);
 		}
-		bool success = r2_open_file (ss, filteredpath);
+		bool success = r2_open_file (ss, filteredpath, baddr);
 		free (filteredpath);
 		if (success && previous_file) {
 			char *text = r_str_newf ("Closed previously opened file: %s\nFile opened successfully.", previous_file);
@@ -1594,7 +1629,7 @@ cleanup:
 	return result;
 }
 ToolSpec tool_specs[] = {
-	{ "open_file", "Opens a binary file with radare2 for analysis <think>Call this tool before any other one from r2mcp. Use an absolute file_path</think>", "{\"type\":\"object\",\"properties\":{\"file_path\":{\"type\":\"string\",\"description\":\"Path to the file to open\"}},\"required\":[\"file_path\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI, NULL },
+	{ "open_file", "Opens a binary file with radare2 for analysis <think>Call this tool before any other one from r2mcp. Use an absolute file_path</think>", "{\"type\":\"object\",\"properties\":{\"file_path\":{\"type\":\"string\",\"description\":\"Path to the file to open\"},\"baddr\":{\"type\":\"string\",\"description\":\"Optional base address for PIE binaries, same as radare2 -B (for example 0x400000)\"}},\"required\":[\"file_path\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI, NULL },
 	{ "run_javascript", "Executes JavaScript code using radare2's qjs runtime", "{\"type\":\"object\",\"properties\":{\"script\":{\"type\":\"string\",\"description\":\"The JavaScript code to execute\"}},\"required\":[\"script\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP, tool_run_javascript },
 	{ "run_frida_script", "Executes Frida JavaScript code", "{\"type\":\"object\",\"properties\":{\"script\":{\"type\":\"string\",\"description\":\"The script code to execute\"}},\"required\":[\"script\"]}", TOOL_MODE_FRIDA, tool_run_frida_script },
 	{ "run_command", "Executes a raw radare2 command directly", "{\"type\":\"object\",\"properties\":{\"command\":{\"type\":\"string\",\"description\":\"The radare2 command to execute\"}},\"required\":[\"command\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP, tool_run_command },

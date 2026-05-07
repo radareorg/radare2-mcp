@@ -111,6 +111,7 @@ build_cases() {
 			elif $name == "prototype" then "int fuzz(void)"
 			elif $name == "message" then "hello from tests"
 			elif $name == "expression" then "1+1"
+			elif $name == "baddr" then "0x400000"
 			elif $name == "query" then "main"
 			elif $name == "type" and $tool == "search" then "string"
 			elif $name == "name" and $tool == "use_decompiler" then "pdc"
@@ -399,6 +400,39 @@ run_different_open_file_regression() {
 	}
 }
 
+run_open_file_baddr_regression() {
+	local req="$TMPDIR/open-baddr.req"
+	local resp="$TMPDIR/open-baddr.resp"
+	: > "$req"
+	append_request "$req" 1 initialize '{"capabilities":{},"clientInfo":{"name":"testsuite","version":"1"}}'
+	append_notification "$req" notifications/initialized '{}'
+	append_tool_call "$req" 2 open_file "$(jq -cn --arg file "$TEST_FILE" '{file_path:$file,baddr:"0x400000"}')"
+	append_tool_call "$req" 3 calculate '{"expression":"entry0 - 0x400000"}'
+	append_tool_call "$req" 4 open_file "$(jq -cn --arg file "$TEST_FILE" '{file_path:$file,baddr:"0x500000"}')"
+	append_tool_call "$req" 5 calculate '{"expression":"entry0 - 0x500000"}'
+	append_tool_call "$req" 6 open_file "$(jq -cn --arg file "$TEST_FILE" '{file_path:$file,baddr:0}')"
+	run_session "$req" "$resp"
+
+	printf '%s\n' "$(response_by_id "$resp" 2)" | jq -e '.result.content[0].text == "File opened successfully."' >/dev/null 2>&1 || {
+		fail "open_file baddr: first open should succeed"
+	}
+	printf '%s\n' "$(response_by_id "$resp" 4)" | jq -e '.result.content[0].text | contains("Closed previously opened file:") and contains("File opened successfully.")' >/dev/null 2>&1 || {
+		fail "open_file baddr: changing base should reopen the same file"
+	}
+	local offset1
+	local offset2
+	offset1=$(printf '%s\n' "$(response_by_id "$resp" 3)" | jq -r '.result.content[0].text')
+	offset2=$(printf '%s\n' "$(response_by_id "$resp" 5)" | jq -r '.result.content[0].text')
+	[ "$offset1" = "$offset2" ] || {
+		fail "open_file baddr: rebased entry offset changed ($offset1 vs $offset2)"
+	}
+	case "$offset1" in
+	0x*) ;;
+	*) fail "open_file baddr: expected hex entry offset, got $offset1" ;;
+	esac
+	assert_error_contains_param "$(response_by_id "$resp" 6)" "baddr" "open_file:baddr-wrong-type"
+}
+
 run_numeric_string_regression() {
 	local req="$TMPDIR/numeric-string.req"
 	local resp="$TMPDIR/numeric-string.resp"
@@ -612,6 +646,7 @@ run_open_file_regressions
 run_list_functions_without_open_regression
 run_repeated_open_file_regression
 run_different_open_file_regression
+run_open_file_baddr_regression
 run_numeric_string_regression
 run_close_file_regression
 run_open_session_regression

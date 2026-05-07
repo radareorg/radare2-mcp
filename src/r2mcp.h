@@ -77,6 +77,7 @@ typedef struct {
 	RCore *core;
 	bool file_opened;
 	char *current_file;
+	ut64 current_baddr;
 	/* Highest analysis level run on the current file. -1 means not analyzed. */
 	int analyze_level;
 } RadareState;
@@ -157,7 +158,7 @@ const char *r2mcp_effective_sandbox_grain(const ServerState *ss);
 // Additional public wrappers exposed so other modules (eg. tools.c) can use
 // functionality implemented in r2api.inc.c. These simply forward to the
 // internal static helpers so we keep the original separation.
-bool r2_open_file(ServerState *ss, const char *filepath);
+bool r2_open_file(ServerState *ss, const char *filepath, ut64 baddr);
 char *r2_analyze(ServerState *ss, int level, int timeout_seconds);
 int r2_function_count(ServerState *ss);
 

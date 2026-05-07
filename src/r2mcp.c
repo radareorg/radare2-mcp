@@ -135,6 +135,7 @@ bool r2mcp_rstate_init(RadareState *rs) {
 	}
 	r2state_settings (core);
 	rs->core = core;
+	rs->current_baddr = UT64_MAX;
 	rs->analyze_level = -1;
 	return true;
 }
@@ -150,6 +151,7 @@ void r2mcp_rstate_fini(RadareState *rs) {
 	free (rs->current_file);
 	rs->current_file = NULL;
 	rs->file_opened = false;
+	rs->current_baddr = UT64_MAX;
 	rs->analyze_level = -1;
 }
 

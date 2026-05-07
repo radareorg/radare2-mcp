@@ -301,7 +301,7 @@ int r2mcp_main(int argc, const char **argv) {
 		.enabled_tools = enabled_tools,
 		.disabled_tools = disabled_tools,
 		.frida_mode = false,
-		.default_rstate = { .analyze_level = -1 }
+		.default_rstate = { .current_baddr = UT64_MAX, .analyze_level = -1 }
 	};
 	ss.rstate = &ss.default_rstate;
 	/* Enable logging */

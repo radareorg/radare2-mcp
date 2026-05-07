@@ -135,7 +135,7 @@ char *r2mcp_cmdf(ServerState *ss, const char *fmt, ...) {
 	return res;
 }
 
-R_IPI bool r2_open_file(ServerState *ss, const char *filepath) {
+R_IPI bool r2_open_file(ServerState *ss, const char *filepath, ut64 baddr) {
 	R_LOG_INFO ("Attempting to open file: %s\n", filepath);
 
 	// Security checks common to both local and HTTP modes
@@ -157,6 +157,7 @@ R_IPI bool r2_open_file(ServerState *ss, const char *filepath) {
 		free (ss->rstate->current_file);
 		ss->rstate->current_file = strdup (filepath);
 		ss->rstate->file_opened = true;
+		ss->rstate->current_baddr = baddr;
 		ss->rstate->analyze_level = -1;
 		return true;
 	}
@@ -179,13 +180,8 @@ R_IPI bool r2_open_file(ServerState *ss, const char *filepath) {
 	}
 
 	R_LOG_INFO ("Opening file: %s", filepath);
-	char *escaped = r_str_arg_escape (filepath);
-	char *cmd = r_str_newf ("'o %s", escaped);
-	free (escaped);
-	R_LOG_INFO ("Running r2 command: %s", cmd);
-	r_core_cmd0 (core, cmd);
-	free (cmd);
-	if (!core->io || !core->io->desc) {
+	RIODesc *file = r_core_file_open (core, filepath, R_PERM_RX, 0);
+	if (!file || !core->io || !core->io->desc) {
 		R_LOG_ERROR ("Failed to open file: %s", filepath);
 		if (was_sandboxed) {
 			r2state_sandbox_settings (ss, core);
@@ -193,9 +189,16 @@ R_IPI bool r2_open_file(ServerState *ss, const char *filepath) {
 		}
 		return false;
 	}
+	(void)r_core_bin_load (core, filepath, baddr);
+	RBinFile *bi = r_bin_cur (core->bin);
+	bool have_bin_info = bi && bi->bo && bi->bo->info && bi->bo->info->type;
+	if (!have_bin_info && baddr != UT64_MAX) {
+		R_LOG_WARN ("Don't use baddr on unknown files. Consider mapping the file instead.");
+	}
 	free (ss->rstate->current_file);
 	ss->rstate->current_file = strdup (filepath);
 	ss->rstate->file_opened = true;
+	ss->rstate->current_baddr = baddr;
 	ss->rstate->analyze_level = -1;
 	r2state_sandbox_settings (ss, core);
 	if (was_sandboxed) {
