@@ -250,7 +250,7 @@ static bool tool_allowed_by_runtime_flags(const ServerState *ss, const char *nam
 	if (!name) {
 		return false;
 	}
-	if ((!strcmp (name, "run_command") || !strcmp (name, "run_javascript")) && (!ss || !ss->enable_run_command_tool)) {
+	if ((!strcmp (name, "run_command") || !strcmp (name, "run_javascript") || !strcmp (name, "run_script")) && (!ss || !ss->enable_run_command_tool)) {
 		return false;
 	}
 	return true;
@@ -1238,6 +1238,90 @@ static char *tool_run_frida_script(ServerState *ss, RJson *tool_args) {
 	return tool_cmd_response (res);
 }
 
+static char *tool_run_script(ServerState *ss, RJson *tool_args) {
+	const char *file_path;
+	if (!validate_required_string_param (tool_args, "file_path", &file_path)) {
+		return jsonrpc_error_missing_param ("file_path");
+	}
+	if (R_STR_ISEMPTY (file_path)) {
+		return jsonrpc_error_response (-32602, "Empty file_path", NULL, NULL);
+	}
+	// Reject control bytes and r2/shell metacharacters in the path. Even with
+	// the quoted-command prefix used in HTTP mode, r2's command filter
+	// truncates on '|', '>', backtick and '$('. Refusing them here avoids
+	// both command injection and silent truncation of the file path.
+	for (const char *c = file_path; *c; c++) {
+		unsigned char b = (unsigned char)*c;
+		if (b < 0x20 || b == 0x7f) {
+			return jsonrpc_error_response (-32602, "Invalid control character in file_path", NULL, NULL);
+		}
+		if (strchr (";|<>`\"'\\!", *c)) {
+			return jsonrpc_error_response (-32602, "Invalid character in file_path", NULL, NULL);
+		}
+		if (*c == '$' && c[1] == '(') {
+			return jsonrpc_error_response (-32602, "Invalid character in file_path", NULL, NULL);
+		}
+	}
+	// HTTP mode: the script lives on the remote r2 instance, so the local
+	// sandbox/realpath checks don't apply. Delegate to the remote dot command.
+	if (ss->http_mode) {
+		return tool_cmd_response (r2mcp_cmdf (ss, "'. %s", file_path));
+	}
+	const char *err = r2mcp_sandbox_check (ss, file_path);
+	if (err) {
+		return jsonrpc_error_response (-32603, err, NULL, NULL);
+	}
+	if (!r_file_exists (file_path) || r_file_is_directory (file_path)) {
+		return jsonrpc_error_response (-32603, "Script file does not exist or is not a regular file", NULL, NULL);
+	}
+	// Read the script content ourselves and replay its lines through r2mcp_cmd
+	// so each command goes through the same filtering and sandboxing as
+	// run_command. This avoids relying on r2's '.' command (blocked by
+	// cfg.sandbox) and ensures a malicious script cannot escape the configured
+	// sandbox grain. r2's r_file_slurp honors the process-wide r_sandbox state
+	// which is one-way enabled and would refuse the read; since
+	// r2mcp_sandbox_check already validated that the path is within our own
+	// sandbox, read it with stdio directly.
+	FILE *fp = fopen (file_path, "rb");
+	if (!fp) {
+		return jsonrpc_error_response (-32603, "Failed to open script file", NULL, NULL);
+	}
+	if (fseek (fp, 0, SEEK_END) != 0) {
+		fclose (fp);
+		return jsonrpc_error_response (-32603, "Failed to seek script file", NULL, NULL);
+	}
+	long sz = ftell (fp);
+	rewind (fp);
+	const long max_script_size = 16 * 1024 * 1024; // 16 MiB cap
+	if (sz < 0 || sz > max_script_size) {
+		fclose (fp);
+		return jsonrpc_error_response (-32603, "Script file is too large or unreadable", NULL, NULL);
+	}
+	char *content = (char *)malloc ((size_t)sz + 1);
+	if (!content) {
+		fclose (fp);
+		return jsonrpc_error_response (-32603, "Out of memory reading script", NULL, NULL);
+	}
+	size_t nread = fread (content, 1, (size_t)sz, fp);
+	fclose (fp);
+	content[nread] = 0;
+	RStrBuf *out = r_strbuf_new ("");
+	char *saveptr = NULL;
+	for (char *line = r_str_tok_r (content, "\n", &saveptr); line; line = r_str_tok_r (NULL, "\n", &saveptr)) {
+		const char *trim = r_str_trim_head_ro (line);
+		if (R_STR_ISEMPTY (trim) || *trim == '#') {
+			continue;
+		}
+		char *res = r2mcp_cmd (ss, trim);
+		if (R_STR_ISNOTEMPTY (res)) {
+			r_strbuf_append (out, res);
+		}
+		free (res);
+	}
+	free (content);
+	return tool_cmd_response (r_strbuf_drain (out));
+}
+
 static char *tool_list_sessions(ServerState *ss, RJson *tool_args) {
 	if (!ss->use_sessions) {
 		return jsonrpc_error_response (-32603, "Start r2mcp with -L to support sessions", NULL, NULL);
@@ -1639,6 +1723,7 @@ ToolSpec tool_specs[] = {
 	{ "run_javascript", "Executes JavaScript code using radare2's qjs runtime", "{\"type\":\"object\",\"properties\":{\"script\":{\"type\":\"string\",\"description\":\"The JavaScript code to execute\"}},\"required\":[\"script\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP, tool_run_javascript },
 	{ "run_frida_script", "Executes Frida JavaScript code", "{\"type\":\"object\",\"properties\":{\"script\":{\"type\":\"string\",\"description\":\"The script code to execute\"}},\"required\":[\"script\"]}", TOOL_MODE_FRIDA, tool_run_frida_script },
 	{ "run_command", "Executes a raw radare2 command directly", "{\"type\":\"object\",\"properties\":{\"command\":{\"type\":\"string\",\"description\":\"The radare2 command to execute\"}},\"required\":[\"command\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP, tool_run_command },
+	{ "run_script", "Runs a radare2 script file (interpreted with the '.' command). The path must be absolute and within the sandbox; in HTTP mode the path refers to the remote r2 filesystem.", "{\"type\":\"object\",\"properties\":{\"file_path\":{\"type\":\"string\",\"description\":\"Absolute path to the radare2 script file to execute\"}},\"required\":[\"file_path\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_FRIDA, tool_run_script },
 	{ "list_sessions", "Lists available r2agent sessions in JSON format", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_HTTP | TOOL_MODE_RO | TOOL_MODE_SESSIONS, tool_list_sessions },
 	{ "open_session", "Connects to a remote r2 instance using r2pipe API", "{\"type\":\"object\",\"properties\":{\"url\":{\"type\":\"string\",\"description\":\"URL of the remote r2 instance to connect to\"}},\"required\":[\"url\"]}", TOOL_MODE_NORMAL | TOOL_MODE_HTTP | TOOL_MODE_SESSIONS, tool_open_session },
 	{ "close_session", "Close the currently open remote session", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_HTTP | TOOL_MODE_SESSIONS, tool_close_session },
