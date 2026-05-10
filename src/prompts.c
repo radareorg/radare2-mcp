@@ -248,6 +248,19 @@ typedef struct {
 	RList /*<PromptSpec*>*/ *lst;
 } PromptRegistry;
 
+static char *prompt_path_expand(const char *path) {
+	if (!path) {
+		return NULL;
+	}
+	if (!strcmp (path, "~")) {
+		return r_file_home (NULL);
+	}
+	if (r_str_startswith (path, "~/")) {
+		return r_file_home (path + 2);
+	}
+	return strdup (path);
+}
+
 void prompts_registry_init(ServerState *ss) {
 	if (ss->prompts) {
 		return;
@@ -265,7 +278,7 @@ void prompts_registry_init(ServerState *ss) {
 			RListIter *it;
 			char *e;
 			r_list_foreach (entries, it, e) {
-				char *exp = r_file_home (e);
+				char *exp = prompt_path_expand (e);
 				if (exp) {
 					r_list_append (paths, exp);
 				} else {
@@ -276,8 +289,8 @@ void prompts_registry_init(ServerState *ss) {
 		}
 	} else {
 		r_list_append (paths, strdup ("prompts"));
-		r_list_append (paths, r_file_home ("~/.config/r2ai/prompts"));
-		r_list_append (paths, r_file_home ("~/.config/r2mcp/prompts"));
+		r_list_append (paths, r_file_home (".config/r2ai/prompts"));
+		r_list_append (paths, r_file_home (".config/r2mcp/prompts"));
 	}
 
 	// Iterate through all directories and load prompt files

@@ -64,8 +64,10 @@ static char *r2mcp_log_drain(ServerState *ss) {
 }
 
 static inline void r2mcp_log(ServerState *ss, const char *x) {
-	R_LOG_INFO ("[R2MCP] %s", x);
-	if (ss && ss->logfile && *ss->logfile) {
+	if (!ss || ss->log_enabled || (ss->logfile && *ss->logfile)) {
+		R_LOG_INFO ("[R2MCP] %s", x);
+	}
+	if (ss && ss->log_enabled && ss->logfile && *ss->logfile) {
 		r_file_dump (ss->logfile, (const ut8 *) (x), -1, true);
 		r_file_dump (ss->logfile, (const ut8 *)"\n", -1, true);
 	}
@@ -222,10 +224,22 @@ R_IPI char *r2_analyze(ServerState *ss, int level, int timeout_seconds) {
 	int effective_level = 0;
 	if (!ss->ignore_analysis_level) {
 		switch (level) {
-		case 1: cmd = "aac"; effective_level = 1; break;
-		case 2: cmd = "aaa"; effective_level = 2; break;
-		case 3: cmd = "aaaa"; effective_level = 3; break;
-		case 4: cmd = "aaaaa"; effective_level = 4; break;
+		case 1:
+			cmd = "aac";
+			effective_level = 1;
+			break;
+		case 2:
+			cmd = "aaa";
+			effective_level = 2;
+			break;
+		case 3:
+			cmd = "aaaa";
+			effective_level = 3;
+			break;
+		case 4:
+			cmd = "aaaaa";
+			effective_level = 4;
+			break;
 		}
 	}
 	if (timeout_seconds >= 0) {
@@ -247,7 +261,7 @@ R_IPI int r2_function_count(ServerState *ss) {
 		return 0;
 	}
 	char *cnt = r2mcp_cmd (ss, "aflc");
-	int n = (cnt && R_STR_ISNOTEMPTY (cnt)) ? atoi (cnt) : 0;
+	int n = (cnt && R_STR_ISNOTEMPTY (cnt))? atoi (cnt): 0;
 	free (cnt);
 	return n;
 }

@@ -21,7 +21,7 @@
 
 static volatile sig_atomic_t running = 1;
 /* fd of the active listening socket, or -1. Used by r2mcp_break to wake
- * accept()/select() from a signal handler. */
+ * accept ()/select () from a signal handler. */
 static volatile sig_atomic_t http_server_fd = -1;
 
 void r2mcp_running_set(int value) {
@@ -125,16 +125,17 @@ bool r2mcp_rstate_init(RadareState *rs) {
 	/* r_core_new installs its own SIGINT handler via r_cons_break_push, and
 	 * the matching pop restores SIG_IGN — which would clobber our handler
 	 * from main.c on every analysis. Disabling r_sys signal installation
-	 * keeps our handler in charge. We avoid r_cons_thready() because in
+	 * keeps our handler in charge. We avoid r_cons_thready () because in
 	 * 6.1.x it swaps the thread-local cons singleton with a zero-initialised
 	 * RCons (NULL context), corrupting any r2 code path that reaches for
-	 * r_cons_singleton() instead of core->cons. */
+	 * r_cons_singleton () instead of core->cons. */
 	r_sys_signable (false);
 	if (core->cons && core->cons->context) {
 		core->cons->context->unbreakable = true;
 	}
 	r2state_settings (core);
 	rs->core = core;
+	rs->own_core = true;
 	rs->current_baddr = UT64_MAX;
 	rs->analyze_level = -1;
 	return true;
@@ -144,10 +145,11 @@ void r2mcp_rstate_fini(RadareState *rs) {
 	if (!rs) {
 		return;
 	}
-	if (rs->core) {
+	if (rs->core && rs->own_core) {
 		r_core_free (rs->core);
-		rs->core = NULL;
 	}
+	rs->core = NULL;
+	rs->own_core = false;
 	free (rs->current_file);
 	rs->current_file = NULL;
 	rs->file_opened = false;
@@ -161,10 +163,32 @@ bool r2mcp_state_init(ServerState *ss) {
 	}
 	R_LOG_INFO ("Radare2 core initialized");
 	r_log_add_callback (logcb, ss);
+	ss->log_callback_added = true;
+	return true;
+}
+
+bool r2mcp_state_use_core(ServerState *ss, RCore *core) {
+	R_RETURN_VAL_IF_FAIL (ss && core, false);
+	RadareState *rs = ss->rstate;
+	R_RETURN_VAL_IF_FAIL (rs, false);
+	rs->core = core;
+	rs->own_core = false;
+	rs->file_opened = core->io && core->io->desc;
+	rs->current_baddr = UT64_MAX;
+	rs->analyze_level = -1;
+	if (R_STR_ISNOTEMPTY (ss->sandbox_grain)) {
+		r2state_sandbox_settings (ss, core);
+	}
+	r_log_add_callback (logcb, ss);
+	ss->log_callback_added = true;
 	return true;
 }
 
 void r2mcp_state_fini(ServerState *ss) {
+	if (ss->log_callback_added) {
+		r_log_del_callback (logcb);
+		ss->log_callback_added = false;
+	}
 	r2mcp_rstate_fini (ss->rstate);
 	r_strbuf_free (ss->sb);
 	ss->sb = NULL;
@@ -181,6 +205,9 @@ char *r2mcp_cmd(ServerState *ss, const char *cmd) {
 		return res;
 	}
 	RCore *core = ss->rstate->core;
+	if (core && !ss->rstate->own_core) {
+		ss->rstate->file_opened = core->io && core->io->desc;
+	}
 	if (!core || !ss->rstate->file_opened) {
 		return strdup ("Cannot run commands without calling the `open_file` tool first");
 	}
@@ -190,7 +217,9 @@ char *r2mcp_cmd(ServerState *ss, const char *cmd) {
 		r2mcp_log (ss, "command injection prevented");
 	}
 	r2mcp_log_reset (ss);
+	R_CRITICAL_ENTER (core);
 	char *res = r_core_cmd_str (core, filteredCommand);
+	R_CRITICAL_LEAVE (core);
 	char *err = r2mcp_log_drain (ss);
 	free (filteredCommand);
 	if (!res) {
@@ -659,7 +688,7 @@ void r2mcp_eventloop_http(ServerState *ss, const char *port) {
 		}
 		RSocketHTTPOptions so = { 0 };
 		so.accept_timeout = true; // non-blocking accept (~1s) so the loop can re-check running
-		so.timeout = 2;           // close socket after 2s of no data
+		so.timeout = 2; // close socket after 2s of no data
 		RSocketHTTPRequest *rs = r_socket_http_accept (server, &so);
 		if (!rs) {
 			continue;

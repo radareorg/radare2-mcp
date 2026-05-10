@@ -75,6 +75,7 @@ typedef struct {
 
 typedef struct {
 	RCore *core;
+	bool own_core;
 	bool file_opened;
 	char *current_file;
 	ut64 current_baddr;
@@ -90,6 +91,7 @@ typedef struct {
 	bool minimode;
 	bool permissive_tools; // allow calling tools not exposed for current mode
 	bool enable_run_command_tool;
+	bool log_enabled;
 	/* When true, enable session management tools (list/open/close sessions) */
 	bool use_sessions;
 	/* When true operate in read-only mode: only expose non-mutating tools */
@@ -106,6 +108,7 @@ typedef struct {
 	char *sandbox_grain;
 	/* Optional path to append debug logs when set via -l */
 	char *logfile;
+	bool log_callback_added;
 	/* Optional custom prompts directory path */
 	char *prompts_dir;
 	/* When true, load prompts (false when -N flag is used) */
@@ -146,6 +149,7 @@ void r2mcp_break(void);
 
 /* Public wrappers for internal r2 helpers (implemented in r2mcp.c) */
 bool r2mcp_state_init(ServerState *ss);
+bool r2mcp_state_use_core(ServerState *ss, RCore *core);
 void r2mcp_state_fini(ServerState *ss);
 /* Per-RadareState init/fini used by the session manager. */
 bool r2mcp_rstate_init(RadareState *rs);

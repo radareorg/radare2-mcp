@@ -2,7 +2,7 @@
 set -eu
 
 echo "== Build =="
-make -C src -j > /dev/null
+make -C src all -j > /dev/null
 
 BIN="src/r2mcp"
 

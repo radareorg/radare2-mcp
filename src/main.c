@@ -286,6 +286,7 @@ int r2mcp_main(int argc, const char **argv) {
 		.readonly_mode = readonly_mode,
 		.permissive_tools = permissive,
 		.enable_run_command_tool = enable_run_command_tool,
+		.log_enabled = true,
 		.use_sessions = use_sessions,
 		.http_mode = http_mode,
 		.baseurl = baseurl,

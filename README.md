@@ -98,6 +98,38 @@ r2mcp -H 8765 -X 8:600
 expose the HTTP request header API. With older ABIs, `-H` still works as a
 single shared HTTP server, but `-X` is ignored.
 
+### r2 Core Plugin Mode
+
+The r2 core plugin exposes the `r2mcp` command inside an existing radare2
+session. Starting HTTP mode from r2 reuses the current `RCore`, so MCP tools
+operate on the file and analysis state already loaded in that session:
+
+```bash
+r2 -e r2mcp.port=8765 -c 'r2mcp start' /bin/ls
+```
+
+Useful subcommands:
+
+- `r2mcp start` or `r2mcp http` starts the HTTP MCP server in the background.
+- `r2mcp stop`, `r2mcp restart`, and `r2mcp status` manage the background server.
+- `r2mcp logs on|off` and `r2mcp logs file <path>` control plugin debug logs.
+- `r2mcp approve on|off` and `r2mcp approve url <url>` control supervisor approvals.
+- `r2mcp yolo on|off` disables approvals and exposes dangerous run tools.
+- `r2mcp config` lists the `r2mcp.*` eval keys.
+
+The plugin registers eval keys for the same server options exposed by the CLI:
+`r2mcp.port`, `r2mcp.log`, `r2mcp.logfile`, `r2mcp.approve`, `r2mcp.svc`,
+`r2mcp.yolo`, `r2mcp.mini`, `r2mcp.permissive`, `r2mcp.run`,
+`r2mcp.readonly`, `r2mcp.ignore_analysis`, `r2mcp.prompts`,
+`r2mcp.prompts.dir`, `r2mcp.sandbox`, `r2mcp.sandbox.grain`,
+`r2mcp.content`, `r2mcp.enabled`, `r2mcp.disabled`,
+`r2mcp.session_tools`, `r2mcp.sessions`, `r2mcp.sessions.max`,
+`r2mcp.sessions.timeout`, `r2mcp.decompiler`, and `r2mcp.baseurl`.
+
+When loading the plugin manually with `-i`, set these keys after the plugin is
+loaded, for example with `-c 'e r2mcp.port=8765'`, because radare2 processes
+early `-e` options before ad hoc plugin initialization.
+
 ### Claude Desktop Integration
 
 In the Claude Desktop app, press `CMD + ,` to open the Developer settings. Edit the configuration file and restart the client after editing the JSON file as explained below:
