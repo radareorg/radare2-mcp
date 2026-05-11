@@ -1,6 +1,8 @@
 CC?= gcc
 TARGET = r2mcp
 CFLAGS = -Wall -Wextra -g
+PIC_CFLAGS ?= -fPIC
+SHARED_LDFLAGS ?= -shared
 
 # AddressSanitizer build
 asan: CFLAGS += -fsanitize=address -fsanitize=undefined -g3 -O1
@@ -15,19 +17,22 @@ PREFIX?=/usr/local
 R2PM_BINDIR?=$(shell r2pm -H R2PM_BINDIR)
 R2PM_PLUGDIR?=$(shell r2pm -H R2PM_PLUGDIR)
 
-SRC = main.c
-SRC += r2mcp.c
-SRC += readbuffer.c
-SRC += tools.c
-SRC += dsltest.c
-SRC += prompts.c
-SRC += plugin.c
-SRC += jsonrpc.c
-SRC += validation.c
-SRC += sessions.c
-INC += utils.inc.c
+COMMON_SRC = r2mcp.c
+COMMON_SRC += readbuffer.c
+COMMON_SRC += tools.c
+COMMON_SRC += dsltest.c
+COMMON_SRC += prompts.c
+COMMON_SRC += jsonrpc.c
+COMMON_SRC += validation.c
+COMMON_SRC += sessions.c
+BIN_SRC = main.c $(COMMON_SRC)
+PLUGIN_SRC = plugin.c $(COMMON_SRC)
+INC = utils.inc.c
 INC += r2api.inc.c
-OBJS:=$(subst .c,.o,$(SRC))
+INC += path.inc.c
+INC += curl.inc.c
+BIN_OBJS := $(BIN_SRC:.c=.o)
+PLUGIN_OBJS := $(PLUGIN_SRC:.c=.pic.o)
 
 # Detect OS-specific settings
 UNAME_S := $(shell uname -s)
@@ -35,6 +40,7 @@ ifeq ($(UNAME_S),Darwin)
     # macOS specific include paths
     CFLAGS += -I/usr/local/include/libr -I/usr/local/include
     CFLAGS += -I$(shell brew --prefix)/include
+    SHARED_LDFLAGS = -dynamiclib
 endif
 
 # Get compiler flags from pkg-config
@@ -55,16 +61,22 @@ check_deps:
 	@$(PKGCONFIG) --exists r_core || (echo "radare2 development files not found."; exit 1)
 	@echo "✓ All dependencies are satisfied."
 
-$(TARGET): $(OBJS) $(INC)
+$(TARGET): $(BIN_OBJS) $(INC)
 	@echo "Building R2 MCP server..."
-	$(CC) $(CFLAGS) -o $@ $(OBJS) $(LDFLAGS)
+	$(CC) $(CFLAGS) -o $@ $(BIN_OBJS) $(LDFLAGS)
 	@echo "✓ Server built successfully."
 
-$(LIBTARGET): $(OBJS) $(INC)
-	$(CC) $(CFLAGS) -o $(LIBTARGET) $(OBJS) $(LDFLAGS)
+$(LIBTARGET): $(PLUGIN_OBJS) $(INC)
+	$(CC) $(SHARED_LDFLAGS) -o $(LIBTARGET) $(PLUGIN_OBJS) $(LDFLAGS)
+
+%.o: %.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+%.pic.o: %.c
+	$(CC) $(CFLAGS) $(PIC_CFLAGS) -c -o $@ $<
 
 clean:
-	rm -f $(TARGET) $(OBJS)
+	rm -f $(TARGET) $(LIBTARGET) $(BIN_OBJS) $(PLUGIN_OBJS)
 	-rm -rf r2mcp.dSYM
 
 mrproper: clean
