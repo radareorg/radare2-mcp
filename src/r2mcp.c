@@ -291,6 +291,52 @@ char *r2mcp_cmd(ServerState *ss, const char *cmd) {
 	return res;
 }
 
+char *r2mcp_cmd_file(ServerState *ss, const char *file) {
+	if (!ss || !ss->rstate) {
+		return strdup ("Cannot run script files without server state");
+	}
+	if (ss->http_mode) {
+		return strdup ("Cannot run script files in HTTP mode");
+	}
+	RCore *core = ss->rstate->core;
+	if (core && !ss->rstate->own_core) {
+		ss->rstate->file_opened = core->io && core->io->desc;
+	}
+	if (!core || !ss->rstate->file_opened) {
+		return strdup ("Cannot run script files without calling the `open_file` tool first");
+	}
+	r2mcp_log_reset (ss);
+	R_CRITICAL_ENTER (core);
+	r_cons_push (core->cons);
+	core->cons->context->noflush = true;
+	core->cons->context->cmd_str_depth++;
+	bool ok = r_core_cmd_file (core, file);
+	if (--core->cons->context->cmd_str_depth == 0) {
+		core->cons->context->noflush = false;
+	}
+	r_cons_filter (core->cons);
+	const char *static_str = r_cons_get_buffer (core->cons, NULL);
+	char *res = strdup (r_str_get (static_str));
+	r_cons_pop (core->cons);
+	r_cons_echo (core->cons, NULL);
+	R_CRITICAL_LEAVE (core);
+	char *err = r2mcp_log_drain (ss);
+	if (!res) {
+		res = strdup ("");
+	}
+	if (!ok && R_STR_ISEMPTY (res)) {
+		free (res);
+		res = strdup ("Failed to run script file");
+	}
+	if (err) {
+		char *newres = r_str_newf ("%s<log>\n%s\n</log>\n", res, err);
+		free (err);
+		free (res);
+		res = newres;
+	}
+	return res;
+}
+
 void r2mcp_log_pub(ServerState *ss, const char *msg) {
 	r2mcp_log (ss, msg);
 }

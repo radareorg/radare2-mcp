@@ -55,7 +55,7 @@ void r2mcp_help(void) {
 		" -N         do not load any prompts\n"
 		" -p         permissive tools: allow calling non-listed tools\n"
 		" -P [dir]   colon-separated list of directories with prompts\n"
-		" -r         enable the dangerous run_command and run_javascript tools\n"
+		" -r         enable the dangerous run_* tools\n"
 		" -R         enable read-only mode (expose only non-mutating tools)\n"
 		" -s [dir]   enable sandbox mode; only allow files under [dir]\n"
 		" -S [url]   enable supervisor control; connect to svc at [url]\n"

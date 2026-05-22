@@ -117,10 +117,12 @@ build_cases() {
 	jq -cn \
 		--slurpfile catalog "$catalog" \
 		--arg file "$TEST_FILE" \
+		--arg script "$TEST_SCRIPT" \
 		--arg dir "$TEST_DIR" \
 		--arg marker "$INJECT_MARKER" '
 		def default_value($tool; $name; $prop):
-			if $name == "file_path" then $file
+			if $tool == "run_script" and $name == "file_path" then $script
+			elif $name == "file_path" then $file
 			elif $name == "path" then $dir
 			elif $name == "address" then "0"
 			elif $name == "classname" then "main"
@@ -669,6 +671,38 @@ run_command_filter_regression() {
 	assert_marker_absent "$(response_by_id "$resp" 4)" "$INJECT_MARKER" "command filter regression"
 }
 
+run_script_smoke_regression() {
+	local req="$TMPDIR/run_script.req"
+	local resp="$TMPDIR/run_script.resp"
+	: > "$req"
+
+	append_request "$req" 1 initialize '{"capabilities":{},"clientInfo":{"name":"testsuite","version":"1"}}'
+	append_notification "$req" notifications/initialized '{}'
+	append_tool_call "$req" 2 open_file "$(jq -cn --arg file "$TEST_FILE" '{file_path:$file}')"
+	append_tool_call "$req" 3 run_script "$(jq -cn --arg file "$TEST_SCRIPT" '{file_path:$file}')"
+	run_session "$req" "$resp" -r -g all
+
+	printf '%s\n' "$(response_by_id "$resp" 3)" | jq -e '.result.content[0].text | contains("R2MCP_SCRIPT_ONE") and contains("R2MCP_SCRIPT_TWO")' >/dev/null 2>&1 || {
+		fail "run_script smoke: expected CRLF script output, got $(response_by_id "$resp" 3)"
+	}
+}
+
+run_script_sandbox_regression() {
+	local req="$TMPDIR/run_script_sandbox.req"
+	local resp="$TMPDIR/run_script_sandbox.resp"
+	: > "$req"
+
+	append_request "$req" 1 initialize '{"capabilities":{},"clientInfo":{"name":"testsuite","version":"1"}}'
+	append_notification "$req" notifications/initialized '{}'
+	append_tool_call "$req" 2 open_file "$(jq -cn --arg file "$TEST_FILE" '{file_path:$file}')"
+	append_tool_call "$req" 3 run_script "$(jq -cn --arg file "$TEST_SCRIPT" '{file_path:$file}')"
+	run_session "$req" "$resp" -r
+
+	printf '%s\n' "$(response_by_id "$resp" 3)" | jq -e '.result.content[0].text | contains("R2MCP_SCRIPT_ONE") | not' >/dev/null 2>&1 || {
+		fail "run_script sandbox: script should not run with default sandbox, got $(response_by_id "$resp" 3)"
+	}
+}
+
 need_cmd jq
 need_cmd mktemp
 need_cmd curl
@@ -682,9 +716,11 @@ trap 'rm -rf "$TMPDIR"' EXIT INT TERM
 TEST_DIR="$TMPDIR/work"
 TEST_FILE="$TEST_DIR/ls.bin"
 TEST_FILE2="$TEST_DIR/cat.bin"
+TEST_SCRIPT="$TEST_DIR/script.r2"
 mkdir -p "$TEST_DIR"
 cp /bin/ls "$TEST_FILE"
 cp /bin/cat "$TEST_FILE2"
+printf '?e R2MCP_SCRIPT_ONE\r\n# comment\r\n?e R2MCP_SCRIPT_TWO\r\n' > "$TEST_SCRIPT"
 
 NORMAL_CATALOG="$TMPDIR/catalog.normal.json"
 DANGEROUS_CATALOG="$TMPDIR/catalog.dangerous.json"
@@ -708,7 +744,7 @@ jq '[.[] | select(.name != "open_file" and .name != "list_sessions" and .name !=
 jq --slurpfile normal "$NORMAL_CATALOG" '
 	[.[] | select(.name as $name | ($normal[0] | map(.name) | index($name) | not))]
 ' "$DANGEROUS_CATALOG" > "$DANGEROUS_ONLY"
-jq -e 'map(.name) | index("run_command") and index("run_javascript")' "$DANGEROUS_CATALOG" >/dev/null
+jq -e 'map(.name) | index("run_command") and index("run_javascript") and index("run_script")' "$DANGEROUS_CATALOG" >/dev/null
 echo "normal tools: $(jq 'length' "$NORMAL_RUNTIME_CATALOG")"
 echo "dangerous-only tools: $(jq 'length' "$DANGEROUS_ONLY")"
 echo "session tools: $(jq 'length' "$SESSION_CATALOG")"
@@ -729,5 +765,7 @@ run_http_auth_regression
 run_sandbox_regressions
 run_command_smoke_regression
 run_command_filter_regression
+run_script_smoke_regression
+run_script_sandbox_regression
 
 echo "== OK =="
