@@ -37,7 +37,9 @@ void setup_signals(void) {
 void r2mcp_help(void) {
 	const char help_text[] =
 		"Usage: r2mcp [-flags]\n"
+		" -A         generate and require a random HTTP Bearer auth token\n"
 		" -C [mode]  content mode: text (default), json, structured, both\n"
+		" -a [token] require HTTP Authorization: Bearer [token] (use 'random' to generate)\n"
 		" -c [cmd]   run those commands before entering the mcp loop\n"
 		" -d [pdc]   select a different decompiler (pdc by default)\n"
 		" -D [tool]  disable the specified tool (repeatable)\n"
@@ -93,6 +95,8 @@ int r2mcp_main(int argc, const char **argv) {
 	bool permissive = false;
 	char *baseurl = NULL;
 	char *svc_baseurl = NULL;
+	char *auth_token = NULL;
+	bool auth_token_generated = false;
 	char *http_server_port = NULL;
 	char *sandbox = NULL;
 	char *sandbox_grain = NULL;
@@ -109,10 +113,19 @@ int r2mcp_main(int argc, const char **argv) {
 	const char *dsl_tests = NULL;
 	RList *disabled_tools = NULL;
 	RGetopt opt;
-	r_getopt_init (&opt, argc, argv, "C:H:hmvpd:nc:u:g:l:s:rite:D:RT:S:P:NLX:");
+	r_getopt_init (&opt, argc, argv, "AC:a:H:hmvpd:nc:u:g:l:s:rite:D:RT:S:P:NLX:");
 	int c;
 	while ((c = r_getopt_next (&opt)) != -1) {
 		switch (c) {
+		case 'A':
+			R_FREE (auth_token);
+			auth_token = r2mcp_auth_token_random ();
+			auth_token_generated = true;
+			if (!auth_token) {
+				R_LOG_ERROR ("Failed to generate HTTP bearer token");
+				return 1;
+			}
+			break;
 		case 'C':
 			content_mode = r2mcp_content_mode_from_string (opt.arg);
 			content_mode_set = true;
@@ -127,6 +140,20 @@ int r2mcp_main(int argc, const char **argv) {
 		case 'H':
 			free (http_server_port);
 			http_server_port = strdup (opt.arg);
+			break;
+		case 'a':
+			R_FREE (auth_token);
+			auth_token_generated = false;
+			if (opt.arg && !strcmp (opt.arg, "random")) {
+				auth_token = r2mcp_auth_token_random ();
+				auth_token_generated = true;
+				if (!auth_token) {
+					R_LOG_ERROR ("Failed to generate HTTP bearer token");
+					return 1;
+				}
+			} else {
+				auth_token = strdup (opt.arg);
+			}
 			break;
 		case 'c':
 			r_list_append (cmds, strdup (opt.arg));
@@ -274,6 +301,27 @@ int r2mcp_main(int argc, const char **argv) {
 			}
 		}
 	}
+	if (!auth_token) {
+		const char *env_auth = getenv ("R2MCP_AUTH_TOKEN");
+		if (R_STR_ISNOTEMPTY (env_auth)) {
+			if (!strcmp (env_auth, "random")) {
+				auth_token = r2mcp_auth_token_random ();
+				auth_token_generated = true;
+				if (!auth_token) {
+					R_LOG_ERROR ("Failed to generate HTTP bearer token");
+					return 1;
+				}
+			} else {
+				auth_token = strdup (env_auth);
+			}
+		}
+	}
+#if !R2MCP_HAS_HTTP_HEADERS
+	if (http_server_port && R_STR_ISNOTEMPTY (auth_token)) {
+		R_LOG_ERROR ("HTTP bearer auth requires radare2 ABI >= 91");
+		return 1;
+	}
+#endif
 
 	ServerState ss = {
 		.info = {
@@ -291,6 +339,8 @@ int r2mcp_main(int argc, const char **argv) {
 		.http_mode = http_mode,
 		.baseurl = baseurl,
 		.svc_baseurl = svc_baseurl,
+		.auth_token = auth_token,
+		.auth_token_generated = auth_token_generated,
 		.sandbox = sandbox,
 		.sandbox_grain = sandbox_grain,
 		.logfile = logfile,
@@ -358,6 +408,7 @@ int r2mcp_main(int argc, const char **argv) {
 		r2mcp_state_fini (&ss);
 		free (ss.baseurl);
 		free (ss.svc_baseurl);
+		free (ss.auth_token);
 		free (ss.sandbox);
 		free (ss.sandbox_grain);
 		free (ss.logfile);
@@ -396,6 +447,12 @@ int r2mcp_main(int argc, const char **argv) {
 			r2mcp_log_pub (&ss, "X-Session-ID multiplexing unavailable with radare2 ABI < 91");
 #endif
 		}
+		if (R_STR_ISNOTEMPTY (ss.auth_token)) {
+			R_LOG_INFO ("[R2MCP] HTTP bearer auth enabled");
+			if (ss.auth_token_generated) {
+				fprintf (stderr, "r2mcp HTTP bearer token: %s\n", ss.auth_token);
+			}
+		}
 		r2mcp_eventloop_http (&ss, http_server_port);
 	} else {
 		r2mcp_eventloop_stdio (&ss);
@@ -411,6 +468,7 @@ int r2mcp_main(int argc, const char **argv) {
 	/* Cleanup */
 	free (ss.baseurl);
 	free (ss.svc_baseurl);
+	free (ss.auth_token);
 	free (ss.sandbox);
 	free (ss.sandbox_grain);
 	free (ss.logfile);

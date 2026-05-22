@@ -102,6 +102,9 @@ typedef struct {
 	char *baseurl;
 	/* Base URL of the supervisor control service (if set) */
 	char *svc_baseurl;
+	/* Optional HTTP bearer token required by the HTTP MCP server */
+	char *auth_token;
+	bool auth_token_generated;
 	/* Optional sandbox path. When set, only allow opening files under this dir */
 	char *sandbox;
 	/* Optional radare2 sandbox grain mask; NULL selects a mode-aware default */
@@ -146,6 +149,8 @@ void r2mcp_version(void);
 void r2mcp_running_set(int value);
 /* Request the active event loop to wake up and exit (signal-safe). */
 void r2mcp_break(void);
+/* Generate a new random bearer token string. Caller owns the result. */
+char *r2mcp_auth_token_random(void);
 
 /* Public wrappers for internal r2 helpers (implemented in r2mcp.c) */
 bool r2mcp_state_init(ServerState *ss);

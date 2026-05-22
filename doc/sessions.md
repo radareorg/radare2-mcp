@@ -20,12 +20,21 @@ ABIs keep `-H` working but ignore `-X`/`R2MCP_SESSIONS`.
 # Single shared state (legacy behavior)
 r2mcp -H 8765
 
+# Require HTTP Bearer auth
+r2mcp -H 8765 -a my-secret-token
+
+# Generate a random Bearer auth token and print it once on stderr
+r2mcp -H 8765 -A
+
 # Per-session state, defaults: max=8 sessions, idle_timeout=600s
 r2mcp -H 8765 -X 8
 
 # Custom limits: up to 16 sessions, evict after 5 minutes idle
 r2mcp -H 8765 -X 16:300
 ```
+
+`-a <token>` requires clients to send `Authorization: Bearer <token>` on every
+`GET` and `POST` request. `-A` and `-a random` generate a random token.
 
 `-X` accepts `max[:idle_seconds]`. Bare numbers fall back to the defaults for
 the unspecified field. Both knobs can also be supplied via the

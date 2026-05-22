@@ -2,7 +2,9 @@
 
 #include <signal.h>
 #if R2__UNIX__
+#include <fcntl.h>
 #include <sys/socket.h>
+#include <unistd.h>
 #endif
 #include <r_core.h>
 #include "config.h"
@@ -38,11 +40,65 @@ void r2mcp_break(void) {
 #endif
 }
 
+static void fill_random_bytes(ut8 *buf, int len) {
+	int i;
+#if R2__UNIX__
+	int fd = open ("/dev/urandom", O_RDONLY);
+	if (fd != -1) {
+		int off = 0;
+		while (off < len) {
+			int n = (int)read (fd, buf + off, len - off);
+			if (n <= 0) {
+				break;
+			}
+			off += n;
+		}
+		close (fd);
+		if (off == len) {
+			return;
+		}
+	}
+#endif
+	r_num_irand ();
+	for (i = 0; i < len; i++) {
+		buf[i] = (ut8)r_num_rand (256);
+	}
+}
+
+char *r2mcp_auth_token_random(void) {
+	ut8 bytes[32];
+	char *token = malloc ((sizeof (bytes) * 2) + 1);
+	if (!token) {
+		return NULL;
+	}
+	fill_random_bytes (bytes, sizeof (bytes));
+	r_hex_bin2str (bytes, sizeof (bytes), token);
+	return token;
+}
+
 const char *r2mcp_effective_sandbox_grain(const ServerState *ss) {
 	if (ss && R_STR_ISNOTEMPTY (ss->sandbox_grain)) {
 		return ss->sandbox_grain;
 	}
 	return (ss && ss->http_mode)? "exec,network": "exec,socket";
+}
+
+static bool r2mcp_http_bearer_authorized(const ServerState *ss, RSocketHTTPRequest *rs) {
+	if (!ss || R_STR_ISEMPTY (ss->auth_token)) {
+		return true;
+	}
+#if R2MCP_HAS_HTTP_HEADERS
+	const char *auth = r_socket_http_header (rs, "Authorization");
+	if (R_STR_ISEMPTY (auth) || r_str_ncasecmp (auth, "Bearer ", 7)) {
+		return false;
+	}
+	char *token = r_str_trim_dup (auth + 7);
+	bool ok = token && !strcmp (token, ss->auth_token);
+	free (token);
+	return ok;
+#else
+	return false;
+#endif
 }
 
 static bool is_valid_json_response(const char *str) {
@@ -677,6 +733,10 @@ void r2mcp_eventloop_http(ServerState *ss, const char *port) {
 	const char *cors_post_headers =
 		"Content-Type: application/json\r\n"
 		"Access-Control-Allow-Origin: *\r\n";
+	const char *cors_auth_headers =
+		"Content-Type: application/json\r\n"
+		"Access-Control-Allow-Origin: *\r\n"
+		"WWW-Authenticate: Bearer\r\n";
 	const char *cors_options_headers =
 		"Access-Control-Allow-Origin: *\r\n"
 		"Access-Control-Allow-Methods: POST, GET, OPTIONS\r\n"
@@ -695,6 +755,12 @@ void r2mcp_eventloop_http(ServerState *ss, const char *port) {
 		}
 		if (!rs->method) {
 			r_socket_http_response (rs, 400, "Bad Request", 0, NULL);
+			r_socket_http_close (rs);
+			r_socket_http_free (rs);
+			continue;
+		}
+		if (R_STR_ISNOTEMPTY (ss->auth_token) && strcmp (rs->method, "OPTIONS") && !r2mcp_http_bearer_authorized (ss, rs)) {
+			r_socket_http_response (rs, 401, "{\"error\":\"Unauthorized\"}", 0, cors_auth_headers);
 			r_socket_http_close (rs);
 			r_socket_http_free (rs);
 			continue;

@@ -8,6 +8,12 @@
 #include "utils.inc.c"
 #include "jsonrpc.h"
 
+#if defined(R2_ABIVERSION) && R2_ABIVERSION >= 104
+#define R2MCP_TABLE_NEW(name) r_table_new(name, NULL)
+#else
+#define R2MCP_TABLE_NEW(name) r_table_new(name)
+#endif
+
 typedef char *(*ToolFunc)(ServerState *ss, RJson *tool_args);
 
 typedef struct {
@@ -373,7 +379,7 @@ char *tools_build_catalog_json(const ServerState *ss, const char *cursor, int pa
 }
 
 void tools_print_table(const ServerState *ss) {
-	RTable *table = r_table_new ("tools");
+	RTable *table = R2MCP_TABLE_NEW ("tools");
 	if (!table) {
 		R_LOG_ERROR ("Failed to allocate table");
 		return;

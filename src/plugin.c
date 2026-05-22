@@ -51,6 +51,7 @@ static void r2mcp_config_init(RCore *core) {
 	r2mcp_cfg_set_i (core, "r2mcp.port", R2MCP_DEFAULT_PLUGIN_PORT, "r2mcp HTTP server port for plugin mode");
 	r2mcp_cfg_set_b (core, "r2mcp.log", false, "enable r2mcp debug logging in plugin mode");
 	r2mcp_cfg_set_s (core, "r2mcp.logfile", "", "file path to append r2mcp debug logs");
+	r2mcp_cfg_set_s (core, "r2mcp.auth", "", "HTTP Bearer auth token for plugin server mode (use 'random' to generate)");
 	r2mcp_cfg_set_b (core, "r2mcp.approve", false, "send tool calls to r2mcp.svc for approval before execution");
 	r2mcp_cfg_set_s (core, "r2mcp.svc", "", "supervisor approval URL (default when approve is true: " R2MCP_DEFAULT_SVC_URL ")");
 	r2mcp_cfg_set_b (core, "r2mcp.yolo", false, "accept tool calls without supervisor approval and expose dangerous tools");
@@ -125,6 +126,7 @@ static void r2mcp_state_free(ServerState *ss) {
 	r2mcp_state_fini (ss);
 	free (ss->baseurl);
 	free (ss->svc_baseurl);
+	free (ss->auth_token);
 	free (ss->sandbox);
 	free (ss->sandbox_grain);
 	free (ss->logfile);
@@ -165,6 +167,21 @@ static ServerState *r2mcp_state_new_from_config(RCore *core) {
 	ss->baseurl = r2mcp_cfg_get_dup (core, "r2mcp.baseurl");
 	ss->http_mode = R_STR_ISNOTEMPTY (ss->baseurl);
 	ss->svc_baseurl = yolo? NULL: r2mcp_cfg_get_svc_url (core);
+	ss->auth_token = r2mcp_cfg_get_dup (core, "r2mcp.auth");
+	if (ss->auth_token && !strcmp (ss->auth_token, "random")) {
+		R_FREE (ss->auth_token);
+		ss->auth_token = r2mcp_auth_token_random ();
+		ss->auth_token_generated = true;
+		if (!ss->auth_token) {
+			R_LOG_ERROR ("Failed to generate r2mcp HTTP bearer token");
+		}
+	}
+#if !R2MCP_HAS_HTTP_HEADERS
+	if (R_STR_ISNOTEMPTY (ss->auth_token)) {
+		R_LOG_WARN ("r2mcp.auth requires radare2 ABI >= 91");
+		R_FREE (ss->auth_token);
+	}
+#endif
 	ss->sandbox = r2mcp_cfg_get_dup (core, "r2mcp.sandbox");
 	ss->sandbox_grain = r2mcp_cfg_get_dup (core, "r2mcp.sandbox.grain");
 	ss->logfile = r2mcp_cfg_get_dup (core, "r2mcp.logfile");
@@ -283,6 +300,12 @@ static bool r2mcp_http_start(RCore *core, R2mcpData *data) {
 		data->http_thread = NULL;
 		return false;
 	}
+	if (R_STR_ISNOTEMPTY (data->ss->auth_token)) {
+		r_cons_printf (core->cons, "r2mcp HTTP bearer auth enabled\n");
+		if (data->ss->auth_token_generated) {
+			r_cons_printf (core->cons, "r2mcp HTTP bearer token: %s\n", data->ss->auth_token);
+		}
+	}
 	r_cons_printf (core->cons, "r2mcp HTTP server starting on http://localhost:%s/\n", data->http_port);
 	return true;
 }
@@ -313,6 +336,7 @@ static void r2mcp_http_status(RCore *core, R2mcpData *data) {
 	if (ss && R_STR_ISNOTEMPTY (ss->svc_baseurl)) {
 		r_cons_printf (core->cons, "svc: %s\n", ss->svc_baseurl);
 	}
+	r_cons_printf (core->cons, "auth: %s\n", (ss && R_STR_ISNOTEMPTY (ss->auth_token))? "enabled": "disabled");
 	r_cons_printf (core->cons, "content: %s\n", r_config_get (core->config, "r2mcp.content"));
 	r_cons_printf (core->cons, "readonly: %s\n", r_str_bool (r_config_get_b (core->config, "r2mcp.readonly")));
 	r_cons_printf (core->cons, "permissive: %s\n", r_str_bool (r_config_get_b (core->config, "r2mcp.permissive")));
@@ -341,6 +365,7 @@ static void r2mcp_print_config(RCore *core) {
 		"r2mcp.port\n"
 		"r2mcp.log\n"
 		"r2mcp.logfile\n"
+		"r2mcp.auth\n"
 		"r2mcp.approve\n"
 		"r2mcp.svc\n"
 		"r2mcp.yolo\n"

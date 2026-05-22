@@ -94,9 +94,27 @@ the `X-Session-ID` request header:
 r2mcp -H 8765 -X 8:600
 ```
 
+HTTP bearer authentication is enabled with `-a <token>`. Clients must send
+`Authorization: Bearer <token>` on every `GET` and `POST` request:
+
+```bash
+r2mcp -H 8765 -a my-secret-token
+```
+
+Use `-A` or `-a random` to generate a random token at startup. The generated
+token is printed once on stderr:
+
+```bash
+r2mcp -H 8765 -A
+```
+
+The same token setting can be supplied with `R2MCP_AUTH_TOKEN`; set it to
+`random` to generate one.
+
 `-X` requires radare2 ABI 91 or newer because older radare2 headers do not
 expose the HTTP request header API. With older ABIs, `-H` still works as a
-single shared HTTP server, but `-X` is ignored.
+single shared HTTP server, but `-X` is ignored. Bearer authentication also
+requires this header API.
 
 ### r2 Core Plugin Mode
 
@@ -118,7 +136,7 @@ Useful subcommands:
 - `r2mcp config` lists the `r2mcp.*` eval keys.
 
 The plugin registers eval keys for the same server options exposed by the CLI:
-`r2mcp.port`, `r2mcp.log`, `r2mcp.logfile`, `r2mcp.approve`, `r2mcp.svc`,
+`r2mcp.port`, `r2mcp.log`, `r2mcp.logfile`, `r2mcp.auth`, `r2mcp.approve`, `r2mcp.svc`,
 `r2mcp.yolo`, `r2mcp.mini`, `r2mcp.permissive`, `r2mcp.run`,
 `r2mcp.readonly`, `r2mcp.ignore_analysis`, `r2mcp.prompts`,
 `r2mcp.prompts.dir`, `r2mcp.sandbox`, `r2mcp.sandbox.grain`,

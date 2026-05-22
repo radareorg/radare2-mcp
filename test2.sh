@@ -67,6 +67,22 @@ response_by_id() {
 	jq -c --argjson id "$id" 'select(.id == $id)' "$resp" | tail -n 1
 }
 
+curl_code() {
+	local out="$1"
+	local code
+	local rc
+	shift
+	set +e
+	code=$(curl -s -o "$out" -w "%{http_code}" "$@" 2>/dev/null)
+	rc=$?
+	set -e
+	if [ "$rc" -ne 0 ]; then
+		printf '000'
+	else
+		printf '%s' "$code"
+	fi
+}
+
 fetch_catalog() {
 	local out="$1"
 	shift
@@ -521,6 +537,64 @@ run_http_sandbox_grain_regression() {
 	}
 }
 
+run_http_auth_regression() {
+	local port="19393"
+	local token="test-token"
+	local body="$TMPDIR/http-auth.body"
+	local server_log="$TMPDIR/http-auth.server.log"
+	local server_out="$TMPDIR/http-auth.server.out"
+	local server_pid=""
+	local ready="0"
+	local code
+	local i="0"
+
+	if "$BIN" -h 2>&1 | grep -q "requires radare2 ABI"; then
+		echo "skip HTTP auth regression: missing HTTP header API"
+		return
+	fi
+
+	"$BIN" -H "$port" -n -a "$token" > "$server_out" 2>"$server_log" &
+	server_pid=$!
+	trap 'kill "$server_pid" 2>/dev/null || true; wait "$server_pid" 2>/dev/null || true; rm -rf "$TMPDIR"' EXIT INT TERM
+	while [ "$i" -lt 20 ]; do
+		code=$(curl_code "$body" "http://127.0.0.1:$port/")
+		if [ "$code" != "000" ]; then
+			ready="1"
+			break
+		fi
+		i=$((i + 1))
+		sleep 1
+	done
+	[ "$ready" = "1" ] || fail "HTTP auth: failed to start local r2mcp HTTP server"
+
+	code=$(curl_code "$body" "http://127.0.0.1:$port/")
+	[ "$code" = "401" ] || fail "HTTP auth: missing token should return 401, got $code"
+
+	code=$(curl_code "$body" -H "Authorization: Bearer wrong" "http://127.0.0.1:$port/")
+	[ "$code" = "401" ] || fail "HTTP auth: wrong token should return 401, got $code"
+
+	code=$(curl_code "$body" -H "Authorization: Bearer $token" "http://127.0.0.1:$port/")
+	[ "$code" = "200" ] || fail "HTTP auth: correct token should allow GET, got $code"
+	jq -e '.name == "r2mcp"' "$body" >/dev/null 2>&1 || fail "HTTP auth: authenticated GET body should be JSON info"
+
+	code=$(curl_code "$body" -X OPTIONS "http://127.0.0.1:$port/")
+	[ "$code" = "200" ] || fail "HTTP auth: OPTIONS preflight should not require auth, got $code"
+
+	code=$(curl_code "$body" \
+		-H "Authorization: Bearer $token" \
+		-H "Content-Type: application/json" \
+		--data '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{},"clientInfo":{"name":"testsuite","version":"1"}}}' \
+		"http://127.0.0.1:$port/")
+	[ "$code" = "200" ] || fail "HTTP auth: authenticated POST should return 200, got $code"
+	jq -e '.id == 1 and .result.serverInfo.name == "Radare2 MCP Connector"' "$body" >/dev/null 2>&1 || {
+		fail "HTTP auth: authenticated POST should return initialize result"
+	}
+
+	kill "$server_pid" 2>/dev/null || true
+	wait "$server_pid" 2>/dev/null || true
+	trap 'rm -rf "$TMPDIR"' EXIT INT TERM
+}
+
 run_sandbox_regressions() {
 	local sb="$TMPDIR/sandbox"
 	local req="$TMPDIR/sandbox.req"
@@ -651,6 +725,7 @@ run_numeric_string_regression
 run_close_file_regression
 run_open_session_regression
 run_http_sandbox_grain_regression
+run_http_auth_regression
 run_sandbox_regressions
 run_command_smoke_regression
 run_command_filter_regression
