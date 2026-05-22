@@ -8,7 +8,7 @@
 #include "utils.inc.c"
 #include "jsonrpc.h"
 
-#if defined(R2_ABIVERSION) && R2_ABIVERSION >= 104
+#if defined(R2_ABIVERSION) && R2_ABIVERSION >= 100
 #define R2MCP_TABLE_NEW(name) r_table_new(name, NULL)
 #else
 #define R2MCP_TABLE_NEW(name) r_table_new(name)
