@@ -291,6 +291,47 @@ char *r2mcp_cmd(ServerState *ss, const char *cmd) {
 	return res;
 }
 
+char *r2mcp_cmd_file(ServerState *ss, const char *file) {
+	if (!ss || !ss->rstate) {
+		return strdup ("Cannot run script files without server state");
+	}
+	if (!ss->enable_run_command_tool) {
+		return strdup ("Cannot run script files in HTTP mode");
+	}
+	RCore *core = ss->rstate->core;
+	if (core && !ss->rstate->own_core) {
+		ss->rstate->file_opened = core->io && core->io->desc;
+	}
+	if (!core || !ss->rstate->file_opened) {
+		return strdup ("Cannot run script files without calling the `open_file` tool first");
+	}
+	r2mcp_log_reset (ss);
+	R_CRITICAL_ENTER (core);
+	bool ok = false;
+#if defined(R2_ABIVERSION) && R2_ABIVERSION >= 103
+	char *res = r_core_cmd_file_str (core, file, &ok);
+#else
+	ok = r_core_cmd_file (core, file);
+	char *res = strdup (ok? "script ok": "script fail");
+#endif
+	R_CRITICAL_LEAVE (core);
+	char *err = r2mcp_log_drain (ss);
+	if (!res) {
+		res = strdup (ok? "script ok": "script fail");
+	}
+	if (!ok && R_STR_ISEMPTY (res)) {
+		free (res);
+		res = strdup ("script fail");
+	}
+	if (err) {
+		char *newres = r_str_newf ("%s<log>\n%s\n</log>\n", res, err);
+		free (err);
+		free (res);
+		res = newres;
+	}
+	return res;
+}
+
 void r2mcp_log_pub(ServerState *ss, const char *msg) {
 	r2mcp_log (ss, msg);
 }

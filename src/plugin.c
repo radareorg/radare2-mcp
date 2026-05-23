@@ -57,7 +57,7 @@ static void r2mcp_config_init(RCore *core) {
 	r2mcp_cfg_set_b (core, "r2mcp.yolo", false, "accept tool calls without supervisor approval and expose dangerous tools");
 	r2mcp_cfg_set_b (core, "r2mcp.mini", false, "expose the minimum r2mcp tool set");
 	r2mcp_cfg_set_b (core, "r2mcp.permissive", false, "allow calling tools not exposed by the current mode");
-	r2mcp_cfg_set_b (core, "r2mcp.run", false, "enable the dangerous run_command and run_javascript tools");
+	r2mcp_cfg_set_b (core, "r2mcp.run", false, "enable the dangerous run_* tools");
 	r2mcp_cfg_set_b (core, "r2mcp.readonly", false, "expose only read-only tools");
 	r2mcp_cfg_set_b (core, "r2mcp.ignore_analysis", false, "ignore the analysis level requested by analyze calls");
 	r2mcp_cfg_set_b (core, "r2mcp.prompts", true, "load r2mcp prompts");
