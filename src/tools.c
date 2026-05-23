@@ -1253,8 +1253,8 @@ static char *tool_run_script(ServerState *ss, RJson *tool_args) {
 	if (err) {
 		return jsonrpc_error_response (-32603, err, NULL, NULL);
 	}
-	if (!r_file_is_regular (file_path)) {
-		return jsonrpc_error_response (-32603, "Script file does not exist or is not a regular file", NULL, NULL);
+	if (!r_sandbox_check (R_SANDBOX_GRAIN_FILES | R_SANDBOX_GRAIN_DISK)) {
+		return jsonrpc_error_response (-32603, "Sandbox forbids reading script files", NULL, NULL);
 	}
 	return tool_cmd_response (r2mcp_cmd_file (ss, file_path));
 }
@@ -1660,7 +1660,7 @@ ToolSpec tool_specs[] = {
 	{ "run_javascript", "Executes JavaScript code using radare2's qjs runtime", "{\"type\":\"object\",\"properties\":{\"script\":{\"type\":\"string\",\"description\":\"The JavaScript code to execute\"}},\"required\":[\"script\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP, tool_run_javascript },
 	{ "run_frida_script", "Executes Frida JavaScript code", "{\"type\":\"object\",\"properties\":{\"script\":{\"type\":\"string\",\"description\":\"The script code to execute\"}},\"required\":[\"script\"]}", TOOL_MODE_FRIDA, tool_run_frida_script },
 	{ "run_command", "Executes a raw radare2 command directly", "{\"type\":\"object\",\"properties\":{\"command\":{\"type\":\"string\",\"description\":\"The radare2 command to execute\"}},\"required\":[\"command\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP, tool_run_command },
-	{ "run_script", "Runs a local radare2 command script file. The path must be absolute and within the sandbox.", "{\"type\":\"object\",\"properties\":{\"file_path\":{\"type\":\"string\",\"description\":\"Absolute path to the radare2 script file to execute\"}},\"required\":[\"file_path\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_FRIDA, tool_run_script },
+	{ "run_script", "Runs a local radare2 command script file through r2's command-file API. The path must satisfy MCP path policy and the active r2 sandbox.", "{\"type\":\"object\",\"properties\":{\"file_path\":{\"type\":\"string\",\"description\":\"Absolute path to the radare2 script file to execute\"}},\"required\":[\"file_path\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_FRIDA, tool_run_script },
 	{ "list_sessions", "Lists available r2agent sessions in JSON format", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_HTTP | TOOL_MODE_RO | TOOL_MODE_SESSIONS, tool_list_sessions },
 	{ "open_session", "Connects to a remote r2 instance using r2pipe API", "{\"type\":\"object\",\"properties\":{\"url\":{\"type\":\"string\",\"description\":\"URL of the remote r2 instance to connect to\"}},\"required\":[\"url\"]}", TOOL_MODE_NORMAL | TOOL_MODE_HTTP | TOOL_MODE_SESSIONS, tool_open_session },
 	{ "close_session", "Close the currently open remote session", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_HTTP | TOOL_MODE_SESSIONS, tool_close_session },
