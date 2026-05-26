@@ -357,6 +357,24 @@ run_list_functions_without_open_regression() {
 	}
 }
 
+run_session_tools_require_L_regression() {
+	local req="$TMPDIR/session-tools-require-l.req"
+	local resp="$TMPDIR/session-tools-require-l.resp"
+	: > "$req"
+	append_request "$req" 1 initialize '{"capabilities":{},"clientInfo":{"name":"testsuite","version":"1"}}'
+	append_notification "$req" notifications/initialized '{}'
+	append_tool_call "$req" 2 list_sessions '{}'
+	append_tool_call "$req" 3 open_session "$(jq -cn '{url:"http://127.0.0.1:1"}')"
+	append_tool_call "$req" 4 close_session '{}'
+	run_session "$req" "$resp" -p
+
+	for id in 2 3 4; do
+		printf '%s\n' "$(response_by_id "$resp" "$id")" | jq -e '.error.code == -32603 and (.error.message | contains("-L"))' >/dev/null 2>&1 || {
+			fail "session tool without -L should be rejected even in permissive mode, got $(response_by_id "$resp" "$id")"
+		}
+	done
+}
+
 run_open_file_regressions() {
 	local req="$TMPDIR/open.req"
 	local resp="$TMPDIR/open.resp"
@@ -709,6 +727,7 @@ printf '?e R2MCP_SCRIPT_ONE\r\n# comment\r\n?e R2MCP_SCRIPT_TWO\r\n' > "$TEST_SC
 NORMAL_CATALOG="$TMPDIR/catalog.normal.json"
 DANGEROUS_CATALOG="$TMPDIR/catalog.dangerous.json"
 SESSION_CATALOG="$TMPDIR/catalog.sessions.json"
+SESSION_ONLY_CATALOG="$TMPDIR/catalog.sessions.only.json"
 NORMAL_RUNTIME_CATALOG="$TMPDIR/catalog.normal.runtime.json"
 DANGEROUS_ONLY="$TMPDIR/catalog.dangerous.only.json"
 
@@ -723,6 +742,16 @@ jq -e '
 	and all(.[]; ((.inputSchema.properties // {}) | type) == "object")
 	and all(.[]; ((.inputSchema.required // []) | type) == "array")
 ' "$NORMAL_CATALOG" >/dev/null
+jq -e 'map(.name) as $names
+	| ($names | index("list_sessions") | not)
+	and ($names | index("open_session") | not)
+	and ($names | index("close_session") | not)' "$NORMAL_CATALOG" >/dev/null
+jq -e 'map(.name) as $names
+	| ($names | index("list_sessions"))
+	and ($names | index("open_session"))
+	and ($names | index("close_session"))' "$SESSION_CATALOG" >/dev/null
+jq '[.[] | select(.name == "list_sessions" or .name == "open_session" or .name == "close_session")]' \
+	"$SESSION_CATALOG" > "$SESSION_ONLY_CATALOG"
 jq '[.[] | select(.name != "open_file" and .name != "list_sessions" and .name != "open_session" and .name != "close_session")]' \
 	"$NORMAL_CATALOG" > "$NORMAL_RUNTIME_CATALOG"
 jq --slurpfile normal "$NORMAL_CATALOG" '
@@ -731,13 +760,14 @@ jq --slurpfile normal "$NORMAL_CATALOG" '
 jq -e 'map(.name) | index("run_command") and index("run_javascript") and index("run_script")' "$DANGEROUS_CATALOG" >/dev/null
 echo "normal tools: $(jq 'length' "$NORMAL_RUNTIME_CATALOG")"
 echo "dangerous-only tools: $(jq 'length' "$DANGEROUS_ONLY")"
-echo "session tools: $(jq 'length' "$SESSION_CATALOG")"
+echo "session tools: $(jq 'length' "$SESSION_ONLY_CATALOG")"
 
 run_dynamic_suite "$NORMAL_RUNTIME_CATALOG" "dynamic-normal" with-open
 run_dynamic_suite "$DANGEROUS_ONLY" "dynamic-dangerous" with-open -r
-run_dynamic_suite "$SESSION_CATALOG" "dynamic-sessions" no-open -L
+run_dynamic_suite "$SESSION_ONLY_CATALOG" "dynamic-sessions" no-open -L
 run_open_file_regressions
 run_list_functions_without_open_regression
+run_session_tools_require_L_regression
 run_repeated_open_file_regression
 run_different_open_file_regression
 run_open_file_baddr_regression

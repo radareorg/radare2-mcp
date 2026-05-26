@@ -257,24 +257,25 @@ static bool tool_allowed_by_runtime_flags(const ServerState *ss, const char *nam
 }
 
 static inline ToolMode current_mode(const ServerState *ss) {
-	if (ss->readonly_mode) {
-		return TOOL_MODE_RO;
-	}
 	ToolMode mode = 0;
-	if (ss->http_mode) {
-		mode |= TOOL_MODE_HTTP;
-	}
-	if (ss->frida_mode) {
-		mode |= TOOL_MODE_FRIDA;
+	if (ss->readonly_mode) {
+		mode |= TOOL_MODE_RO;
+	} else {
+		if (ss->http_mode) {
+			mode |= TOOL_MODE_HTTP;
+		}
+		if (ss->frida_mode) {
+			mode |= TOOL_MODE_FRIDA;
+		}
+		if (ss->minimode) {
+			mode |= TOOL_MODE_MINI;
+		}
+		if (mode == 0) {
+			mode = TOOL_MODE_NORMAL;
+		}
 	}
 	if (ss->use_sessions) {
 		mode |= TOOL_MODE_SESSIONS;
-	}
-	if (ss->minimode) {
-		mode |= TOOL_MODE_MINI;
-	}
-	if (mode == 0) {
-		mode = TOOL_MODE_NORMAL;
 	}
 	return mode;
 }
@@ -380,12 +381,14 @@ char *tools_build_catalog_json(const ServerState *ss, const char *cursor, int pa
 
 void tools_print_table(const ServerState *ss) {
 	RTable *table = R2MCP_TABLE_NEW ("tools");
+	RTableColumnType *s;
+	ToolMode mode;
 	if (!table) {
 		R_LOG_ERROR ("Failed to allocate table");
 		return;
 	}
 
-	RTableColumnType *s = r_table_type ("string");
+	s = r_table_type ("string");
 	if (!s) {
 		R_LOG_WARN ("Table string type unavailable");
 		r_table_free (table);
@@ -396,9 +399,10 @@ void tools_print_table(const ServerState *ss) {
 	r_table_add_column (table, s, "modes", 0);
 	r_table_add_column (table, s, "description", 0);
 
+	mode = current_mode (ss);
 	for (size_t i = 0; tool_specs[i].name; i++) {
 		ToolSpec *t = &tool_specs[i];
-		if (!tool_allowed_by_runtime_flags (ss, t->name) || !tool_allowed_by_whitelist (ss, t->name) || !tool_not_disabled (ss, t->name)) {
+		if (!tool_matches_mode (t, mode) || !tool_allowed_by_runtime_flags (ss, t->name) || !tool_allowed_by_whitelist (ss, t->name) || !tool_not_disabled (ss, t->name)) {
 			continue;
 		}
 		char modes_buf[8];
@@ -1606,6 +1610,12 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 		goto cleanup;
 	}
 
+	// Special-case: close_session
+	if (!strcmp (tool_name, "close_session")) {
+		result = tool_close_session (ss, tool_args);
+		goto cleanup;
+	}
+
 	if (!ss->http_mode && !ss->rstate->file_opened) {
 		if (!strcmp (tool_name, "list_functions")) {
 			result = jsonrpc_tooltext_response ("No file is currently open. Call open_file first, then call list_functions again.");
@@ -1661,9 +1671,9 @@ ToolSpec tool_specs[] = {
 	{ "run_frida_script", "Executes Frida JavaScript code", "{\"type\":\"object\",\"properties\":{\"script\":{\"type\":\"string\",\"description\":\"The script code to execute\"}},\"required\":[\"script\"]}", TOOL_MODE_FRIDA, tool_run_frida_script },
 	{ "run_command", "Executes a raw radare2 command directly", "{\"type\":\"object\",\"properties\":{\"command\":{\"type\":\"string\",\"description\":\"The radare2 command to execute\"}},\"required\":[\"command\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP, tool_run_command },
 	{ "run_script", "Runs a local radare2 command script file through r2's command-file API. The path must satisfy MCP path policy and the active r2 sandbox.", "{\"type\":\"object\",\"properties\":{\"file_path\":{\"type\":\"string\",\"description\":\"Absolute path to the radare2 script file to execute\"}},\"required\":[\"file_path\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_FRIDA, tool_run_script },
-	{ "list_sessions", "Lists available r2agent sessions in JSON format", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_HTTP | TOOL_MODE_RO | TOOL_MODE_SESSIONS, tool_list_sessions },
-	{ "open_session", "Connects to a remote r2 instance using r2pipe API", "{\"type\":\"object\",\"properties\":{\"url\":{\"type\":\"string\",\"description\":\"URL of the remote r2 instance to connect to\"}},\"required\":[\"url\"]}", TOOL_MODE_NORMAL | TOOL_MODE_HTTP | TOOL_MODE_SESSIONS, tool_open_session },
-	{ "close_session", "Close the currently open remote session", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_HTTP | TOOL_MODE_SESSIONS, tool_close_session },
+	{ "list_sessions", "Lists available r2agent sessions in JSON format", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_SESSIONS, tool_list_sessions },
+	{ "open_session", "Connects to a remote r2 instance using r2pipe API", "{\"type\":\"object\",\"properties\":{\"url\":{\"type\":\"string\",\"description\":\"URL of the remote r2 instance to connect to\"}},\"required\":[\"url\"]}", TOOL_MODE_SESSIONS, tool_open_session },
+	{ "close_session", "Close the currently open remote session", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_SESSIONS, tool_close_session },
 	{ "close_file", "Close the currently open file", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL, tool_close_file },
 	{ "list_functions", "Lists all functions discovered during analysis", "{\"type\":\"object\",\"properties\":{\"only_named\":{\"type\":\"boolean\",\"description\":\"If true, only list functions with named symbols (excludes functions with numeric suffixes like sym.func.1000016c8)\"},\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"},\"count\":{\"type\":\"boolean\",\"description\":\"If true, return only the number of matching results instead of the full list\"},\"start\":{\"type\":\"integer\",\"description\":\"Starting index for pagination (default: 0)\"},\"max_length\":{\"type\":\"integer\",\"description\":\"Maximum number of results to return, -1 for all (default: 50)\"}}}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO, tool_list_functions },
 	{ "list_functions_tree", "Lists functions and successors (aflmu)", "{\"type\":\"object\",\"properties\":{\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"},\"count\":{\"type\":\"boolean\",\"description\":\"If true, return only the number of matching results instead of the full list\"}}}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO, tool_list_functions_tree },
