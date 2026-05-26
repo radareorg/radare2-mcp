@@ -10,6 +10,7 @@ typedef enum {
 	TOOL_MODE_RO = 1 << 3,
 	TOOL_MODE_SESSIONS = 1 << 4,
 	TOOL_MODE_FRIDA = 1 << 5,
+	TOOL_MODE_EXEC = 1 << 6,
 } ToolMode;
 
 // Tool handler signature: returns heap-allocated JSON string describing
@@ -42,5 +43,8 @@ bool tools_is_tool_allowed(const ServerState *ss, const char *name);
 char *tools_call(ServerState *ss, const char *tool_name, RJson *args);
 
 // Print a human friendly table of available tools for the current mode
-// Columns: name | mini-mode (yes/no) | description
+// Columns: name | modes | description
 void tools_print_table(const ServerState *ss);
+
+// Print a legend for the modes column.
+void tools_print_mode_help(void);

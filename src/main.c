@@ -42,7 +42,7 @@ void r2mcp_help(void) {
 		" -a [token] require HTTP Authorization: Bearer [token] (use 'random' to generate)\n"
 		" -c [cmd]   run those commands before entering the mcp loop\n"
 		" -d [pdc]   select a different decompiler (pdc by default)\n"
-		" -D [tool]  disable the specified tool (repeatable)\n"
+		" -E [tool]  exclude the specified tool (repeatable)\n"
 		" -e [tool]  enable only the specified tool (repeatable)\n"
 		" -g [grain] sandbox grain mask (disk,files,exec,socket,network,environ,all,none)\n"
 		" -h         show this help\n"
@@ -59,7 +59,7 @@ void r2mcp_help(void) {
 		" -R         enable read-only mode (expose only non-mutating tools)\n"
 		" -s [dir]   enable sandbox mode; only allow files under [dir]\n"
 		" -S [url]   enable supervisor control; connect to svc at [url]\n"
-		" -t         list available tools and exit\n"
+		" -t         list available tools and exit (-ht for mode legend)\n"
 		" -T [tests] run DSL tests and exit\n"
 		" -u [url]   use remote r2 webserver base URL (HTTP r2pipe client mode)\n"
 		" -v         show version\n"
@@ -79,12 +79,14 @@ void r2mcp_version(void) {
 int main(int argc, const char **argv) {
 	return r2mcp_main (argc, argv);
 }
+
 /* Moved from r2mcp.c to isolate main concerns here */
 int r2mcp_main(int argc, const char **argv) {
 	bool minimode = false;
 	bool enable_run_command_tool = false;
 	bool readonly_mode = false;
 	bool list_tools = false;
+	bool show_help = false;
 	char *sandbox_grain_msg = NULL;
 	RList *cmds = r_list_newf (free);
 	/* Whitelist of enabled tool names (populated via repeated -e flags) */
@@ -113,7 +115,7 @@ int r2mcp_main(int argc, const char **argv) {
 	const char *dsl_tests = NULL;
 	RList *disabled_tools = NULL;
 	RGetopt opt;
-	r_getopt_init (&opt, argc, argv, "AC:a:H:hmvpd:nc:u:g:l:s:rite:D:RT:S:P:NLX:");
+	r_getopt_init (&opt, argc, argv, "AC:a:E:H:hmvtpd:nc:u:g:l:s:rite:RT:S:P:NLX:");
 	int c;
 	while ((c = r_getopt_next (&opt)) != -1) {
 		switch (c) {
@@ -135,8 +137,8 @@ int r2mcp_main(int argc, const char **argv) {
 			}
 			break;
 		case 'h':
-			r2mcp_help ();
-			return 0;
+			show_help = true;
+			break;
 		case 'H':
 			free (http_server_port);
 			http_server_port = strdup (opt.arg);
@@ -220,7 +222,7 @@ int r2mcp_main(int argc, const char **argv) {
 				r_list_append (enabled_tools, strdup (opt.arg));
 			}
 			break;
-		case 'D':
+		case 'E':
 			if (opt.arg) {
 				if (!disabled_tools) {
 					disabled_tools = r_list_newf (free);
@@ -260,6 +262,15 @@ int r2mcp_main(int argc, const char **argv) {
 			R_LOG_ERROR ("Invalid flag -%c", c);
 			return 1;
 		}
+	}
+
+	if (show_help) {
+		if (list_tools) {
+			tools_print_mode_help ();
+		} else {
+			r2mcp_help ();
+		}
+		return 0;
 	}
 
 	/* Handle environment variable for prompts directory */
@@ -360,9 +371,7 @@ int r2mcp_main(int argc, const char **argv) {
 	sandbox_grain_msg = r_str_newf ("sandbox grain: %s", r2mcp_effective_sandbox_grain (&ss));
 	r2mcp_log_pub (&ss, sandbox_grain_msg);
 	free (sandbox_grain_msg);
-	/* Initialize registries */
 	if (list_tools) {
-		/* Print tools and exit early */
 		tools_print_table (&ss);
 		return 0;
 	}

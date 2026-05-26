@@ -246,18 +246,11 @@ static bool tool_not_disabled(const ServerState *ss, const char *name) {
 	return true;
 }
 
-static bool tool_allowed_by_runtime_flags(const ServerState *ss, const char *name) {
-	if (!name) {
-		return false;
-	}
-	if (r_str_startswith (name, "run_") && (!ss || !ss->enable_run_command_tool)) {
-		return false;
-	}
-	return true;
-}
-
 static inline ToolMode current_mode(const ServerState *ss) {
 	ToolMode mode = 0;
+	if (!ss) {
+		return TOOL_MODE_NORMAL;
+	}
 	if (ss->readonly_mode) {
 		mode |= TOOL_MODE_RO;
 	} else {
@@ -277,22 +270,80 @@ static inline ToolMode current_mode(const ServerState *ss) {
 	if (ss->use_sessions) {
 		mode |= TOOL_MODE_SESSIONS;
 	}
+	if (ss->enable_run_command_tool) {
+		mode |= TOOL_MODE_EXEC;
+	}
 	return mode;
 }
 
+static bool tool_matches_required_modes(const ToolSpec *t, ToolMode mode) {
+	return !(t->modes & TOOL_MODE_EXEC) || (mode & TOOL_MODE_EXEC);
+}
+
 static bool tool_matches_mode(const ToolSpec *t, ToolMode mode) {
-	return (t->modes & mode) != 0;
+	if (!tool_matches_required_modes (t, mode)) {
+		return false;
+	}
+	return (t->modes & mode & ~TOOL_MODE_EXEC) != 0;
+}
+
+static ToolSpec *tool_spec_by_name(const char *name) {
+	size_t i;
+	if (!name) {
+		return NULL;
+	}
+	for (i = 0; tool_specs[i].name; i++) {
+		ToolSpec *t = &tool_specs[i];
+		if (!strcmp (t->name, name)) {
+			return t;
+		}
+	}
+	return NULL;
+}
+
+typedef struct {
+	char flag;
+	ToolMode mode;
+	const char *name;
+	const char *selector;
+	const char *description;
+} ToolModeHelp;
+
+static const ToolModeHelp tool_mode_help[] = {
+	{ 'M', TOOL_MODE_MINI, "mini", "-m", "minimal local tool subset" },
+	{ 'H', TOOL_MODE_HTTP, "http", "-u [url]", "remote r2 webserver client tools" },
+	{ 'F', TOOL_MODE_FRIDA, "frida", "frida://", "Frida target/process tools" },
+	{ 'R', TOOL_MODE_RO, "readonly", "-R", "non-mutating tools; overrides N/M/H/F selection" },
+	{ 'S', TOOL_MODE_SESSIONS, "sessions", "-L", "session management tools; additive" },
+	{ 'X', TOOL_MODE_EXEC, "exec", "-r", "permit run_* tools" },
+	{ 'N', TOOL_MODE_NORMAL, "normal", "default", "standard local radare2 tools" },
+	{ 0, 0, NULL, NULL, NULL }
+};
+
+static void tool_modes_string(int modes, char *buf, size_t len) {
+	size_t p = 0;
+	size_t i;
+	if (!buf || len < 1) {
+		return;
+	}
+	for (i = 0; tool_mode_help[i].flag && p + 1 < len; i++) {
+		if (modes & tool_mode_help[i].mode) {
+			buf[p++] = tool_mode_help[i].flag;
+		}
+	}
+	buf[p] = '\0';
 }
 
 static RList *tools_filtered_for_mode(const ServerState *ss) {
 	ToolMode mode = current_mode (ss);
 	RList *out = r_list_new ();
+	size_t i;
 	if (!out) {
 		return NULL;
 	}
-	for (size_t i = 0; tool_specs[i].name; i++) {
+	for (i = 0; tool_specs[i].name; i++) {
 		ToolSpec *t = &tool_specs[i];
-		if (tool_matches_mode (t, mode) && tool_allowed_by_runtime_flags (ss, t->name) && tool_allowed_by_whitelist (ss, t->name) && tool_not_disabled (ss, t->name)) {
+		if (tool_matches_mode (t, mode) && tool_allowed_by_whitelist (ss, t->name) && tool_not_disabled (ss, t->name)) {
 			r_list_append (out, t); // reference only
 		}
 	}
@@ -300,29 +351,29 @@ static RList *tools_filtered_for_mode(const ServerState *ss) {
 }
 
 bool tools_is_tool_allowed(const ServerState *ss, const char *name) {
+	ToolMode mode;
+	ToolSpec *t;
 	if (!name) {
 		return false;
 	}
-	if (!tool_allowed_by_runtime_flags (ss, name)) {
+	mode = current_mode (ss);
+	t = tool_spec_by_name (name);
+	if (t && !tool_matches_required_modes (t, mode)) {
 		return false;
 	}
-	if (ss->permissive_tools) {
+	if (ss && ss->permissive_tools) {
 		return true;
+	}
+	if (!t) {
+		return false;
 	}
 	if (!tool_not_disabled (ss, name)) {
 		return false;
 	}
-	ToolMode mode = current_mode (ss);
-	for (size_t i = 0; tool_specs[i].name; i++) {
-		ToolSpec *t = &tool_specs[i];
-		if (!strcmp (t->name, name)) {
-			if (!tool_allowed_by_whitelist (ss, name)) {
-				return false;
-			}
-			return tool_matches_mode (t, mode);
-		}
+	if (!tool_allowed_by_whitelist (ss, name)) {
+		return false;
 	}
-	return false;
+	return tool_matches_mode (t, mode);
 }
 
 char *tools_build_catalog_json(const ServerState *ss, const char *cursor, int page_size) {
@@ -379,10 +430,22 @@ char *tools_build_catalog_json(const ServerState *ss, const char *cursor, int pa
 	return r_strbuf_drain (sb);
 }
 
+void tools_print_mode_help(void) {
+	size_t i;
+	printf ("\nTool mode flags:\n");
+	printf ("  The modes column uses these letters. Multiple letters mean a tool belongs to multiple modes.\n");
+	for (i = 0; tool_mode_help[i].flag; i++) {
+		const ToolModeHelp *mh = &tool_mode_help[i];
+		printf ("  %c %-8s %-10s %s\n", mh->flag, mh->name, mh->selector, mh->description);
+	}
+	printf ("Use -e to include only named tools, -E to exclude named tools, and -p to permit bypassing tool availability checks\n");
+}
+
 void tools_print_table(const ServerState *ss) {
 	RTable *table = R2MCP_TABLE_NEW ("tools");
 	RTableColumnType *s;
 	ToolMode mode;
+	size_t i;
 	if (!table) {
 		R_LOG_ERROR ("Failed to allocate table");
 		return;
@@ -400,32 +463,13 @@ void tools_print_table(const ServerState *ss) {
 	r_table_add_column (table, s, "description", 0);
 
 	mode = current_mode (ss);
-	for (size_t i = 0; tool_specs[i].name; i++) {
+	for (i = 0; tool_specs[i].name; i++) {
 		ToolSpec *t = &tool_specs[i];
-		if (!tool_matches_mode (t, mode) || !tool_allowed_by_runtime_flags (ss, t->name) || !tool_allowed_by_whitelist (ss, t->name) || !tool_not_disabled (ss, t->name)) {
+		if (!tool_matches_mode (t, mode) || !tool_allowed_by_whitelist (ss, t->name) || !tool_not_disabled (ss, t->name)) {
 			continue;
 		}
 		char modes_buf[8];
-		int p = 0;
-		if (t->modes & TOOL_MODE_MINI) {
-			modes_buf[p++] = 'M';
-		}
-		if (t->modes & TOOL_MODE_HTTP) {
-			modes_buf[p++] = 'H';
-		}
-		if (t->modes & TOOL_MODE_FRIDA) {
-			modes_buf[p++] = 'F';
-		}
-		if (t->modes & TOOL_MODE_RO) {
-			modes_buf[p++] = 'R';
-		}
-		if (t->modes & TOOL_MODE_SESSIONS) {
-			modes_buf[p++] = 'S';
-		}
-		if (t->modes & TOOL_MODE_NORMAL) {
-			modes_buf[p++] = 'N';
-		}
-		modes_buf[p] = '\0';
+		tool_modes_string (t->modes, modes_buf, sizeof (modes_buf));
 		const char *desc = t->description? t->description: "";
 		r_table_add_rowf (table, "sss", t->name, modes_buf, desc);
 	}
@@ -1667,10 +1711,10 @@ cleanup:
 }
 ToolSpec tool_specs[] = {
 	{ "open_file", "Opens a binary file with radare2 for analysis <think>Call this tool before any other one from r2mcp. Use an absolute file_path</think>", "{\"type\":\"object\",\"properties\":{\"file_path\":{\"type\":\"string\",\"description\":\"Path to the file to open\"},\"baddr\":{\"type\":\"string\",\"description\":\"Optional base address for PIE binaries, same as radare2 -B (for example 0x400000)\"}},\"required\":[\"file_path\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI, NULL },
-	{ "run_javascript", "Executes JavaScript code using radare2's qjs runtime", "{\"type\":\"object\",\"properties\":{\"script\":{\"type\":\"string\",\"description\":\"The JavaScript code to execute\"}},\"required\":[\"script\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP, tool_run_javascript },
-	{ "run_frida_script", "Executes Frida JavaScript code", "{\"type\":\"object\",\"properties\":{\"script\":{\"type\":\"string\",\"description\":\"The script code to execute\"}},\"required\":[\"script\"]}", TOOL_MODE_FRIDA, tool_run_frida_script },
-	{ "run_command", "Executes a raw radare2 command directly", "{\"type\":\"object\",\"properties\":{\"command\":{\"type\":\"string\",\"description\":\"The radare2 command to execute\"}},\"required\":[\"command\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP, tool_run_command },
-	{ "run_script", "Runs a local radare2 command script file through r2's command-file API. The path must satisfy MCP path policy and the active r2 sandbox.", "{\"type\":\"object\",\"properties\":{\"file_path\":{\"type\":\"string\",\"description\":\"Absolute path to the radare2 script file to execute\"}},\"required\":[\"file_path\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_FRIDA, tool_run_script },
+	{ "run_javascript", "Executes JavaScript code using radare2's qjs runtime", "{\"type\":\"object\",\"properties\":{\"script\":{\"type\":\"string\",\"description\":\"The JavaScript code to execute\"}},\"required\":[\"script\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_EXEC, tool_run_javascript },
+	{ "run_frida_script", "Executes Frida JavaScript code", "{\"type\":\"object\",\"properties\":{\"script\":{\"type\":\"string\",\"description\":\"The script code to execute\"}},\"required\":[\"script\"]}", TOOL_MODE_FRIDA | TOOL_MODE_EXEC, tool_run_frida_script },
+	{ "run_command", "Executes a raw radare2 command directly", "{\"type\":\"object\",\"properties\":{\"command\":{\"type\":\"string\",\"description\":\"The radare2 command to execute\"}},\"required\":[\"command\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_EXEC, tool_run_command },
+	{ "run_script", "Runs a local radare2 command script file through r2's command-file API. The path must satisfy MCP path policy and the active r2 sandbox.", "{\"type\":\"object\",\"properties\":{\"file_path\":{\"type\":\"string\",\"description\":\"Absolute path to the radare2 script file to execute\"}},\"required\":[\"file_path\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_FRIDA | TOOL_MODE_EXEC, tool_run_script },
 	{ "list_sessions", "Lists available r2agent sessions in JSON format", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_SESSIONS, tool_list_sessions },
 	{ "open_session", "Connects to a remote r2 instance using r2pipe API", "{\"type\":\"object\",\"properties\":{\"url\":{\"type\":\"string\",\"description\":\"URL of the remote r2 instance to connect to\"}},\"required\":[\"url\"]}", TOOL_MODE_SESSIONS, tool_open_session },
 	{ "close_session", "Close the currently open remote session", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_SESSIONS, tool_close_session },

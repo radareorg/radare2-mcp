@@ -8,6 +8,34 @@ BIN="src/r2mcp"
 
 echo "== List tools =="
 ${BIN} -t | sed -n '1,10p'
+OUT=$(${BIN} -t)
+if printf '%s\n' "$OUT" | grep -q '^run_command[[:space:]]'; then
+	echo "run_command must stay hidden without -r"
+	exit 1
+fi
+OUT=$(${BIN} -rt)
+printf '%s\n' "$OUT" | grep -E -q '^run_command[[:space:]]+[A-Z]*X[A-Z]*[[:space:]]'
+
+echo "== Help + list tools =="
+for args in "-ht" "-th" "-t -h" "-h -t"; do
+	OUT=$(${BIN} $args)
+	printf '%s\n' "$OUT" | grep -q "Tool mode flags"
+	printf '%s\n' "$OUT" | grep -q "M mini"
+	printf '%s\n' "$OUT" | grep -q "S sessions"
+	printf '%s\n' "$OUT" | grep -q "X exec"
+	if printf '%s\n' "$OUT" | grep -q "Available tools for selected mode:"; then
+		echo "-ht must not list the selected-mode tools"
+		exit 1
+	fi
+	if printf '%s\n' "$OUT" | grep -q "name[[:space:]]*modes[[:space:]]*description"; then
+		echo "-ht must not print the tools table"
+		exit 1
+	fi
+	if printf '%s\n' "$OUT" | grep -q "Tools by mode:"; then
+		echo "-ht must not list tools by mode"
+		exit 1
+	fi
+done
 
 echo "== DSL: open_file + listFunctions (no -p) =="
 ${BIN} -T 'open_file file_path="/bin/ls"; list_functions only_named=true; close_file' 2>&1 | sed -n '1,8p'
