@@ -111,7 +111,7 @@ static int run_statement(ServerState *ss, char *stmt, RCore *core) {
 		// parse it (parser does not take ownership; keep jsonbuf alive until free)
 		args = r_json_parse (jsonbuf);
 		if (!args) {
-			printf ("[DSL] Failed to parse arguments for tool %s\n", tool);
+			fprintf (stderr, "[DSL] Failed to parse arguments for tool %s\n", tool);
 			free (jsonbuf);
 			return -1;
 		}
@@ -140,14 +140,14 @@ static int run_statement(ServerState *ss, char *stmt, RCore *core) {
 				r_cons_printf (core->cons, "(no text in response)\n");
 			}
 		} else {
-			printf ("[DSL] %s -> %s\n", tool, res);
+			fprintf (stderr, "[DSL] %s -> %s\n", tool, res);
 		}
 		free (res);
 	} else {
 		if (core) {
 			r_cons_printf (core->cons, "(no result)\n");
 		} else {
-			printf ("[DSL] %s -> (no result)\n", tool);
+			fprintf (stderr, "[DSL] %s -> (no result)\n", tool);
 		}
 	}
 	free (jsonbuf);

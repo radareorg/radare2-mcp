@@ -10,14 +10,14 @@ echo "== List tools =="
 ${BIN} -t | sed -n '1,10p'
 
 echo "== DSL: open_file + listFunctions (no -p) =="
-${BIN} -T 'open_file file_path="/bin/ls"; list_functions only_named=true; close_file' | sed -n '1,8p'
+${BIN} -T 'open_file file_path="/bin/ls"; list_functions only_named=true; close_file' 2>&1 | sed -n '1,8p'
 
 echo "== DSL: unquoted value and multiple tools =="
-${BIN} -T 'open_file file_path=/bin/ls; show_headers; get_current_address; close_file' | sed -n '1,12p'
+${BIN} -T 'open_file file_path=/bin/ls; show_headers; get_current_address; close_file' 2>&1 | sed -n '1,12p'
 
 echo "== DSL: ensure error when missing open_file =="
 set +e
-${BIN} -T 'list_functions only_named=true' | grep -q "open_file"
+${BIN} -T 'list_functions only_named=true' 2>&1 | grep -q "open_file"
 STATUS=$?
 set -e
 if [ "${STATUS}" -eq 0 ]; then
