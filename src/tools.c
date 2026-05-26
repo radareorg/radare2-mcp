@@ -1435,7 +1435,12 @@ static char *tool_close_session(ServerState *ss, RJson *tool_args) {
 	return jsonrpc_tooltext_response ("Remote session closed successfully.");
 }
 
-// AITODO: move move into pj API?
+#if R_LIB_ABIVERSION >= 106
+static void pj_append_rjson(PJ *pj, RJson *j) {
+	return pj_rj (pj, j);
+}
+
+#else
 static void pj_append_rjson(PJ *pj, RJson *j) {
 	if (!j) {
 		pj_null (pj);
@@ -1478,6 +1483,7 @@ static void pj_append_rjson(PJ *pj, RJson *j) {
 		break;
 	}
 }
+#endif
 
 static char *check_supervisor_permission(ServerState *ss, const char *tool_name, RJson *tool_args, char **new_tool_name_out, RJson **new_tool_args_out, RJson **parsed_json_out, char **parsed_buf_out) {
 	if (!ss->svc_baseurl) {
