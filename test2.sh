@@ -670,6 +670,35 @@ run_command_smoke_regression() {
 	}
 }
 
+run_command_json_pagination_regression() {
+	local req="$TMPDIR/runcmd_json_page.req"
+	local resp="$TMPDIR/runcmd_json_page.resp"
+	: > "$req"
+
+	append_request "$req" 1 initialize '{"capabilities":{},"clientInfo":{"name":"testsuite","version":"1"}}'
+	append_notification "$req" notifications/initialized '{}'
+	append_tool_call "$req" 2 open_file "$(jq -cn --arg file "$TEST_FILE" '{file_path:$file}')"
+	append_tool_call "$req" 3 run_command '{"command":"iij","page_size":2}'
+	append_tool_call "$req" 4 run_command '{"command":"iij","cursor":"2","page_size":2}'
+	run_session "$req" "$resp" -r -C structured
+
+	printf '%s\n' "$(response_by_id "$resp" 3)" | jq -e '
+		.result.structuredContent
+		| type == "array" and length == 2
+	' >/dev/null 2>&1 || {
+		fail "run_command JSON pagination: expected first page structured array, got $(response_by_id "$resp" 3)"
+	}
+	printf '%s\n' "$(response_by_id "$resp" 3)" | jq -e '.result.pagination.nextCursor == "2"' >/dev/null 2>&1 || {
+		fail "run_command JSON pagination: expected nextCursor=2, got $(response_by_id "$resp" 3)"
+	}
+	printf '%s\n' "$(response_by_id "$resp" 4)" | jq -e '
+		.result.structuredContent
+		| type == "array" and length == 2
+	' >/dev/null 2>&1 || {
+		fail "run_command JSON pagination: expected second page structured array, got $(response_by_id "$resp" 4)"
+	}
+}
+
 run_command_filter_regression() {
 	local req="$TMPDIR/filter.req"
 	local resp="$TMPDIR/filter.resp"
@@ -778,6 +807,7 @@ run_http_sandbox_grain_regression
 run_http_auth_regression
 run_sandbox_regressions
 run_command_smoke_regression
+run_command_json_pagination_regression
 run_command_filter_regression
 run_script_sandbox_regression
 

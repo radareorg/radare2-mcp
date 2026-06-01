@@ -240,6 +240,25 @@ static char *tool_cmd_response_paginated(ServerState *ss, char *res, RJson *tool
 	char *response;
 	R2McpContentMode mode = ss? ss->content_mode: R2MCP_CONTENT_TEXT;
 	pagination_params (tool_args, &cursor, &page_size);
+	char *json_buf = strdup (res? res: "");
+	r_str_trim (json_buf);
+	if (R_STR_ISNOTEMPTY (json_buf) && (*json_buf == '[' || *json_buf == '{')) {
+		RJson *json = r_json_parse (json_buf);
+		if (json) {
+			paginated = paginate_json_value (json, cursor, page_size, &has_more, &next_cursor);
+			r_json_free (json);
+			free (json_buf);
+			free (res);
+			if (!paginated) {
+				paginated = strdup ("");
+			}
+			response = jsonrpc_tool_response_paginated (paginated, paginated, mode, has_more, next_cursor);
+			free (paginated);
+			free (next_cursor);
+			return response;
+		}
+	}
+	free (json_buf);
 	paginated = paginate_text_by_lines (res, cursor, page_size, &has_more, &next_cursor);
 	free (res);
 	if (!paginated) {
@@ -1176,7 +1195,7 @@ static char *tool_run_command(ServerState *ss, RJson *tool_args) {
 	if (!validate_required_string_param (tool_args, "command", &command)) {
 		return jsonrpc_error_missing_param ("command");
 	}
-	return tool_cmd_response (r2mcp_cmd (ss, command));
+	return tool_cmd_response_paginated (ss, r2mcp_cmd (ss, command), tool_args);
 }
 
 static char *tool_run_javascript(ServerState *ss, RJson *tool_args) {
@@ -1234,7 +1253,7 @@ static char *tool_run_script(ServerState *ss, RJson *tool_args) {
 	if (!r_sandbox_check (R_SANDBOX_GRAIN_FILES | R_SANDBOX_GRAIN_DISK)) {
 		return jsonrpc_error_response (-32603, "Sandbox forbids reading script files", NULL, NULL);
 	}
-	return tool_cmd_response (r2mcp_cmd_file (ss, file_path));
+	return tool_cmd_response_paginated (ss, r2mcp_cmd_file (ss, file_path), tool_args);
 }
 
 static char *tool_list_sessions(ServerState *ss, RJson *tool_args) {
@@ -1651,13 +1670,15 @@ cleanup:
 #define TOOL_SCHEMA_LIST "{\"type\":\"object\",\"properties\":{" TOOL_SCHEMA_LIST_PROPS "}}"
 #define TOOL_SCHEMA_LIST_WITH_STRING_PARAM(name, desc) "{\"type\":\"object\",\"properties\":{\"" name "\":{\"type\":\"string\",\"description\":\"" desc "\"}," TOOL_SCHEMA_LIST_PROPS "},\"required\":[\"" name "\"]}"
 #define TOOL_SCHEMA_ADDRESS_PAGE(desc) "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"" desc "\"}," TOOL_SCHEMA_PAGE_PROPS "},\"required\":[\"address\"]}"
+#define TOOL_SCHEMA_COMMAND_PAGE "{\"type\":\"object\",\"properties\":{\"command\":{\"type\":\"string\",\"description\":\"The radare2 command to execute\"}," TOOL_SCHEMA_PAGE_PROPS "},\"required\":[\"command\"]}"
+#define TOOL_SCHEMA_SCRIPT_FILE_PAGE "{\"type\":\"object\",\"properties\":{\"file_path\":{\"type\":\"string\",\"description\":\"Absolute path to the radare2 script file to execute\"}," TOOL_SCHEMA_PAGE_PROPS "},\"required\":[\"file_path\"]}"
 
 ToolSpec tool_specs[] = {
 	{ "open_file", "Opens a binary file with radare2 for analysis <think>Call this tool before any other one from r2mcp. Use an absolute file_path</think>", "{\"type\":\"object\",\"properties\":{\"file_path\":{\"type\":\"string\",\"description\":\"Path to the file to open\"},\"baddr\":{\"type\":\"string\",\"description\":\"Optional base address for PIE binaries, same as radare2 -B (for example 0x400000)\"}},\"required\":[\"file_path\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI, NULL },
 	{ "run_javascript", "Executes JavaScript code using radare2's qjs runtime", "{\"type\":\"object\",\"properties\":{\"script\":{\"type\":\"string\",\"description\":\"The JavaScript code to execute\"}},\"required\":[\"script\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_EXEC, tool_run_javascript },
 	{ "run_frida_script", "Executes Frida JavaScript code", "{\"type\":\"object\",\"properties\":{\"script\":{\"type\":\"string\",\"description\":\"The script code to execute\"}},\"required\":[\"script\"]}", TOOL_MODE_FRIDA | TOOL_MODE_EXEC, tool_run_frida_script },
-	{ "run_command", "Executes a raw radare2 command directly", "{\"type\":\"object\",\"properties\":{\"command\":{\"type\":\"string\",\"description\":\"The radare2 command to execute\"}},\"required\":[\"command\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_EXEC, tool_run_command },
-	{ "run_script", "Runs a local radare2 command script file through r2's command-file API. The path must satisfy MCP path policy and the active r2 sandbox.", "{\"type\":\"object\",\"properties\":{\"file_path\":{\"type\":\"string\",\"description\":\"Absolute path to the radare2 script file to execute\"}},\"required\":[\"file_path\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_FRIDA | TOOL_MODE_EXEC, tool_run_script },
+	{ "run_command", "Executes a raw radare2 command directly", TOOL_SCHEMA_COMMAND_PAGE, TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_EXEC, tool_run_command },
+	{ "run_script", "Runs a local radare2 command script file through r2's command-file API. The path must satisfy MCP path policy and the active r2 sandbox.", TOOL_SCHEMA_SCRIPT_FILE_PAGE, TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_FRIDA | TOOL_MODE_EXEC, tool_run_script },
 	{ "list_sessions", "Lists available r2agent sessions in JSON format", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_SESSIONS, tool_list_sessions },
 	{ "open_session", "Connects to a remote r2 instance using r2pipe API", "{\"type\":\"object\",\"properties\":{\"url\":{\"type\":\"string\",\"description\":\"URL of the remote r2 instance to connect to\"}},\"required\":[\"url\"]}", TOOL_MODE_SESSIONS, tool_open_session },
 	{ "close_session", "Close the currently open remote session", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_SESSIONS, tool_close_session },
