@@ -120,6 +120,7 @@ static bool rjson_get_bool_flag(RJson *args, const char *param_name) {
 }
 
 static char *tool_cmd_response(char *res);
+static char *tool_cmd_response_paginated(char *res, RJson *tool_args);
 static char *filter_lines_by_regex(const char *input, const char *pattern);
 
 // Filter strings forwarded to r2's `~` grep must not contain characters that
@@ -169,12 +170,51 @@ static char *count_response(int n) {
 	return resp;
 }
 
+static void pagination_params(RJson *tool_args, const char **cursor, int *page_size) {
+	*cursor = tool_args? r_json_get_str (tool_args, "cursor"): NULL;
+	*page_size = 0;
+	if (tool_args) {
+		rjson_get_int_param (tool_args, "page_size", page_size);
+	}
+	if (*page_size <= 0) {
+		*page_size = R2MCP_DEFAULT_PAGE_SIZE;
+	}
+	if (*page_size > R2MCP_MAX_PAGE_SIZE) {
+		*page_size = R2MCP_MAX_PAGE_SIZE;
+	}
+}
+
+static int list_line_count(const char *res) {
+	return R_STR_ISEMPTY (res)? 0: r_str_char_count (res, '\n');
+}
+
+static char *filter_list_result(char *res, RJson *tool_args) {
+	const char *filter = tool_args? r_json_get_str (tool_args, "filter"): NULL;
+	if (R_STR_ISNOTEMPTY (filter)) {
+		char *r = filter_lines_by_regex (res, filter);
+		free (res);
+		res = r;
+	}
+	return res;
+}
+
+static char *list_text_response(char *res, RJson *tool_args) {
+	res = filter_list_result (res, tool_args);
+	if (tool_args && rjson_get_bool_flag (tool_args, "count")) {
+		int n = list_line_count (res);
+		free (res);
+		return count_response (n);
+	}
+	return tool_cmd_response_paginated (res, tool_args);
+}
+
 // Shared implementation for list_* tools that share the simple pattern
 // "run a r2 listing command, optionally filter the output by regex, optionally
-// return only a count". Returns a JSON-RPC response string (caller frees).
-static char *list_cmd_with_filter_and_count(ServerState *ss, RJson *tool_args, const char *cmd) {
-	bool count_only = rjson_get_bool_flag (tool_args, "count");
-	const char *filter = r_json_get_str (tool_args, "filter");
+// return only a count, otherwise page the result". Returns a JSON-RPC response
+// string (caller frees).
+static char *list_cmd_response(ServerState *ss, RJson *tool_args, const char *cmd) {
+	bool count_only = tool_args && rjson_get_bool_flag (tool_args, "count");
+	const char *filter = tool_args? r_json_get_str (tool_args, "filter"): NULL;
 	if (count_only && (R_STR_ISEMPTY (filter) || filter_safe_for_r2grep (filter))) {
 		int n = r2_grep_count (ss, cmd, filter);
 		if (n >= 0) {
@@ -182,22 +222,31 @@ static char *list_cmd_with_filter_and_count(ServerState *ss, RJson *tool_args, c
 		}
 	}
 	char *res = r2mcp_cmd (ss, cmd);
-	if (R_STR_ISNOTEMPTY (filter)) {
-		char *r = filter_lines_by_regex (res, filter);
-		free (res);
-		res = r;
-	}
-	if (count_only) {
-		int n = R_STR_ISEMPTY (res)? 0: r_str_char_count (res, '\n');
-		free (res);
-		return count_response (n);
-	}
-	return tool_cmd_response (res);
+	return list_text_response (res, tool_args);
 }
 
 static char *tool_cmd_response(char *res) {
 	char *response = jsonrpc_tooltext_response (res);
 	free (res);
+	return response;
+}
+
+static char *tool_cmd_response_paginated(char *res, RJson *tool_args) {
+	const char *cursor;
+	int page_size;
+	bool has_more = false;
+	char *next_cursor = NULL;
+	char *paginated;
+	char *response;
+	pagination_params (tool_args, &cursor, &page_size);
+	paginated = paginate_text_by_lines (res, cursor, page_size, &has_more, &next_cursor);
+	free (res);
+	if (!paginated) {
+		paginated = strdup ("");
+	}
+	response = jsonrpc_tooltext_response_paginated (paginated, has_more, next_cursor);
+	free (paginated);
+	free (next_cursor);
 	return response;
 }
 
@@ -682,28 +731,16 @@ static char *tool_list_files(ServerState *ss, RJson *tool_args) {
 		return jsonrpc_error_response (-32603, err, NULL, NULL);
 	}
 
-	bool count_only = rjson_get_bool_flag (tool_args, "count");
-	const char *filter = r_json_get_str (tool_args, "filter");
 	// 'ls quotes the path so r2 grep modifiers can't be appended; we filter
 	// and count locally instead.
 	char *cmd = r_str_newf ("'ls -q %s", path);
 	char *res = r2mcp_cmd (ss, cmd);
 	free (cmd);
-	if (R_STR_ISNOTEMPTY (filter)) {
-		char *r = filter_lines_by_regex (res, filter);
-		free (res);
-		res = r;
-	}
-	if (count_only) {
-		int n = R_STR_ISEMPTY (res)? 0: r_str_char_count (res, '\n');
-		free (res);
-		return count_response (n);
-	}
-	return tool_cmd_response (res);
+	return list_text_response (res, tool_args);
 }
 
 static char *tool_list_classes(ServerState *ss, RJson *tool_args) {
-	return list_cmd_with_filter_and_count (ss, tool_args, ss->frida_mode? ":ic": "icqq");
+	return list_cmd_response (ss, tool_args, ss->frida_mode? ":ic": "icqq");
 }
 
 static char *tool_list_methods(ServerState *ss, RJson *tool_args) {
@@ -712,22 +749,10 @@ static char *tool_list_methods(ServerState *ss, RJson *tool_args) {
 		return jsonrpc_error_missing_param ("classname");
 	}
 	const char *prefix = ss->frida_mode? ":": "'";
-	bool count_only = rjson_get_bool_flag (tool_args, "count");
-	const char *filter = r_json_get_str (tool_args, "filter");
 	// The '/: prefixes quote the rest of the line, so r2 grep modifiers
 	// can't be appended. Count and filter locally.
 	char *res = r2mcp_cmdf (ss, "'%sic %s", prefix, classname);
-	if (R_STR_ISNOTEMPTY (filter)) {
-		char *r = filter_lines_by_regex (res, filter);
-		free (res);
-		res = r;
-	}
-	if (count_only) {
-		int n = R_STR_ISEMPTY (res)? 0: r_str_char_count (res, '\n');
-		free (res);
-		return count_response (n);
-	}
-	return tool_cmd_response (res);
+	return list_text_response (res, tool_args);
 }
 
 static char *tool_list_decompilers(ServerState *ss, RJson *tool_args) {
@@ -736,23 +761,23 @@ static char *tool_list_decompilers(ServerState *ss, RJson *tool_args) {
 }
 
 static char *tool_list_functions_tree(ServerState *ss, RJson *tool_args) {
-	return list_cmd_with_filter_and_count (ss, tool_args, "aflmu");
+	return list_cmd_response (ss, tool_args, "aflmu");
 }
 
 static char *tool_list_imports(ServerState *ss, RJson *tool_args) {
-	return list_cmd_with_filter_and_count (ss, tool_args, ss->frida_mode? ":ii": "iiq");
+	return list_cmd_response (ss, tool_args, ss->frida_mode? ":ii": "iiq");
 }
 
 static char *tool_list_exports(ServerState *ss, RJson *tool_args) {
-	return list_cmd_with_filter_and_count (ss, tool_args, ss->frida_mode? ":iE": "iEq");
+	return list_cmd_response (ss, tool_args, ss->frida_mode? ":iE": "iEq");
 }
 
 static char *tool_list_sections(ServerState *ss, RJson *tool_args) {
-	return list_cmd_with_filter_and_count (ss, tool_args, ss->frida_mode? ":iS": "iS;iSS");
+	return list_cmd_response (ss, tool_args, ss->frida_mode? ":iS": "iS;iSS");
 }
 
 static char *tool_list_memory_maps(ServerState *ss, RJson *tool_args) {
-	return list_cmd_with_filter_and_count (ss, tool_args, ss->frida_mode? ":dm": "dm");
+	return list_cmd_response (ss, tool_args, ss->frida_mode? ":dm": "dm");
 }
 
 static char *tool_show_info(ServerState *ss, RJson *tool_args) {
@@ -771,7 +796,7 @@ static char *tool_get_current_address(ServerState *ss, RJson *tool_args) {
 }
 
 static char *tool_list_symbols(ServerState *ss, RJson *tool_args) {
-	return list_cmd_with_filter_and_count (ss, tool_args, ss->frida_mode? ":is": "isq~!func.,!imp.");
+	return list_cmd_response (ss, tool_args, ss->frida_mode? ":is": "isq~!func.,!imp.");
 }
 
 static char *tool_list_entrypoints(ServerState *ss, RJson *tool_args) {
@@ -780,7 +805,7 @@ static char *tool_list_entrypoints(ServerState *ss, RJson *tool_args) {
 }
 
 static char *tool_list_libraries(ServerState *ss, RJson *tool_args) {
-	return list_cmd_with_filter_and_count (ss, tool_args, ss->frida_mode? ":il": "ilq");
+	return list_cmd_response (ss, tool_args, ss->frida_mode? ":il": "ilq");
 }
 
 static char *tool_calculate(ServerState *ss, RJson *tool_args) {
@@ -838,100 +863,38 @@ static char *tool_get_function_prototype(ServerState *ss, RJson *tool_args) {
 }
 
 static char *tool_list_strings(ServerState *ss, RJson *tool_args) {
-	bool count_only = rjson_get_bool_flag (tool_args, "count");
 	const char *filter = r_json_get_str (tool_args, "filter");
 	const char *strings_cmd = ss->frida_mode? ":iz": "izqq";
-	if (count_only && (R_STR_ISEMPTY (filter) || filter_safe_for_r2grep (filter))) {
+	if (rjson_get_bool_flag (tool_args, "count") && (R_STR_ISEMPTY (filter) || filter_safe_for_r2grep (filter))) {
 		int n = r2_grep_count (ss, strings_cmd, filter);
 		if (n >= 0) {
 			return count_response (n);
 		}
 	}
-	if (count_only) {
-		char *res = r2mcp_cmd (ss, strings_cmd);
-		if (R_STR_ISNOTEMPTY (filter)) {
-			char *r = filter_lines_by_regex (res, filter);
-			free (res);
-			res = r;
-		}
-		int n = R_STR_ISEMPTY (res)? 0: r_str_char_count (res, '\n');
-		free (res);
-		return count_response (n);
-	}
-	const char *cursor = r_json_get_str (tool_args, "cursor");
-	int page_size = 0;
-	rjson_get_int_param (tool_args, "page_size", &page_size);
-	if (page_size <= 0) {
-		page_size = R2MCP_DEFAULT_PAGE_SIZE;
-	}
-	if (page_size > R2MCP_MAX_PAGE_SIZE) {
-		page_size = R2MCP_MAX_PAGE_SIZE;
-	}
-
 	char *cmd_result = r2mcp_cmd (ss, strings_cmd);
-	if (R_STR_ISNOTEMPTY (filter)) {
-		char *r = filter_lines_by_regex (cmd_result, filter);
-		free (cmd_result);
-		cmd_result = r;
-	}
-	bool has_more = false;
-	char *next_cursor = NULL;
-	char *paginated = paginate_text_by_lines (cmd_result, cursor, page_size, &has_more, &next_cursor);
-	free (cmd_result);
-	char *response = jsonrpc_tooltext_response_paginated (paginated, has_more, next_cursor);
-	free (paginated);
-	free (next_cursor);
-	return response;
+	return list_text_response (cmd_result, tool_args);
 }
 
 static char *tool_list_all_strings(ServerState *ss, RJson *tool_args) {
-	bool count_only = rjson_get_bool_flag (tool_args, "count");
 	const char *filter = r_json_get_str (tool_args, "filter");
-	if (count_only && (R_STR_ISEMPTY (filter) || filter_safe_for_r2grep (filter))) {
+	if (rjson_get_bool_flag (tool_args, "count") && (R_STR_ISEMPTY (filter) || filter_safe_for_r2grep (filter))) {
 		int n = r2_grep_count (ss, "izzzqq", filter);
 		if (n >= 0) {
 			return count_response (n);
 		}
 	}
-	if (count_only) {
-		char *res = r2mcp_cmd (ss, "izzzqq");
-		if (R_STR_ISNOTEMPTY (filter)) {
-			char *r = filter_lines_by_regex (res, filter);
-			free (res);
-			res = r;
-		}
-		int n = R_STR_ISEMPTY (res)? 0: r_str_char_count (res, '\n');
-		free (res);
-		return count_response (n);
-	}
-	const char *cursor = r_json_get_str (tool_args, "cursor");
-	int page_size = 0;
-	rjson_get_int_param (tool_args, "page_size", &page_size);
-	if (page_size <= 0) {
-		page_size = R2MCP_DEFAULT_PAGE_SIZE;
-	}
-	if (page_size > R2MCP_MAX_PAGE_SIZE) {
-		page_size = R2MCP_MAX_PAGE_SIZE;
-	}
-
 	char *cmd_result = r2mcp_cmd (ss, "izzzqq");
-	if (R_STR_ISNOTEMPTY (filter)) {
-		char *r = filter_lines_by_regex (cmd_result, filter);
+	cmd_result = filter_list_result (cmd_result, tool_args);
+	if (rjson_get_bool_flag (tool_args, "count")) {
+		int n = list_line_count (cmd_result);
 		free (cmd_result);
-		cmd_result = r;
+		return count_response (n);
 	}
 	if (R_STR_ISEMPTY (cmd_result)) {
 		free (cmd_result);
 		cmd_result = r_str_newf ("Error: No strings with regex %s", filter);
 	}
-	bool has_more = false;
-	char *next_cursor = NULL;
-	char *paginated = paginate_text_by_lines (cmd_result, cursor, page_size, &has_more, &next_cursor);
-	free (cmd_result);
-	char *response = jsonrpc_tooltext_response_paginated (paginated, has_more, next_cursor);
-	free (paginated);
-	free (next_cursor);
-	return response;
+	return tool_cmd_response_paginated (cmd_result, tool_args);
 }
 
 static char *tool_analyze(ServerState *ss, RJson *tool_args) {
@@ -1047,24 +1010,7 @@ static char *tool_disassemble_function(ServerState *ss, RJson *tool_args) {
 	if (!validate_address_param (tool_args, "address", &address)) {
 		return jsonrpc_error_missing_param ("address");
 	}
-	const char *cursor = r_json_get_str (tool_args, "cursor");
-	int page_size = 0;
-	rjson_get_int_param (tool_args, "page_size", &page_size);
-	if (page_size <= 0) {
-		page_size = R2MCP_DEFAULT_PAGE_SIZE;
-	}
-	if (page_size > R2MCP_MAX_PAGE_SIZE) {
-		page_size = R2MCP_MAX_PAGE_SIZE;
-	}
-	char *disasm = r2mcp_cmdf (ss, "'@%s'pdf", address);
-	bool has_more = false;
-	char *next_cursor = NULL;
-	char *paginated = paginate_text_by_lines (disasm, cursor, page_size, &has_more, &next_cursor);
-	free (disasm);
-	char *response = jsonrpc_tooltext_response_paginated (paginated, has_more, next_cursor);
-	free (paginated);
-	free (next_cursor);
-	return response;
+	return tool_cmd_response_paginated (r2mcp_cmdf (ss, "'@%s'pdf", address), tool_args);
 }
 
 static char *tool_rename_flag(ServerState *ss, RJson *tool_args) {
@@ -1097,24 +1043,7 @@ static char *tool_decompile_function(ServerState *ss, RJson *tool_args) {
 	if (!validate_address_param (tool_args, "address", &address)) {
 		return jsonrpc_error_missing_param ("address");
 	}
-	const char *cursor = r_json_get_str (tool_args, "cursor");
-	int page_size = 0;
-	rjson_get_int_param (tool_args, "page_size", &page_size);
-	if (page_size <= 0) {
-		page_size = R2MCP_DEFAULT_PAGE_SIZE;
-	}
-	if (page_size > R2MCP_MAX_PAGE_SIZE) {
-		page_size = R2MCP_MAX_PAGE_SIZE;
-	}
-	char *disasm = r2mcp_cmdf (ss, "'@%s'pdc", address);
-	bool has_more = false;
-	char *next_cursor = NULL;
-	char *paginated = paginate_text_by_lines (disasm, cursor, page_size, &has_more, &next_cursor);
-	free (disasm);
-	char *response = jsonrpc_tooltext_response_paginated (paginated, has_more, next_cursor);
-	free (paginated);
-	free (next_cursor);
-	return response;
+	return tool_cmd_response_paginated (r2mcp_cmdf (ss, "'@%s'pdc", address), tool_args);
 }
 
 static char *tool_get_pid(ServerState *ss, RJson *tool_args) {
@@ -1124,7 +1053,7 @@ static char *tool_get_pid(ServerState *ss, RJson *tool_args) {
 
 static char *tool_list_threads(ServerState *ss, RJson *tool_args) {
 	const char *cmd = ss->frida_mode? ":dpt": "dpt";
-	return list_cmd_with_filter_and_count (ss, tool_args, cmd);
+	return list_cmd_response (ss, tool_args, cmd);
 }
 
 static char *tool_dump_registers(ServerState *ss, RJson *tool_args) {
@@ -1158,7 +1087,7 @@ static char *tool_memory_map_here(ServerState *ss, RJson *tool_args) {
 
 static char *tool_list_heap_allocations(ServerState *ss, RJson *tool_args) {
 	const char *cmd = ss->frida_mode? ":dmh": "dmh";
-	return list_cmd_with_filter_and_count (ss, tool_args, cmd);
+	return list_cmd_response (ss, tool_args, cmd);
 }
 
 static char *tool_alloc_memory(ServerState *ss, RJson *tool_args) {
@@ -1715,6 +1644,13 @@ cleanup:
 	free (parsed_buf);
 	return result;
 }
+#define TOOL_SCHEMA_PAGE_PROPS "\"cursor\":{\"type\":\"string\",\"description\":\"Cursor for pagination (line number to start from)\"},\"page_size\":{\"type\":\"integer\",\"description\":\"Number of lines per page (default: 1000, max: 10000)\"}"
+#define TOOL_SCHEMA_FILTER_COUNT_PROPS "\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"},\"count\":{\"type\":\"boolean\",\"description\":\"If true, return only the number of matching results instead of the full list\"}"
+#define TOOL_SCHEMA_LIST_PROPS TOOL_SCHEMA_FILTER_COUNT_PROPS "," TOOL_SCHEMA_PAGE_PROPS
+#define TOOL_SCHEMA_LIST "{\"type\":\"object\",\"properties\":{" TOOL_SCHEMA_LIST_PROPS "}}"
+#define TOOL_SCHEMA_LIST_WITH_STRING_PARAM(name, desc) "{\"type\":\"object\",\"properties\":{\"" name "\":{\"type\":\"string\",\"description\":\"" desc "\"}," TOOL_SCHEMA_LIST_PROPS "},\"required\":[\"" name "\"]}"
+#define TOOL_SCHEMA_ADDRESS_PAGE(desc) "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"" desc "\"}," TOOL_SCHEMA_PAGE_PROPS "},\"required\":[\"address\"]}"
+
 ToolSpec tool_specs[] = {
 	{ "open_file", "Opens a binary file with radare2 for analysis <think>Call this tool before any other one from r2mcp. Use an absolute file_path</think>", "{\"type\":\"object\",\"properties\":{\"file_path\":{\"type\":\"string\",\"description\":\"Path to the file to open\"},\"baddr\":{\"type\":\"string\",\"description\":\"Optional base address for PIE binaries, same as radare2 -B (for example 0x400000)\"}},\"required\":[\"file_path\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI, NULL },
 	{ "run_javascript", "Executes JavaScript code using radare2's qjs runtime", "{\"type\":\"object\",\"properties\":{\"script\":{\"type\":\"string\",\"description\":\"The JavaScript code to execute\"}},\"required\":[\"script\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_EXEC, tool_run_javascript },
@@ -1726,19 +1662,19 @@ ToolSpec tool_specs[] = {
 	{ "close_session", "Close the currently open remote session", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_SESSIONS, tool_close_session },
 	{ "close_file", "Close the currently open file", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL, tool_close_file },
 	{ "list_functions", "Lists all functions discovered during analysis", "{\"type\":\"object\",\"properties\":{\"only_named\":{\"type\":\"boolean\",\"description\":\"If true, only list functions with named symbols (excludes functions with numeric suffixes like sym.func.1000016c8)\"},\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"},\"count\":{\"type\":\"boolean\",\"description\":\"If true, return only the number of matching results instead of the full list\"},\"start\":{\"type\":\"integer\",\"description\":\"Starting index for pagination (default: 0)\"},\"max_length\":{\"type\":\"integer\",\"description\":\"Maximum number of results to return, -1 for all (default: 50)\"}}}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO, tool_list_functions },
-	{ "list_functions_tree", "Lists functions and successors (aflmu)", "{\"type\":\"object\",\"properties\":{\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"},\"count\":{\"type\":\"boolean\",\"description\":\"If true, return only the number of matching results instead of the full list\"}}}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO, tool_list_functions_tree },
-	{ "list_libraries", "Lists all shared libraries linked to the binary", "{\"type\":\"object\",\"properties\":{\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"},\"count\":{\"type\":\"boolean\",\"description\":\"If true, return only the number of matching results instead of the full list\"}}}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_list_libraries },
-	{ "list_imports", "Lists imported symbols (note: use list_symbols for addresses with sym.imp. prefix)", "{\"type\":\"object\",\"properties\":{\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"},\"count\":{\"type\":\"boolean\",\"description\":\"If true, return only the number of matching results instead of the full list\"}}}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_list_imports },
-	{ "list_exports", "Lists exported symbols from the binary or process", "{\"type\":\"object\",\"properties\":{\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"},\"count\":{\"type\":\"boolean\",\"description\":\"If true, return only the number of matching results instead of the full list\"}}}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_list_exports },
-	{ "list_sections", "Displays memory sections and segments from the binary", "{\"type\":\"object\",\"properties\":{\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"},\"count\":{\"type\":\"boolean\",\"description\":\"If true, return only the number of matching results instead of the full list\"}}}", TOOL_MODE_NORMAL | TOOL_MODE_HTTP | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_list_sections },
-	{ "list_memory_maps", "Lists memory regions of the process with addresses and permissions", "{\"type\":\"object\",\"properties\":{\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"},\"count\":{\"type\":\"boolean\",\"description\":\"If true, return only the number of matching results instead of the full list\"}}}", TOOL_MODE_NORMAL | TOOL_MODE_HTTP | TOOL_MODE_FRIDA, tool_list_memory_maps },
+	{ "list_functions_tree", "Lists functions and successors (aflmu)", TOOL_SCHEMA_LIST, TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO, tool_list_functions_tree },
+	{ "list_libraries", "Lists all shared libraries linked to the binary", TOOL_SCHEMA_LIST, TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_list_libraries },
+	{ "list_imports", "Lists imported symbols (note: use list_symbols for addresses with sym.imp. prefix)", TOOL_SCHEMA_LIST, TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_list_imports },
+	{ "list_exports", "Lists exported symbols from the binary or process", TOOL_SCHEMA_LIST, TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_list_exports },
+	{ "list_sections", "Displays memory sections and segments from the binary", TOOL_SCHEMA_LIST, TOOL_MODE_NORMAL | TOOL_MODE_HTTP | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_list_sections },
+	{ "list_memory_maps", "Lists memory regions of the process with addresses and permissions", TOOL_SCHEMA_LIST, TOOL_MODE_NORMAL | TOOL_MODE_HTTP | TOOL_MODE_FRIDA, tool_list_memory_maps },
 	{ "show_function_details", "Displays detailed information about the current function", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_RO, tool_show_function_details },
 	{ "get_current_address", "Shows the current position and function name", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_RO, tool_get_current_address },
 	{ "show_info", "Displays information about the binary or target process", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_show_info },
-	{ "list_symbols", "Shows all symbols (functions, variables, imports) with addresses", "{\"type\":\"object\",\"properties\":{\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"},\"count\":{\"type\":\"boolean\",\"description\":\"If true, return only the number of matching results instead of the full list\"}}}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_list_symbols },
+	{ "list_symbols", "Shows all symbols (functions, variables, imports) with addresses", TOOL_SCHEMA_LIST, TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_list_symbols },
 	{ "list_entrypoints", "Displays program entrypoints, constructors and main function", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_list_entrypoints },
-	{ "list_methods", "Lists all methods belonging to the specified class", "{\"type\":\"object\",\"properties\":{\"classname\":{\"type\":\"string\",\"description\":\"Name of the class to list methods for\"},\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"},\"count\":{\"type\":\"boolean\",\"description\":\"If true, return only the number of matching results instead of the full list\"}},\"required\":[\"classname\"]}", TOOL_MODE_NORMAL | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_list_methods },
-	{ "list_classes", "Lists class names from various languages (C++, ObjC, Swift, Java, Dalvik)", "{\"type\":\"object\",\"properties\":{\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"},\"count\":{\"type\":\"boolean\",\"description\":\"If true, return only the number of matching results instead of the full list\"}}}", TOOL_MODE_NORMAL | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_list_classes },
+	{ "list_methods", "Lists all methods belonging to the specified class", TOOL_SCHEMA_LIST_WITH_STRING_PARAM ("classname", "Name of the class to list methods for"), TOOL_MODE_NORMAL | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_list_methods },
+	{ "list_classes", "Lists class names from various languages (C++, ObjC, Swift, Java, Dalvik)", TOOL_SCHEMA_LIST, TOOL_MODE_NORMAL | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_list_classes },
 	{ "list_decompilers", "Shows all available decompiler backends", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_RO, tool_list_decompilers },
 	{ "rename_function", "Renames the function at the specified address", "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"New function name\"},\"address\":{\"type\":\"string\",\"description\":\"Address of the function to rename\"}},\"required\":[\"name\",\"address\"]}", TOOL_MODE_NORMAL, tool_rename_function },
 	{ "rename_flag", "Renames a local variable or data reference within the specified address", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the flag containing the variable or data reference\"},\"name\":{\"type\":\"string\",\"description\":\"Current variable name or data reference\"},\"new_name\":{\"type\":\"string\",\"description\":\"New variable name or data reference\"}},\"required\":[\"address\",\"name\",\"new_name\"]}", TOOL_MODE_NORMAL | TOOL_MODE_HTTP, tool_rename_flag },
@@ -1746,21 +1682,21 @@ ToolSpec tool_specs[] = {
 	{ "get_function_prototype", "Retrieves the function signature at the specified address", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the function\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | TOOL_MODE_RO, tool_get_function_prototype },
 	{ "set_function_prototype", "Sets the function signature (return type, name, arguments)", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the function\"},\"prototype\":{\"type\":\"string\",\"description\":\"Function signature in C-like syntax\"}},\"required\":[\"address\",\"prototype\"]}", TOOL_MODE_NORMAL, tool_set_function_prototype },
 	{ "set_comment", "Adds a comment at the specified address", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address to put the comment in\"},\"message\":{\"type\":\"string\",\"description\":\"Comment text to use\"}},\"required\":[\"address\",\"message\"]}", TOOL_MODE_NORMAL | TOOL_MODE_HTTP, tool_set_comment },
-	{ "list_strings", "Lists strings from data sections with optional regex filter", "{\"type\":\"object\",\"properties\":{\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"},\"count\":{\"type\":\"boolean\",\"description\":\"If true, return only the number of matching results instead of the full list\"},\"cursor\":{\"type\":\"string\",\"description\":\"Cursor for pagination (line number to start from)\"},\"page_size\":{\"type\":\"integer\",\"description\":\"Number of lines per page (default: 1000, max: 10000)\"}}}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_list_strings },
-	{ "list_all_strings", "Scans the entire binary for strings with optional regex filter", "{\"type\":\"object\",\"properties\":{\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"},\"count\":{\"type\":\"boolean\",\"description\":\"If true, return only the number of matching results instead of the full list\"},\"cursor\":{\"type\":\"string\",\"description\":\"Cursor for pagination (line number to start from)\"},\"page_size\":{\"type\":\"integer\",\"description\":\"Number of lines per page (default: 1000, max: 10000)\"}}}", TOOL_MODE_NORMAL | TOOL_MODE_RO, tool_list_all_strings },
+	{ "list_strings", "Lists strings from data sections with optional regex filter", TOOL_SCHEMA_LIST, TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_list_strings },
+	{ "list_all_strings", "Scans the entire binary for strings with optional regex filter", TOOL_SCHEMA_LIST, TOOL_MODE_NORMAL | TOOL_MODE_RO, tool_list_all_strings },
 	{ "analyze", "Runs binary analysis with optional depth level", "{\"type\":\"object\",\"properties\":{\"level\":{\"type\":\"number\",\"description\":\"Analysis level (0-4, higher is more thorough)\"},\"timeout_seconds\":{\"type\":\"integer\",\"description\":\"Optional maximum analysis time in seconds for this call only. Use 0 to disable the timeout.\"}},\"required\":[]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_FRIDA, tool_analyze },
 	{ "xrefs_to", "Finds all code references to the specified address", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address to check for cross-references\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO, tool_xrefs_to },
-	{ "decompile_function", "Show C-like pseudocode of the function in the given address. <think>Use this to inspect the code in a function, do not run multiple times in the same offset</think>", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the function to decompile\"},\"cursor\":{\"type\":\"string\",\"description\":\"Cursor for pagination (line number to start from)\"},\"page_size\":{\"type\":\"integer\",\"description\":\"Number of lines per page (default: 1000, max: 10000)\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO, tool_decompile_function },
-	{ "list_files", "Lists files in the specified path using radare2's ls -q command. Files ending with / are directories, otherwise they are files.", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"Path to list files from\"},\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"},\"count\":{\"type\":\"boolean\",\"description\":\"If true, return only the number of matching results instead of the full list\"}},\"required\":[\"path\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO, tool_list_files },
-	{ "disassemble_function", "Shows assembly listing of the function at the specified address", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the function to disassemble\"},\"cursor\":{\"type\":\"string\",\"description\":\"Cursor for pagination (line number to start from)\"},\"page_size\":{\"type\":\"integer\",\"description\":\"Number of lines per page (default: 1000, max: 10000)\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | TOOL_MODE_RO, tool_disassemble_function },
+	{ "decompile_function", "Show C-like pseudocode of the function in the given address. <think>Use this to inspect the code in a function, do not run multiple times in the same offset</think>", TOOL_SCHEMA_ADDRESS_PAGE ("Address of the function to decompile"), TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO, tool_decompile_function },
+	{ "list_files", "Lists files in the specified path using radare2's ls -q command. Files ending with / are directories, otherwise they are files.", TOOL_SCHEMA_LIST_WITH_STRING_PARAM ("path", "Path to list files from"), TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO, tool_list_files },
+	{ "disassemble_function", "Shows assembly listing of the function at the specified address", TOOL_SCHEMA_ADDRESS_PAGE ("Address of the function to disassemble"), TOOL_MODE_NORMAL | TOOL_MODE_RO, tool_disassemble_function },
 	{ "disassemble", "Disassembles a specific number of instructions from an address <think>Use this tool to inspect a portion of memory as code without depending on function analysis boundaries. Use this tool when functions are large and you are only interested on few instructions</think>", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address to start disassembly\"},\"num_instructions\":{\"type\":\"integer\",\"description\":\"Number of instructions to disassemble (default: 10)\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_disassemble },
 	{ "calculate", "Evaluate a math expression using core->num (r_num_math). Usecases: do proper 64-bit math, resolve addresses for flag names/symbols, and avoid hallucinated results.", "{\"type\":\"object\",\"properties\":{\"expression\":{\"type\":\"string\",\"description\":\"Math expression to evaluate (eg. 0x100 + sym.flag - 4)\"}},\"required\":[\"expression\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_calculate },
 	{ "get_pid", "Get the process ID of the target process", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_FRIDA, tool_get_pid },
-	{ "list_threads", "List all threads in the target process with their IDs and state", "{\"type\":\"object\",\"properties\":{\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"},\"count\":{\"type\":\"boolean\",\"description\":\"If true, return only the number of matching results instead of the full list\"}}}", TOOL_MODE_NORMAL | TOOL_MODE_FRIDA, tool_list_threads },
+	{ "list_threads", "List all threads in the target process with their IDs and state", TOOL_SCHEMA_LIST, TOOL_MODE_NORMAL | TOOL_MODE_FRIDA, tool_list_threads },
 	{ "dump_registers", "Show register values for the target process threads", "{\"type\":\"object\",\"properties\":{\"thread_id\":{\"type\":\"integer\",\"description\":\"Optional thread ID to show registers for a specific thread\"}}}", TOOL_MODE_NORMAL | TOOL_MODE_FRIDA, tool_dump_registers },
 	{ "hexdump", "Print memory contents in hexdump style at the given address", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address to hexdump\"},\"size\":{\"type\":\"string\",\"description\":\"Number of bytes to dump (empty string for default size)\"}},\"required\":[\"address\",\"size\"]}", TOOL_MODE_NORMAL | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_hexdump },
 	{ "memory_map_here", "Show memory map information at the current address", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_FRIDA, tool_memory_map_here },
-	{ "list_heap_allocations", "List malloc/heap memory ranges in the target process", "{\"type\":\"object\",\"properties\":{\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"},\"count\":{\"type\":\"boolean\",\"description\":\"If true, return only the number of matching results instead of the full list\"}}}", TOOL_MODE_NORMAL | TOOL_MODE_FRIDA, tool_list_heap_allocations },
+	{ "list_heap_allocations", "List malloc/heap memory ranges in the target process", TOOL_SCHEMA_LIST, TOOL_MODE_NORMAL | TOOL_MODE_FRIDA, tool_list_heap_allocations },
 	{ "alloc_memory", "Allocate memory in the target process heap. Provide either size (bytes) or string to allocate", "{\"type\":\"object\",\"properties\":{\"size\":{\"type\":\"integer\",\"description\":\"Number of bytes to allocate\"},\"string\":{\"type\":\"string\",\"description\":\"String to allocate in target heap (returns its address)\"}}}", TOOL_MODE_FRIDA, tool_alloc_memory },
 	{ "change_memory_protection", "Change memory protection (rwx) at the given address and size", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the memory region\"},\"size\":{\"type\":\"integer\",\"description\":\"Size in bytes of the region\"},\"protection\":{\"type\":\"string\",\"description\":\"New protection string (e.g. rwx, r-x, rw-)\"}},\"required\":[\"address\",\"size\",\"protection\"]}", TOOL_MODE_FRIDA, tool_change_memory_protection },
 	{ "search", "Search for strings, hex patterns, wide strings, or numeric values", "{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\",\"description\":\"The search query (string, hex bytes, or numeric value)\"},\"type\":{\"type\":\"string\",\"description\":\"Search type: string (default), hex, wide, or value\"},\"value_size\":{\"type\":\"integer\",\"description\":\"For value search: byte width 1, 2, 4 (default), or 8\"}},\"required\":[\"query\"]}", TOOL_MODE_NORMAL | TOOL_MODE_FRIDA, tool_search },
