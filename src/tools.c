@@ -120,7 +120,7 @@ static bool rjson_get_bool_flag(RJson *args, const char *param_name) {
 }
 
 static char *tool_cmd_response(char *res);
-static char *tool_cmd_response_paginated(char *res, RJson *tool_args);
+static char *tool_cmd_response_paginated(ServerState *ss, char *res, RJson *tool_args);
 static char *filter_lines_by_regex(const char *input, const char *pattern);
 
 // Filter strings forwarded to r2's `~` grep must not contain characters that
@@ -198,14 +198,14 @@ static char *filter_list_result(char *res, RJson *tool_args) {
 	return res;
 }
 
-static char *list_text_response(char *res, RJson *tool_args) {
+static char *list_text_response(ServerState *ss, char *res, RJson *tool_args) {
 	res = filter_list_result (res, tool_args);
 	if (tool_args && rjson_get_bool_flag (tool_args, "count")) {
 		int n = list_line_count (res);
 		free (res);
 		return count_response (n);
 	}
-	return tool_cmd_response_paginated (res, tool_args);
+	return tool_cmd_response_paginated (ss, res, tool_args);
 }
 
 // Shared implementation for list_* tools that share the simple pattern
@@ -222,7 +222,7 @@ static char *list_cmd_response(ServerState *ss, RJson *tool_args, const char *cm
 		}
 	}
 	char *res = r2mcp_cmd (ss, cmd);
-	return list_text_response (res, tool_args);
+	return list_text_response (ss, res, tool_args);
 }
 
 static char *tool_cmd_response(char *res) {
@@ -231,20 +231,21 @@ static char *tool_cmd_response(char *res) {
 	return response;
 }
 
-static char *tool_cmd_response_paginated(char *res, RJson *tool_args) {
+static char *tool_cmd_response_paginated(ServerState *ss, char *res, RJson *tool_args) {
 	const char *cursor;
 	int page_size;
 	bool has_more = false;
 	char *next_cursor = NULL;
 	char *paginated;
 	char *response;
+	R2McpContentMode mode = ss? ss->content_mode: R2MCP_CONTENT_TEXT;
 	pagination_params (tool_args, &cursor, &page_size);
 	paginated = paginate_text_by_lines (res, cursor, page_size, &has_more, &next_cursor);
 	free (res);
 	if (!paginated) {
 		paginated = strdup ("");
 	}
-	response = jsonrpc_tooltext_response_paginated (paginated, has_more, next_cursor);
+	response = jsonrpc_tool_response_paginated (paginated, NULL, mode, has_more, next_cursor);
 	free (paginated);
 	free (next_cursor);
 	return response;
@@ -736,7 +737,7 @@ static char *tool_list_files(ServerState *ss, RJson *tool_args) {
 	char *cmd = r_str_newf ("'ls -q %s", path);
 	char *res = r2mcp_cmd (ss, cmd);
 	free (cmd);
-	return list_text_response (res, tool_args);
+	return list_text_response (ss, res, tool_args);
 }
 
 static char *tool_list_classes(ServerState *ss, RJson *tool_args) {
@@ -752,7 +753,7 @@ static char *tool_list_methods(ServerState *ss, RJson *tool_args) {
 	// The '/: prefixes quote the rest of the line, so r2 grep modifiers
 	// can't be appended. Count and filter locally.
 	char *res = r2mcp_cmdf (ss, "'%sic %s", prefix, classname);
-	return list_text_response (res, tool_args);
+	return list_text_response (ss, res, tool_args);
 }
 
 static char *tool_list_decompilers(ServerState *ss, RJson *tool_args) {
@@ -872,7 +873,7 @@ static char *tool_list_strings(ServerState *ss, RJson *tool_args) {
 		}
 	}
 	char *cmd_result = r2mcp_cmd (ss, strings_cmd);
-	return list_text_response (cmd_result, tool_args);
+	return list_text_response (ss, cmd_result, tool_args);
 }
 
 static char *tool_list_all_strings(ServerState *ss, RJson *tool_args) {
@@ -894,7 +895,7 @@ static char *tool_list_all_strings(ServerState *ss, RJson *tool_args) {
 		free (cmd_result);
 		cmd_result = r_str_newf ("Error: No strings with regex %s", filter);
 	}
-	return tool_cmd_response_paginated (cmd_result, tool_args);
+	return tool_cmd_response_paginated (ss, cmd_result, tool_args);
 }
 
 static char *tool_analyze(ServerState *ss, RJson *tool_args) {
@@ -1010,7 +1011,7 @@ static char *tool_disassemble_function(ServerState *ss, RJson *tool_args) {
 	if (!validate_address_param (tool_args, "address", &address)) {
 		return jsonrpc_error_missing_param ("address");
 	}
-	return tool_cmd_response_paginated (r2mcp_cmdf (ss, "'@%s'pdf", address), tool_args);
+	return tool_cmd_response_paginated (ss, r2mcp_cmdf (ss, "'@%s'pdf", address), tool_args);
 }
 
 static char *tool_rename_flag(ServerState *ss, RJson *tool_args) {
@@ -1043,7 +1044,7 @@ static char *tool_decompile_function(ServerState *ss, RJson *tool_args) {
 	if (!validate_address_param (tool_args, "address", &address)) {
 		return jsonrpc_error_missing_param ("address");
 	}
-	return tool_cmd_response_paginated (r2mcp_cmdf (ss, "'@%s'pdc", address), tool_args);
+	return tool_cmd_response_paginated (ss, r2mcp_cmdf (ss, "'@%s'pdc", address), tool_args);
 }
 
 static char *tool_get_pid(ServerState *ss, RJson *tool_args) {
