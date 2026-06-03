@@ -7,7 +7,7 @@
 
 /* Version fallback if not provided by build */
 #ifndef R2MCP_VERSION
-#define R2MCP_VERSION "1.8.2"
+#define R2MCP_VERSION "1.8.4"
 #endif
 
 /* r_socket_http_header () and generic HTTP request headers are available from
