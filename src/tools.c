@@ -1198,6 +1198,38 @@ static char *tool_run_command(ServerState *ss, RJson *tool_args) {
 	return tool_cmd_response_paginated (ss, r2mcp_cmd (ss, command), tool_args);
 }
 
+static char *tool_sql(ServerState *ss, RJson *tool_args) {
+	const char *query;
+	RCore *core;
+	char *cmd;
+	char *res;
+	if (!validate_required_string_param (tool_args, "query", &query)) {
+		return jsonrpc_error_missing_param ("query");
+	}
+	if (R_STR_ISEMPTY (query)) {
+		return jsonrpc_error_response (-32602, "Invalid parameter 'query': expected non-empty string", NULL, NULL);
+	}
+	if (!ss || !ss->rstate) {
+		return jsonrpc_error_response (-32603, "Cannot run SQL without server state", NULL, NULL);
+	}
+	core = ss->rstate->core;
+	if (core && !ss->rstate->own_core) {
+		ss->rstate->file_opened = core->io && core->io->desc;
+	}
+	if (!core || !ss->rstate->file_opened) {
+		return jsonrpc_error_file_required ();
+	}
+	cmd = r_str_newf ("r2vsql %s", query);
+	R_CRITICAL_ENTER (core);
+	res = r_core_call_str_at (core, core->addr, cmd);
+	R_CRITICAL_LEAVE (core);
+	free (cmd);
+	if (!res) {
+		res = strdup ("Error: r2vsql command returned NULL");
+	}
+	return tool_cmd_response (res);
+}
+
 static char *tool_run_javascript(ServerState *ss, RJson *tool_args) {
 	const char *script;
 	if (!validate_required_string_param (tool_args, "script", &script)) {
@@ -1671,6 +1703,7 @@ cleanup:
 #define TOOL_SCHEMA_LIST_WITH_STRING_PARAM(name, desc) "{\"type\":\"object\",\"properties\":{\"" name "\":{\"type\":\"string\",\"description\":\"" desc "\"}," TOOL_SCHEMA_LIST_PROPS "},\"required\":[\"" name "\"]}"
 #define TOOL_SCHEMA_ADDRESS_PAGE(desc) "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"" desc "\"}," TOOL_SCHEMA_PAGE_PROPS "},\"required\":[\"address\"]}"
 #define TOOL_SCHEMA_COMMAND_PAGE "{\"type\":\"object\",\"properties\":{\"command\":{\"type\":\"string\",\"description\":\"The radare2 command to execute\"}," TOOL_SCHEMA_PAGE_PROPS "},\"required\":[\"command\"]}"
+#define TOOL_SCHEMA_SQL "{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\",\"description\":\"SQL query to pass to the r2vsql plugin\"}},\"required\":[\"query\"]}"
 #define TOOL_SCHEMA_SCRIPT_FILE_PAGE "{\"type\":\"object\",\"properties\":{\"file_path\":{\"type\":\"string\",\"description\":\"Absolute path to the radare2 script file to execute\"}," TOOL_SCHEMA_PAGE_PROPS "},\"required\":[\"file_path\"]}"
 
 ToolSpec tool_specs[] = {
@@ -1678,6 +1711,7 @@ ToolSpec tool_specs[] = {
 	{ "run_javascript", "Executes JavaScript code using radare2's qjs runtime", "{\"type\":\"object\",\"properties\":{\"script\":{\"type\":\"string\",\"description\":\"The JavaScript code to execute\"}},\"required\":[\"script\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_EXEC, tool_run_javascript },
 	{ "run_frida_script", "Executes Frida JavaScript code", "{\"type\":\"object\",\"properties\":{\"script\":{\"type\":\"string\",\"description\":\"The script code to execute\"}},\"required\":[\"script\"]}", TOOL_MODE_FRIDA | TOOL_MODE_EXEC, tool_run_frida_script },
 	{ "run_command", "Executes a raw radare2 command directly", TOOL_SCHEMA_COMMAND_PAGE, TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_EXEC, tool_run_command },
+	{ "sql", "Runs an SQL query through the r2vsql plugin", TOOL_SCHEMA_SQL, TOOL_MODE_NORMAL | TOOL_MODE_MINI, tool_sql },
 	{ "run_script", "Runs a local radare2 command script file through r2's command-file API. The path must satisfy MCP path policy and the active r2 sandbox.", TOOL_SCHEMA_SCRIPT_FILE_PAGE, TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_FRIDA | TOOL_MODE_EXEC, tool_run_script },
 	{ "list_sessions", "Lists available r2agent sessions in JSON format", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_SESSIONS, tool_list_sessions },
 	{ "open_session", "Connects to a remote r2 instance using r2pipe API", "{\"type\":\"object\",\"properties\":{\"url\":{\"type\":\"string\",\"description\":\"URL of the remote r2 instance to connect to\"}},\"required\":[\"url\"]}", TOOL_MODE_SESSIONS, tool_open_session },
