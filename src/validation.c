@@ -3,6 +3,11 @@
 #include "validation.h"
 #include "jsonrpc.h"
 
+#if R2_VERSION_NUMBER < 50909
+st64 r_json_get_num(const RJson *json, const char *key);
+const char *r_json_get_str(const RJson *json, const char *key);
+#endif
+
 /* Check if a parameter exists and is a string */
 ValidationResult validate_required_string(RJson *args, const char *param_name) {
 	const RJson *field = r_json_get (args, param_name);

@@ -3,6 +3,11 @@
 #include "r2mcp.h"
 #include "prompts.h"
 
+#if R2_VERSION_NUMBER < 50909
+st64 r_json_get_num(const RJson *json, const char *key);
+const char *r_json_get_str(const RJson *json, const char *key);
+#endif
+
 typedef struct {
 	char *name;
 	char *desc;
