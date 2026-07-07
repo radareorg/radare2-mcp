@@ -137,7 +137,7 @@ char *r2mcp_cmdf(ServerState *ss, const char *fmt, ...) {
 	return res;
 }
 
-R_IPI bool r2_open_file(ServerState *ss, const char *filepath, ut64 baddr) {
+R_IPI bool r2_open_file(ServerState *ss, const char *filepath, ut64 baddr, const char *arch, int bits, const char *cpu) {
 	R_LOG_INFO ("Attempting to open file: %s\n", filepath);
 
 	// Security checks common to both local and HTTP modes
@@ -178,6 +178,16 @@ R_IPI bool r2_open_file(ServerState *ss, const char *filepath, ut64 baddr) {
 	}
 	r_config_set_b (core->config, "cfg.sandbox", false);
 
+	if (R_STR_ISNOTEMPTY (arch)) {
+		r_config_set (core->config, "asm.arch", arch);
+	}
+	if (bits > 0) {
+		r_config_set_i (core->config, "asm.bits", bits);
+	}
+	if (R_STR_ISNOTEMPTY (cpu)) {
+		r_config_set (core->config, "asm.cpu", cpu);
+	}
+
 	ss->frida_mode = strstr (filepath, "frida://") != NULL;
 	if (!ss->frida_mode) {
 		r_core_cmd0 (core, "e bin.relocs.apply=true");
@@ -198,7 +208,14 @@ R_IPI bool r2_open_file(ServerState *ss, const char *filepath, ut64 baddr) {
 	RBinFile *bi = core->bin->cur;
 	bool have_bin_info = bi && bi->bo && bi->bo->info && bi->bo->info->type;
 	if (!have_bin_info && baddr != UT64_MAX) {
-		R_LOG_WARN ("Don't use baddr on unknown files. Consider mapping the file instead.");
+		ut64 fsize = r_io_desc_size (file);
+		if (fsize > 0) {
+			r_io_map_add (core->io, file->fd, R_PERM_RX, 0, baddr, fsize);
+			r_core_seek (core, baddr, true);
+			R_LOG_INFO ("Mapped raw file at 0x%" PFMT64x " (size 0x%" PFMT64x ")", baddr, fsize);
+		} else {
+			R_LOG_WARN ("Don't use baddr on unknown files. Consider mapping the file instead.");
+		}
 	}
 	free (ss->rstate->current_file);
 	ss->rstate->current_file = strdup (filepath);

@@ -1584,6 +1584,13 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 			free (baddr_error);
 			goto cleanup;
 		}
+		// Optional explicit arch/bits/cpu, for raw/headerless binaries (eg.
+		// MCU firmware .bin dumps) that cannot be autodetected and would
+		// otherwise disassemble with the host's default arch.
+		const char *arch = r_json_get_str (tool_args, "arch");
+		const char *cpu = r_json_get_str (tool_args, "cpu");
+		int bits = 0;
+		(void)rjson_get_int_param (tool_args, "bits", &bits);
 
 		char *filteredpath = strdup (filepath);
 		r_str_replace_ch (filteredpath, '`', 0, true);
@@ -1616,7 +1623,7 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 			char *close_res = tool_close_file (ss, &nil);
 			free (close_res);
 		}
-		bool success = r2_open_file (ss, filteredpath, baddr);
+		bool success = r2_open_file (ss, filteredpath, baddr, arch, bits, cpu);
 		free (filteredpath);
 		if (success && previous_file) {
 			char *text = r_str_newf ("Closed previously opened file: %s\nFile opened successfully.", previous_file);
@@ -1707,7 +1714,7 @@ cleanup:
 #define TOOL_SCHEMA_SCRIPT_FILE_PAGE "{\"type\":\"object\",\"properties\":{\"file_path\":{\"type\":\"string\",\"description\":\"Absolute path to the radare2 script file to execute\"}," TOOL_SCHEMA_PAGE_PROPS "},\"required\":[\"file_path\"]}"
 
 ToolSpec tool_specs[] = {
-	{ "open_file", "Opens a binary file with radare2 for analysis <think>Call this tool before any other one from r2mcp. Use an absolute file_path</think>", "{\"type\":\"object\",\"properties\":{\"file_path\":{\"type\":\"string\",\"description\":\"Path to the file to open\"},\"baddr\":{\"type\":\"string\",\"description\":\"Optional base address for PIE binaries, same as radare2 -B (for example 0x400000)\"}},\"required\":[\"file_path\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI, NULL },
+	{ "open_file", "Opens a binary file with radare2 for analysis <think>Call this tool before any other one from r2mcp. Use an absolute file_path</think>", "{\"type\":\"object\",\"properties\":{\"file_path\":{\"type\":\"string\",\"description\":\"Path to the file to open\"},\"baddr\":{\"type\":\"string\",\"description\":\"Optional base address for PIE binaries, same as radare2 -B / -m (for example 0x400000). For raw/headerless files (no ELF/PE magic), this now also creates an explicit io map so the file's content actually appears at this address, matching radare2 CLI's -m behavior\"},\"arch\":{\"type\":\"string\",\"description\":\"Optional asm.arch override (eg. 'arm'), same as radare2 -a. Needed for raw/headerless binaries which cannot be autodetected and would otherwise default to the host arch\"},\"bits\":{\"type\":\"string\",\"description\":\"Optional asm.bits override (eg. 16 for ARM Thumb), same as radare2 -b\"},\"cpu\":{\"type\":\"string\",\"description\":\"Optional asm.cpu override (eg. 'cortex'), same as radare2 -k/-e asm.cpu\"}},\"required\":[\"file_path\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI, NULL },
 	{ "run_javascript", "Executes JavaScript code using radare2's qjs runtime", "{\"type\":\"object\",\"properties\":{\"script\":{\"type\":\"string\",\"description\":\"The JavaScript code to execute\"}},\"required\":[\"script\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_EXEC, tool_run_javascript },
 	{ "run_frida_script", "Executes Frida JavaScript code", "{\"type\":\"object\",\"properties\":{\"script\":{\"type\":\"string\",\"description\":\"The script code to execute\"}},\"required\":[\"script\"]}", TOOL_MODE_FRIDA | TOOL_MODE_EXEC, tool_run_frida_script },
 	{ "run_command", "Executes a raw radare2 command directly", TOOL_SCHEMA_COMMAND_PAGE, TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_EXEC, tool_run_command },
