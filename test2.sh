@@ -630,14 +630,20 @@ run_sandbox_regressions() {
 	append_tool_call "$req" 3 open_file "$(jq -cn --arg file "$sb/escape/ls" '{file_path:$file}')"
 	append_tool_call "$req" 4 list_files "$(jq -cn --arg path "$sb/../" '{path:$path}')"
 	append_tool_call "$req" 5 list_files "$(jq -cn --arg path "$sb/escape" '{path:$path}')"
+	append_tool_call "$req" 6 open_file "$(jq -cn --arg file "file://$sb/ls" '{file_path:$file}')"
+	append_tool_call "$req" 7 open_file "$(jq -cn --arg file "file:///bin/ls" '{file_path:$file}')"
 	run_session "$req" "$resp" -s "$sb"
 
 	local open_escape
 	local traversal
 	local list_escape
+	local open_file_uri
+	local open_file_uri_escape
 	open_escape=$(response_by_id "$resp" 3)
 	traversal=$(response_by_id "$resp" 4)
 	list_escape=$(response_by_id "$resp" 5)
+	open_file_uri=$(response_by_id "$resp" 6)
+	open_file_uri_escape=$(response_by_id "$resp" 7)
 
 	printf '%s\n' "$open_escape" | jq -e '.result.content[0].text == "Failed to open file."' >/dev/null 2>&1 || {
 		fail "sandbox open_file symlink escape should fail, got $open_escape"
@@ -647,6 +653,12 @@ run_sandbox_regressions() {
 	}
 	printf '%s\n' "$list_escape" | jq -e '.error.code == -32603 and (.error.message | contains("outside of the sandbox"))' >/dev/null 2>&1 || {
 		fail "sandbox symlink escape should be rejected, got $list_escape"
+	}
+	printf '%s\n' "$open_file_uri" | jq -e '.result.content[0].text | contains("File opened") or contains("File already opened")' >/dev/null 2>&1 || {
+		fail "sandbox file:// inside sandbox should succeed, got $open_file_uri"
+	}
+	printf '%s\n' "$open_file_uri_escape" | jq -e '.result.content[0].text == "Failed to open file."' >/dev/null 2>&1 || {
+		fail "sandbox file:// escape should fail, got $open_file_uri_escape"
 	}
 }
 

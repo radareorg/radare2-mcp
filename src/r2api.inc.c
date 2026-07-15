@@ -145,10 +145,10 @@ R_IPI bool r2_open_file(ServerState *ss, const char *filepath, ut64 baddr) {
 		R_LOG_ERROR ("Empty file path is not allowed");
 		return false;
 	}
-	bool is_uri = strstr (filepath, "://") != NULL;
 	if (r_str_startswith (filepath, "file://")) {
 		filepath = filepath + strlen ("file://");
 	}
+	bool is_uri = strstr (filepath, "://") != NULL;
 	// Filesystem security checks only apply to local paths, not URI schemes
 	if (!is_uri) {
 		const char *err = r2mcp_sandbox_check (ss, filepath);

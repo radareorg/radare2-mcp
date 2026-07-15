@@ -1587,6 +1587,10 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 
 		char *filteredpath = strdup (filepath);
 		r_str_replace_ch (filteredpath, '`', 0, true);
+		if (r_str_startswith (filteredpath, "file://")) {
+			char *localpath = filteredpath + strlen ("file://");
+			memmove (filteredpath, localpath, strlen (localpath) + 1);
+		}
 		if (ss->rstate->file_opened && ss->rstate->current_file && !strcmp (ss->rstate->current_file, filteredpath) && ss->rstate->current_baddr == baddr) {
 			int func_count = r2_function_count (ss);
 			int prev_level = ss->rstate->analyze_level;
