@@ -9,10 +9,14 @@ PREFIX ?= /usr/local
 
 TARGET = r2mcp-svc
 
+asan: CFLAGS += -fsanitize=address -fsanitize=undefined -g3 -O1
+asan: LDFLAGS += -fsanitize=address -fsanitize=undefined
+asan: clean $(TARGET)
+
 all: $(TARGET)
 
 $(TARGET): r2mcp-svc.c
-	$(CC) $(R2_CFLAGS) -Wall -Wextra -o $@ $< $(R2_LDFLAGS)
+	$(CC) $(CFLAGS) $(R2_CFLAGS) -Wall -Wextra -o $@ $< $(R2_LDFLAGS) $(LDFLAGS)
 
 clean:
 	rm -f $(TARGET)
@@ -31,4 +35,4 @@ user-install:
 user-uninstall:
 	rm -f $(DESTDIR)/$(R2PM_BINDIR)/$(TARGET)
 
-.PHONY: clean install uninstall
+.PHONY: asan clean install uninstall
