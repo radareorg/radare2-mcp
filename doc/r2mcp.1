@@ -1,0 +1,51 @@
+.TH R2MCP 1 "July 2026" "r2mcp" "User Commands"
+.SH NAME
+r2mcp \- Model Context Protocol server for radare2
+.SH SYNOPSIS
+.B r2mcp
+.RI [ options ]
+.SH DESCRIPTION
+.B r2mcp
+serves radare2 tools over standard input/output or HTTP.
+.SH OPTIONS
+.TP
+.BI "-H " [ address : ] port
+Start the HTTP MCP server. A bare port binds to
+.B 127.0.0.1
+only. To expose the server on all IPv4 interfaces, explicitly use
+.BR -H " 0.0.0.0:" port .
+Public listeners should use
+.B -a
+or
+.B -A
+to require Bearer authentication.
+.TP
+.BI "-a " token
+Require HTTP Bearer authentication using
+.IR token .
+.TP
+.B -A
+Generate and require a random HTTP Bearer authentication token.
+.TP
+.BI "-S " url
+Send tool calls to the supervisor control service at
+.IR url .
+.TP
+.B -h
+Show command help.
+.TP
+.B -v
+Show the version.
+.SH EXAMPLES
+.TP
+Start a local-only server:
+.EX
+r2mcp -H 8765
+.EE
+.TP
+Start a publicly reachable server with a generated token:
+.EX
+r2mcp -H 0.0.0.0:8765 -A
+.EE
+.SH SEE ALSO
+.BR r2 (1)
