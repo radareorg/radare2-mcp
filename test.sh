@@ -53,6 +53,13 @@ ${BIN} -T 'open_file file_path="/bin/ls"; list_functions only_named=true; close_
 echo "== DSL: unquoted value and multiple tools =="
 ${BIN} -T 'open_file file_path=/bin/ls; show_headers; get_current_address; close_file' 2>&1 | sed -n '1,12p'
 
+echo "== DSL: list_methods command prefix =="
+OUT=$(${BIN} -T 'open_file file_path=/bin/ls; list_methods classname=main; close_file' 2>&1)
+if printf '%s\n' "$OUT" | grep -F -q "Invalid command '''ic"; then
+	echo "list_methods generated a malformed non-Frida command"
+	exit 1
+fi
+
 echo "== DSL: ensure error when missing open_file =="
 set +e
 ${BIN} -T 'list_functions only_named=true' 2>&1 | grep -q "open_file"

@@ -768,10 +768,9 @@ static char *tool_list_methods(ServerState *ss, RJson *tool_args) {
 	if (!validate_required_string_param (tool_args, "classname", &classname)) {
 		return jsonrpc_error_missing_param ("classname");
 	}
-	const char *prefix = ss->frida_mode? ":": "'";
-	// The '/: prefixes quote the rest of the line, so r2 grep modifiers
+	// The quote/colon prefixes quote the rest of the line, so r2 grep modifiers
 	// can't be appended. Count and filter locally.
-	char *res = r2mcp_cmdf (ss, "'%sic %s", prefix, classname);
+	char *res = r2mcp_cmdf (ss, "'%sic %s", fx (ss), classname);
 	return list_text_response (ss, res, tool_args);
 }
 
