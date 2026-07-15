@@ -129,16 +129,14 @@ char *jsonrpc_tooltext_response_paginated(const char *text, bool has_more, const
 	return pj_drain (pj);
 }
 
-char *jsonrpc_error_response(int code, const char *message, const char *id, const char *uri) {
+char *jsonrpc_error_response_typed(int code, const char *message, const char *id, bool id_is_number, const char *uri) {
 	R_RETURN_VAL_IF_FAIL (message, NULL);
 	PJ *pj = pj_new ();
 	pj_o (pj);
 	pj_ks (pj, "jsonrpc", "2.0");
 	if (id) {
-		char *endptr;
-		long num_id = strtol (id, &endptr, 10);
-		if (*id != '\0' && *endptr == '\0') {
-			pj_kn (pj, "id", num_id);
+		if (id_is_number) {
+			pj_kn (pj, "id", r_num_get (NULL, id));
 		} else {
 			pj_ks (pj, "id", id);
 		}
@@ -158,7 +156,11 @@ char *jsonrpc_error_response(int code, const char *message, const char *id, cons
 	return pj_drain (pj);
 }
 
-char *jsonrpc_success_response(ServerState *ss, const char *result, const char *id) {
+char *jsonrpc_error_response(int code, const char *message, const char *id, const char *uri) {
+	return jsonrpc_error_response_typed (code, message, id, false, uri);
+}
+
+char *jsonrpc_success_response_typed(ServerState *ss, const char *result, const char *id, bool id_is_number) {
 	R_RETURN_VAL_IF_FAIL (result, NULL);
 	(void)ss;
 	PJ *pj = pj_new ();
@@ -166,10 +168,8 @@ char *jsonrpc_success_response(ServerState *ss, const char *result, const char *
 	pj_ks (pj, "jsonrpc", "2.0");
 
 	if (id) {
-		char *endptr;
-		long num_id = strtol (id, &endptr, 10);
-		if (*id != '\0' && *endptr == '\0') {
-			pj_kn (pj, "id", num_id);
+		if (id_is_number) {
+			pj_kn (pj, "id", r_num_get (NULL, id));
 		} else {
 			pj_ks (pj, "id", id);
 		}
@@ -184,6 +184,10 @@ char *jsonrpc_success_response(ServerState *ss, const char *result, const char *
 
 	pj_end (pj);
 	return pj_drain (pj);
+}
+
+char *jsonrpc_success_response(ServerState *ss, const char *result, const char *id) {
+	return jsonrpc_success_response_typed (ss, result, id, false);
 }
 
 char *jsonrpc_error_missing_param(const char *param_name) {

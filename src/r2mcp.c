@@ -117,7 +117,7 @@ static bool is_valid_json_response(const char *str) {
 	return false;
 }
 
-static char *extract_jsonrpc_error_response(const char *str, const char *id) {
+static char *extract_jsonrpc_error_response(const char *str, const char *id, bool id_is_number) {
 	if (!str || *str != '{') {
 		return NULL;
 	}
@@ -138,7 +138,7 @@ static char *extract_jsonrpc_error_response(const char *str, const char *id) {
 			uri = r_json_get_str (data, "uri");
 		}
 		if (message) {
-			out = jsonrpc_error_response (code, message, id, uri);
+			out = jsonrpc_error_response_typed (code, message, id, id_is_number, uri);
 		}
 	}
 	r_json_free (json);
@@ -526,17 +526,17 @@ static bool is_valid_mcp_method(const char *method) {
 	return true;
 }
 
-static char *handle_mcp_request(ServerState *ss, const char *method, RJson *params, const char *id) {
+static char *handle_mcp_request(ServerState *ss, const char *method, RJson *params, const char *id, bool id_is_number) {
 	char *error = NULL;
 	char *result = NULL;
 
 	// Validate method name format: lowercase, dot-separated
 	if (!is_valid_mcp_method (method)) {
-		return jsonrpc_error_response (-32601, "Invalid method name: must be lowercase and dot-separated (e.g., tools/list)", id, NULL);
+		return jsonrpc_error_response_typed (-32601, "Invalid method name: must be lowercase and dot-separated (e.g., tools/list)", id, id_is_number, NULL);
 	}
 
 	if (!check_capabilities (ss, method, &error)) {
-		char *response = jsonrpc_error_response (-32601, error, id, NULL);
+		char *response = jsonrpc_error_response_typed (-32601, error, id, id_is_number, NULL);
 		free (error);
 		return response;
 	}
@@ -558,7 +558,7 @@ static char *handle_mcp_request(ServerState *ss, const char *method, RJson *para
 		result = handle_list_tools (ss, params);
 	} else if (!strcmp (method, "tools/call")) {
 		if (!params || params->type != R_JSON_OBJECT) {
-			return jsonrpc_error_response (-32602, "Invalid params: expected object", id, NULL);
+			return jsonrpc_error_response_typed (-32602, "Invalid params: expected object", id, id_is_number, NULL);
 		}
 		const char *tool_name = r_json_get_str (params, "name");
 		if (!tool_name) {
@@ -578,15 +578,15 @@ static char *handle_mcp_request(ServerState *ss, const char *method, RJson *para
 	} else if (!strcmp (method, "resources/templates/list")) {
 		result = strdup ("{\"resourceTemplates\":[]}");
 	} else {
-		return jsonrpc_error_response (-32601, "Unknown method", id, NULL);
+		return jsonrpc_error_response_typed (-32601, "Unknown method", id, id_is_number, NULL);
 	}
 
-	char *error_response = extract_jsonrpc_error_response (result, id);
+	char *error_response = extract_jsonrpc_error_response (result, id, id_is_number);
 	if (error_response) {
 		free (result);
 		return error_response;
 	}
-	char *response = jsonrpc_success_response (ss, result, id);
+	char *response = jsonrpc_success_response_typed (ss, result, id, id_is_number);
 	free (result);
 	return response;
 }
@@ -661,6 +661,7 @@ static char *build_mcp_response(ServerState *ss, const char *msg) {
 
 	const char *id = NULL;
 	char id_buf[32] = { 0 };
+	bool id_is_number = false;
 	bool has_id = false;
 	if (id_json) {
 		if (id_json->type == R_JSON_STRING) {
@@ -669,15 +670,16 @@ static char *build_mcp_response(ServerState *ss, const char *msg) {
 		} else if (id_json->type == R_JSON_INTEGER) {
 			snprintf (id_buf, sizeof (id_buf), "%lld", (long long)id_json->num.u_value);
 			id = id_buf;
+			id_is_number = true;
 			has_id = true;
 		}
 	}
 
 	char *response = NULL;
 	if (!method) {
-		response = jsonrpc_error_response (-32600, "Invalid Request: missing method", id, NULL);
+		response = jsonrpc_error_response_typed (-32600, "Invalid Request: missing method", id, id_is_number, NULL);
 	} else if (has_id) {
-		response = handle_mcp_request (ss, method, params, id);
+		response = handle_mcp_request (ss, method, params, id, id_is_number);
 	} else {
 		// Notification: no response (no id or id is null)
 		if (!strcmp (method, "notifications/cancelled")) {

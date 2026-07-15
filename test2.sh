@@ -610,6 +610,16 @@ run_http_auth_regression() {
 		fail "HTTP auth: authenticated POST should return initialize result"
 	}
 
+	code=$(curl_code "$body" \
+		-H "Authorization: Bearer $token" \
+		-H "Content-Type: application/json" \
+		--data '{"jsonrpc":"2.0","id":"001","method":"ping","params":{}}' \
+		"http://127.0.0.1:$port/")
+	[ "$code" = "200" ] || fail "HTTP auth: string-ID POST should return 200, got $code"
+	jq -e '.id == "001" and .result == {}' "$body" >/dev/null 2>&1 || {
+		fail "HTTP auth: string JSON-RPC IDs must be echoed without numeric coercion"
+	}
+
 	kill "$server_pid" 2>/dev/null || true
 	wait "$server_pid" 2>/dev/null || true
 	trap 'rm -rf "$TMPDIR"' EXIT INT TERM
