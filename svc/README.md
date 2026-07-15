@@ -66,6 +66,13 @@ For example:
 ./r2mcp-svc 8080
 ```
 
+A bare port binds only to `127.0.0.1`. Use `0.0.0.0:8080` explicitly to bind
+publicly:
+
+```bash
+./r2mcp-svc 0.0.0.0:8080
+```
+
 The SBC will listen for HTTP POST requests containing JSON tool call data. When a request is received, it will prompt the user interactively for the desired action.
 
 ## Integration with R2 MCP
@@ -77,5 +84,4 @@ r2mcp --supervise http://localhost:8080
 ```
 
 If the SBC is unreachable, R2 MCP will operate normally without supervision.
-
 

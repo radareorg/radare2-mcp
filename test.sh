@@ -37,6 +37,16 @@ for args in "-ht" "-th" "-t -h" "-h -t"; do
 	fi
 done
 
+echo "== HTTP bind address validation =="
+set +e
+${BIN} -H 192.0.2.1:8765 > /dev/null 2>&1
+STATUS=$?
+set -e
+if [ "${STATUS}" -eq 0 ]; then
+	echo "unsupported HTTP bind address must fail"
+	exit 1
+fi
+
 echo "== DSL: open_file + listFunctions (no -p) =="
 ${BIN} -T 'open_file file_path="/bin/ls"; list_functions only_named=true; close_file' 2>&1 | sed -n '1,8p'
 

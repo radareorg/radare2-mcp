@@ -19,6 +19,7 @@
 
 #include "path.inc.c"
 #include "utils.inc.c"
+#include "bind.inc.c"
 #include "r2api.inc.c"
 
 static volatile sig_atomic_t running = 1;
@@ -749,24 +750,29 @@ void r2mcp_eventloop_stdio(ServerState *ss) {
 
 // HTTP MCP server loop. Single-threaded: accept one client at a time,
 // read the JSON-RPC POST body, dispatch, write the JSON response and close.
-void r2mcp_eventloop_http(ServerState *ss, const char *port) {
-	if (R_STR_ISEMPTY (port)) {
-		port = "3000";
+bool r2mcp_eventloop_http(ServerState *ss, const char *address_port) {
+	R2McpBind bind;
+	if (!r2mcp_bind_parse (address_port, "3000", &bind)) {
+		R_LOG_ERROR ("Invalid HTTP bind address '%s' (use [127.0.0.1|0.0.0.0]:port)", address_port);
+		return false;
 	}
 	RSocket *server = r_socket_new (false);
 	if (!server) {
 		R_LOG_ERROR ("Failed to create HTTP server socket");
-		return;
+		r2mcp_bind_fini (&bind);
+		return false;
 	}
-	if (!r_socket_listen (server, port, NULL)) {
-		R_LOG_ERROR ("Cannot listen on port %s", port);
+	server->local = bind.local_only;
+	if (!r_socket_listen (server, bind.port, NULL)) {
+		R_LOG_ERROR ("Cannot listen on %s:%s", bind.address, bind.port);
 		r_socket_free (server);
-		return;
+		r2mcp_bind_fini (&bind);
+		return false;
 	}
 	http_server_fd = server->fd;
-	R_LOG_INFO ("r2mcp HTTP server listening on port %s", port);
+	R_LOG_INFO ("r2mcp HTTP server listening on %s:%s", bind.address, bind.port);
 	{
-		char *msg = r_str_newf ("Starting MCP HTTP mode on port %s", port);
+		char *msg = r_str_newf ("Starting MCP HTTP mode on %s:%s", bind.address, bind.port);
 		r2mcp_log (ss, msg);
 		free (msg);
 	}
@@ -852,5 +858,7 @@ void r2mcp_eventloop_http(ServerState *ss, const char *port) {
 
 	http_server_fd = -1;
 	r_socket_free (server);
+	r2mcp_bind_fini (&bind);
 	r2mcp_log (ss, "HTTP mode loop terminated");
+	return true;
 }

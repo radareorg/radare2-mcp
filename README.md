@@ -80,11 +80,17 @@ Update your MCP client configuration file (see below) to use the Docker image to
 
 ### HTTP Server Mode
 
-Use `-H <port>` to run r2mcp as an HTTP MCP server instead of using
-stdin/stdout:
+Use `-H [address:]port` to run r2mcp as an HTTP MCP server instead of using
+stdin/stdout. A bare port binds only to `127.0.0.1`; use `0.0.0.0:port`
+explicitly to make the server reachable from the network:
 
 ```bash
 r2mcp -H 8765
+```
+
+```bash
+# Public binding; protect this with -a <token> or -A.
+r2mcp -H 0.0.0.0:8765 -A
 ```
 
 Per-session HTTP state is enabled with `-X max[:idle_seconds]` and routed by

@@ -8,7 +8,9 @@ flags, or analysis state.
 
 ## Starting the server
 
-The HTTP server is enabled with `-H <port>`. By itself, `-H` runs a single
+The HTTP server is enabled with `-H [address:]port`. A bare port binds to
+`127.0.0.1`; use `-H 0.0.0.0:port` only when remote access is required. By
+itself, `-H` runs a single
 shared `RadareState` for every request, like before. To enable per-client
 state isolation, add `-X`.
 

@@ -13,6 +13,7 @@ PKGCONFIG = pkg-config
 INSTALL_DIR?=install -d
 R2_LIBEXT=$(shell r2 -H R2_LIBEXT)
 INSTALL_PROGRAM?=install -m 755
+INSTALL_DATA?=install -m 644
 PREFIX?=/usr/local
 R2PM_BINDIR?=$(shell r2pm -H R2PM_BINDIR)
 R2PM_PLUGDIR?=$(shell r2pm -H R2PM_PLUGDIR)
@@ -85,9 +86,12 @@ mrproper: clean
 install: all
 	$(INSTALL_DIR) $(DESTDIR)/$(PREFIX)/bin
 	$(INSTALL_PROGRAM) $(TARGET) $(DESTDIR)/$(PREFIX)/bin/r2mcp
+	$(INSTALL_DIR) $(DESTDIR)/$(PREFIX)/share/man/man1
+	$(INSTALL_DATA) ../doc/r2mcp.1 $(DESTDIR)/$(PREFIX)/share/man/man1/r2mcp.1
 
 uninstall:
 	rm -f $(DESTDIR)/$(PREFIX)/bin/r2mcp
+	rm -f $(DESTDIR)/$(PREFIX)/share/man/man1/r2mcp.1
 
 user-install: all
 	$(INSTALL_DIR) $(R2PM_BINDIR)

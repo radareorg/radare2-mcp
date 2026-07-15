@@ -46,7 +46,7 @@ void r2mcp_help(void) {
 		" -e [tool]  enable only the specified tool (repeatable)\n"
 		" -g [grain] sandbox grain mask (disk,files,exec,socket,network,environ,all,none)\n"
 		" -h         show this help\n"
-		" -H [port]  start an HTTP MCP server on the given port (instead of stdio)\n"
+		" -H [addr:]port start an HTTP MCP server (default address: 127.0.0.1)\n"
 		" -i         ignore analysis level specified in analyze calls\n"
 		" -l [file]  append debug logs to this file\n"
 		" -L         enable session management tools (list/open/close sessions)\n"
@@ -87,6 +87,7 @@ int r2mcp_main(int argc, const char **argv) {
 	bool readonly_mode = false;
 	bool list_tools = false;
 	bool show_help = false;
+	int exit_status = 0;
 	char *sandbox_grain_msg = NULL;
 	RList *cmds = r_list_newf (free);
 	/* Whitelist of enabled tool names (populated via repeated -e flags) */
@@ -462,7 +463,9 @@ int r2mcp_main(int argc, const char **argv) {
 				fprintf (stderr, "r2mcp HTTP bearer token: %s\n", ss.auth_token);
 			}
 		}
-		r2mcp_eventloop_http (&ss, http_server_port);
+		if (!r2mcp_eventloop_http (&ss, http_server_port)) {
+			exit_status = 1;
+		}
 	} else {
 		r2mcp_eventloop_stdio (&ss);
 	}
@@ -490,5 +493,5 @@ int r2mcp_main(int argc, const char **argv) {
 		r_list_free (ss.disabled_tools);
 	}
 	(void)0;
-	return 0;
+	return exit_status;
 }

@@ -9,11 +9,14 @@
 #include <string.h>
 #include <stdbool.h>
 
+#include "../src/bind.inc.c"
+
 typedef struct {
 	bool yolo_mode;
 	bool quit;
 	bool single_request;
 	int port;
+	R2McpBind bind;
 	RCons *cons;
 } R2McpSvcContext;
 
@@ -32,31 +35,38 @@ static bool parse_args(int argc, char **argv, R2McpSvcContext *ctx) {
 		}
 	}
 	if (i != argc - 1) {
-		R_LOG_ERROR ("Usage: %s [-y] [-q] <port>", argv[0]);
+		R_LOG_ERROR ("Usage: %s [-y] [-q] [address:]port", argv[0]);
 		return false;
 	}
-	ctx->port = atoi (argv[i]);
+	if (!r2mcp_bind_parse (argv[i], NULL, &ctx->bind)) {
+		R_LOG_ERROR ("Invalid bind address '%s' (use [127.0.0.1|0.0.0.0]:port)", argv[i]);
+		return false;
+	}
+	ctx->port = atoi (ctx->bind.port);
 	if (ctx->port <= 0) {
 		R_LOG_ERROR ("Invalid port");
+		r2mcp_bind_fini (&ctx->bind);
 		return false;
 	}
 	return true;
 }
 
-static RSocket *setup_server(int port) {
+static RSocket *setup_server(R2McpSvcContext *ctx) {
 	RSocket *server = r_socket_new (false);
 	if (!server) {
 		R_LOG_ERROR ("Cannot create socket");
 		return NULL;
 	}
 	char port_str[16];
-	sprintf (port_str, "%d", port);
+	sprintf (port_str, "%d", ctx->port);
+	server->local = ctx->bind.local_only;
 	if (!r_socket_listen (server, port_str, NULL)) {
-		R_LOG_ERROR ("Cannot listen on port %s", port_str);
+		R_LOG_ERROR ("Cannot listen on %s:%s", ctx->bind.address, port_str);
 		r_socket_free (server);
 		return NULL;
 	}
-	R_LOG_INFO (Color_GREEN "🚀 R2MCP Supervisor waiting for requests on port %d" Color_RESET, port);
+	R_LOG_INFO (Color_GREEN "🚀 R2MCP Supervisor waiting for requests on %s:%d" Color_RESET,
+		ctx->bind.address, ctx->port);
 	return server;
 }
 
@@ -109,12 +119,16 @@ static char *handle_r2cmd(R2McpSvcContext *ctx) {
 }
 
 static char *show_menu_and_get_response(char *data, const char *tool, R2McpSvcContext *ctx) {
+	char *escaped_data = r_str_escape_utf8 (data, false, true);
+	char *escaped_tool = r_str_escape_utf8 (tool? tool: "unknown", false, true);
 	r_cons_printf (ctx->cons, "\n" Color_YELLOW "╔══════════════════════════════════════╗\n"
 		"║ " Color_CYAN "🔧 Tool Call Request " Color_YELLOW "║\n"
 		"╚══════════════════════════════════════╝\n" Color_GREEN "Tool: %s\n" Color_BLUE "Request: %s\n\n"
 		"Available Actions:\n" Color_GREEN "1. ✅ Accept\n" Color_RED "2. ❌ Reject\n" Color_YELLOW "3. ⚡ Accept all (YOLO mode)\n" Color_MAGENTA "4. Modify tool\n" Color_CYAN "5. 🖥️ Run r2 command\n" Color_RED "6. Quit server\n\n" Color_RESET "❓ Your choice: ",
-		tool? tool: "unknown",
-		data);
+		escaped_tool,
+		escaped_data);
+	free (escaped_tool);
+	free (escaped_data);
 	r_cons_flush (ctx->cons);
 
 	const char *line = r_line_readline (ctx->cons);
@@ -154,7 +168,7 @@ static void handle_request(RSocket *server, R2McpSvcContext *ctx) {
 	}
 
 	// Only accept POST requests
-	if (strcmp (rs->method, "POST")) {
+	if (!rs->method || strcmp (rs->method, "POST")) {
 		char *response_body = r_str_newf ("{\"error\":\"Method not allowed\"}");
 		r_socket_http_response (rs, 405, response_body, 0, "Content-Type: application/json\r\n");
 		free (response_body);
@@ -187,12 +201,16 @@ static void handle_request(RSocket *server, R2McpSvcContext *ctx) {
 
 	if (ctx->yolo_mode) {
 		// Auto accept
+		char *escaped_data = r_str_escape_utf8 ((char *)rs->data, false, true);
 		r_cons_printf (ctx->cons, Color_YELLOW "⚡"
 			" YOLO: Received message:" Color_RESET " %s\n",
-			(char *)rs->data);
+			escaped_data);
+		free (escaped_data);
+		escaped_data = r_str_escape_utf8 (tool? tool: "unknown", false, true);
 		r_cons_printf (ctx->cons, Color_YELLOW "⚡"
 			" YOLO: Tool executed:" Color_RESET " %s\n",
-			tool? tool: "unknown");
+			escaped_data);
+		free (escaped_data);
 		r_cons_flush (ctx->cons);
 		response_body = strdup ((char *)rs->data);
 	} else {
@@ -216,7 +234,7 @@ int main(int argc, char **argv) {
 	R2McpSvcContext ctx = { 0 };
 	ctx.cons = r_cons_new ();
 	if (parse_args (argc, argv, &ctx)) {
-		RSocket *server = setup_server (ctx.port);
+		RSocket *server = setup_server (&ctx);
 		if (server) {
 			while (!ctx.quit) {
 				handle_request (server, &ctx);
@@ -224,6 +242,7 @@ int main(int argc, char **argv) {
 			r_socket_free (server);
 		}
 	}
+	r2mcp_bind_fini (&ctx.bind);
 	r_cons_free (ctx.cons);
 	return 0;
 }
