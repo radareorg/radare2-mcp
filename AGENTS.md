@@ -18,6 +18,7 @@ MCP server for radare2. Source lives in `src/`. Files named `*.inc.c` are `#incl
 - Space before parens: `foo ()`, `if (`, `for (`
 - Always use braces `{}` even for single-statement blocks
 - Declare loop variables before `for` (C89 style)
+- Declare local variables and assign in the same line if possible
 - Prefer `!strcmp ()` over `strcmp () == 0`
 - Prefer `r_str_startswith ()` over `!strncmp ()`
 - Use `R_STR_ISEMPTY()` / `R_STR_ISNOTEMPTY()` instead of manual null+empty checks

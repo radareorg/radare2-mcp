@@ -87,9 +87,7 @@ static bool rjson_get_baddr_param(RJson *args, ut64 *out_baddr, char **out_error
 	return true;
 }
 
-// Read an optional boolean flag. Accepts JSON booleans, integers (non-zero
-// means true), and strings ("true"/"yes"/"1" mean true; everything else is
-// false). Missing or unrecognized values yield false.
+// Read an optional boolean flag using radare2's standard string forms.
 static bool rjson_get_bool_flag(RJson *args, const char *param_name) {
 	const RJson *field = r_json_get (args, param_name);
 	if (!field) {
@@ -103,12 +101,7 @@ static bool rjson_get_bool_flag(RJson *args, const char *param_name) {
 	case R_JSON_DOUBLE:
 		return field->num.dbl_value != 0;
 	case R_JSON_STRING:
-		if (R_STR_ISEMPTY (field->str_value)) {
-			return false;
-		}
-		return !r_str_casecmp (field->str_value, "true")
-			|| !r_str_casecmp (field->str_value, "yes")
-			|| !strcmp (field->str_value, "1");
+		return r_str_is_true (field->str_value);
 	default:
 		break;
 	}
@@ -278,44 +271,8 @@ static inline const char *fx(ServerState *ss) {
 	return ss->frida_mode? ":": "";
 }
 
-// Check an optional whitelist of enabled tool names. If ss->enabled_tools is
-// NULL, all tools are considered allowed. Otherwise only names present in the
-// list are allowed.
-static bool tool_allowed_by_whitelist(const ServerState *ss, const char *name) {
-	if (!ss || !ss->enabled_tools) {
-		return true;
-	}
-	RListIter *it;
-	const char *s;
-	r_list_foreach (ss->enabled_tools, it, s) {
-		if (!strcmp (s, name)) {
-			return true;
-		}
-	}
-	return false;
-}
-
-// Check if a tool is disabled via blacklist. If ss->disabled_tools is NULL,
-// no tools are disabled. If the tool name is in the blacklist, return false.
-static bool tool_not_disabled(const ServerState *ss, const char *name) {
-	if (!ss || !ss->disabled_tools) {
-		return true;
-	}
-	RListIter *it;
-	const char *s;
-	r_list_foreach (ss->disabled_tools, it, s) {
-		if (!strcmp (s, name)) {
-			return false;
-		}
-	}
-	return true;
-}
-
 static inline ToolMode current_mode(const ServerState *ss) {
 	ToolMode mode = 0;
-	if (!ss) {
-		return TOOL_MODE_NORMAL;
-	}
 	if (ss->readonly_mode) {
 		mode |= TOOL_MODE_RO;
 	} else {
@@ -341,15 +298,17 @@ static inline ToolMode current_mode(const ServerState *ss) {
 	return mode;
 }
 
-static bool tool_matches_required_modes(const ToolSpec *t, ToolMode mode) {
-	return !(t->modes & TOOL_MODE_EXEC) || (mode & TOOL_MODE_EXEC);
+static bool tool_eligible(const ServerState *ss, const ToolSpec *t, ToolMode mode) {
+	bool mode_match = (!(t->modes & TOOL_MODE_EXEC) || (mode & TOOL_MODE_EXEC))
+		&& (t->modes & mode & ~TOOL_MODE_EXEC);
+	bool included = !ss->enabled_tools || r_list_find (ss->enabled_tools, t->name, (RListComparator)strcmp);
+	bool excluded = ss->disabled_tools && r_list_find (ss->disabled_tools, t->name, (RListComparator)strcmp);
+	return mode_match && included && !excluded;
 }
 
-static bool tool_matches_mode(const ToolSpec *t, ToolMode mode) {
-	if (!tool_matches_required_modes (t, mode)) {
-		return false;
-	}
-	return (t->modes & mode & ~TOOL_MODE_EXEC) != 0;
+static bool tool_available(const ServerState *ss, const ToolSpec *t, ToolMode mode) {
+	return tool_eligible (ss, t, mode)
+		|| (ss->permissive_tools && (!(t->modes & TOOL_MODE_EXEC) || (mode & TOOL_MODE_EXEC)));
 }
 
 static ToolSpec *tool_spec_by_name(const char *name) {
@@ -399,48 +358,6 @@ static void tool_modes_string(int modes, char *buf, size_t len) {
 	buf[p] = '\0';
 }
 
-static RList *tools_filtered_for_mode(const ServerState *ss) {
-	ToolMode mode = current_mode (ss);
-	RList *out = r_list_new ();
-	size_t i;
-	if (!out) {
-		return NULL;
-	}
-	for (i = 0; tool_specs[i].name; i++) {
-		ToolSpec *t = &tool_specs[i];
-		if (tool_matches_mode (t, mode) && tool_allowed_by_whitelist (ss, t->name) && tool_not_disabled (ss, t->name)) {
-			r_list_append (out, t); // reference only
-		}
-	}
-	return out;
-}
-
-bool tools_is_tool_allowed(const ServerState *ss, const char *name) {
-	ToolMode mode;
-	ToolSpec *t;
-	if (!name) {
-		return false;
-	}
-	mode = current_mode (ss);
-	t = tool_spec_by_name (name);
-	if (t && !tool_matches_required_modes (t, mode)) {
-		return false;
-	}
-	if (ss && ss->permissive_tools) {
-		return true;
-	}
-	if (!t) {
-		return false;
-	}
-	if (!tool_not_disabled (ss, name)) {
-		return false;
-	}
-	if (!tool_allowed_by_whitelist (ss, name)) {
-		return false;
-	}
-	return tool_matches_mode (t, mode);
-}
-
 char *tools_build_catalog_json(const ServerState *ss, const char *cursor, int page_size) {
 	int start_index = 0;
 	if (cursor) {
@@ -450,49 +367,37 @@ char *tools_build_catalog_json(const ServerState *ss, const char *cursor, int pa
 		}
 	}
 
-	RList *list = tools_filtered_for_mode (ss);
-	if (!list) {
-		return strdup ("{\"tools\":[]}");
-	}
-	int total_tools = r_list_length (list);
 	int end_index = start_index + page_size;
-	if (end_index > total_tools) {
-		end_index = total_tools;
-	}
-
-	RStrBuf *sb = r_strbuf_new ("");
-	r_strbuf_append (sb, "{\"tools\":[");
-
 	int idx = 0;
-	int out_count = 0;
-	RListIter *it;
-	ToolSpec *t;
-	r_list_foreach (list, it, t) {
+	ToolMode mode = current_mode (ss);
+	PJ *pj = pj_new ();
+	pj_o (pj);
+	pj_k (pj, "tools");
+	pj_a (pj);
+	size_t i;
+	for (i = 0; tool_specs[i].name; i++) {
+		ToolSpec *t = &tool_specs[i];
+		if (!tool_eligible (ss, t, mode)) {
+			continue;
+		}
 		if (idx >= start_index && idx < end_index) {
-			if (out_count > 0) {
-				r_strbuf_append (sb, ",");
-			}
-			r_strbuf_appendf (sb,
-				"{\"name\":\"%s\",\"description\":\"%s\",\"inputSchema\":%s}",
-				t->name,
-				t->description,
-				t->schema_json);
-			out_count++;
+			pj_o (pj);
+			pj_ks (pj, "name", t->name);
+			pj_ks (pj, "description", t->description);
+			pj_k (pj, "inputSchema");
+			pj_raw (pj, t->schema_json);
+			pj_end (pj);
 		}
 		idx++;
-		if (idx >= end_index) {
-			// keep looping for correctness of idx but we could break
-		}
 	}
-
-	r_strbuf_append (sb, "]");
-	if (end_index < total_tools) {
-		r_strbuf_appendf (sb, ",\"nextCursor\":\"%d\"", end_index);
+	pj_end (pj);
+	if (end_index < idx) {
+		char next_cursor[32];
+		snprintf (next_cursor, sizeof (next_cursor), "%d", end_index);
+		pj_ks (pj, "nextCursor", next_cursor);
 	}
-	r_strbuf_append (sb, "}");
-
-	r_list_free (list);
-	return r_strbuf_drain (sb);
+	pj_end (pj);
+	return pj_drain (pj);
 }
 
 void tools_print_mode_help(void) {
@@ -520,7 +425,7 @@ void tools_print_table(const ServerState *ss) {
 	ToolMode mode = current_mode (ss);
 	for (size_t i = 0; tool_specs[i].name; i++) {
 		ToolSpec *t = &tool_specs[i];
-		if (!tool_matches_mode (t, mode) || !tool_allowed_by_whitelist (ss, t->name) || !tool_not_disabled (ss, t->name)) {
+		if (!tool_eligible (ss, t, mode)) {
 			continue;
 		}
 		char modes_buf[8];
@@ -1195,7 +1100,7 @@ static char *tool_sql(ServerState *ss, RJson *tool_args) {
 	if (R_STR_ISEMPTY (query)) {
 		return jsonrpc_error_response (-32602, "Invalid parameter 'query': expected non-empty string", NULL, NULL);
 	}
-	if (!ss || !ss->rstate) {
+	if (!ss->rstate) {
 		return jsonrpc_error_response (-32603, "Cannot run SQL without server state", NULL, NULL);
 	}
 	core = ss->rstate->core;
@@ -1283,7 +1188,7 @@ static char *tool_list_sessions(ServerState *ss, RJson *tool_args) {
 	(void)ss;
 	// r2agent command doesn't require an open file, run it directly
 	char *res = NULL;
-	if (ss && ss->http_mode) {
+	if (ss->http_mode) {
 		// In HTTP mode, we can't run r2agent locally, return empty result
 		res = strdup ("[]");
 	} else {
@@ -1466,9 +1371,12 @@ static char *check_supervisor_permission(ServerState *ss, const char *tool_name,
 	pj_append_rjson (pj, tool_args);
 	pj_k (pj, "available_tools");
 	pj_a (pj);
-	for (size_t i = 0; tool_specs[i].name; i++) {
-		if (tools_is_tool_allowed (ss, tool_specs[i].name)) {
-			pj_s (pj, tool_specs[i].name);
+	ToolMode mode = current_mode (ss);
+	size_t i;
+	for (i = 0; tool_specs[i].name; i++) {
+		ToolSpec *t = &tool_specs[i];
+		if (tool_available (ss, t, mode)) {
+			pj_s (pj, t->name);
 		}
 	}
 	pj_end (pj);
@@ -1532,8 +1440,10 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 		result = jsonrpc_error_missing_param ("name");
 		goto cleanup;
 	}
+	ToolMode mode = current_mode (ss);
+	ToolSpec *t = tool_spec_by_name (tool_name);
 	// Enforce tool availability per mode unless permissive is enabled
-	if (!tools_is_tool_allowed (ss, tool_name)) {
+	if (!t || !tool_available (ss, t, mode)) {
 		result = jsonrpc_error_tool_not_allowed (tool_name);
 		goto cleanup;
 	}
@@ -1546,6 +1456,7 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 	}
 	if (allocated_tool_name) {
 		tool_name = allocated_tool_name;
+		t = tool_spec_by_name (tool_name);
 	}
 
 	// Special-case: open_file
@@ -1647,18 +1558,8 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 		goto cleanup;
 	}
 
-	// Find the tool spec and validate arguments against schema
-	ToolSpec *found_tool = NULL;
-	for (size_t i = 0; tool_specs[i].name; i++) {
-		ToolSpec *t = &tool_specs[i];
-		if (!strcmp (tool_name, t->name)) {
-			found_tool = t;
-			break;
-		}
-	}
-
-	if (found_tool && found_tool->schema_json) {
-		ValidationResult vr = validate_arguments (tool_args, found_tool->schema_json);
+	if (t && t->schema_json) {
+		ValidationResult vr = validate_arguments (tool_args, t->schema_json);
 		if (!vr.valid) {
 			result = jsonrpc_error_response (-32602, vr.error_message, NULL, NULL);
 			free (vr.error_message);
@@ -1666,13 +1567,9 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 		}
 	}
 
-	// Dispatch to tool functions
-	for (size_t i = 0; tool_specs[i].name; i++) {
-		ToolSpec *t = &tool_specs[i];
-		if (!strcmp (tool_name, t->name)) {
-			result = t->func (ss, tool_args);
-			goto cleanup;
-		}
+	if (t && t->func) {
+		result = t->func (ss, tool_args);
+		goto cleanup;
 	}
 
 	char *tmp = r_str_newf ("Unknown tool: %s", tool_name);

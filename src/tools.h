@@ -34,9 +34,6 @@ extern ToolSpec tool_specs[];
 // Build catalog JSON for the current server mode with optional pagination
 char *tools_build_catalog_json(const ServerState *ss, const char *cursor, int page_size);
 
-// Check if a tool is allowed for the current mode (honors permissive flag)
-bool tools_is_tool_allowed(const ServerState *ss, const char *name);
-
 // Call a tool by name; returns heap-allocated JSON (tool "result") or
 // a JSON error result if the tool is unavailable or arguments are invalid.
 // The returned string must be freed by the caller.
