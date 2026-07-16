@@ -598,11 +598,18 @@ static char *tool_close_file(ServerState *ss, RJson *tool_args) {
 		return jsonrpc_tooltext_response ("In r2pipe mode we won't close the file.");
 	}
 	if (ss->rstate->core) {
+		RCore *core = ss->rstate->core;
 		bool was_sandboxed = r_sandbox_enable (false);
 		if (was_sandboxed) {
 			r_sandbox_disable (true);
 		}
 		free (r2mcp_cmd (ss, "o-*"));
+		if (core->anal) {
+			r_anal_purge (core->anal);
+		}
+		if (core->flags) {
+			r_flag_unset_all (core->flags);
+		}
 		if (was_sandboxed) {
 			r_sandbox_disable (false);
 		}
