@@ -8,11 +8,7 @@
 #include "utils.inc.c"
 #include "jsonrpc.h"
 
-#if defined(R2_ABIVERSION) && R2_ABIVERSION >= 100
-#define R2MCP_TABLE_NEW(name) r_table_new(name, NULL)
-#else
-#define R2MCP_TABLE_NEW(name) r_table_new(name)
-#endif
+#define HAVE_VSQL 0
 
 typedef char *(*ToolFunc)(ServerState *ss, RJson *tool_args);
 
@@ -511,28 +507,18 @@ void tools_print_mode_help(void) {
 }
 
 void tools_print_table(const ServerState *ss) {
-	RTable *table = R2MCP_TABLE_NEW ("tools");
-	RTableColumnType *s;
-	ToolMode mode;
-	size_t i;
+	RTable *table = r_table_new ("tools", NULL);
 	if (!table) {
 		R_LOG_ERROR ("Failed to allocate table");
 		return;
 	}
-
-	s = r_table_type ("string");
-	if (!s) {
-		R_LOG_WARN ("Table string type unavailable");
-		r_table_free (table);
-		return;
-	}
-
+	RTableColumnType *s = r_table_type ("string");
 	r_table_add_column (table, s, "name", 0);
 	r_table_add_column (table, s, "modes", 0);
 	r_table_add_column (table, s, "description", 0);
 
-	mode = current_mode (ss);
-	for (i = 0; tool_specs[i].name; i++) {
+	ToolMode mode = current_mode (ss);
+	for (size_t i = 0; tool_specs[i].name; i++) {
 		ToolSpec *t = &tool_specs[i];
 		if (!tool_matches_mode (t, mode) || !tool_allowed_by_whitelist (ss, t->name) || !tool_not_disabled (ss, t->name)) {
 			continue;
@@ -1197,6 +1183,7 @@ static char *tool_run_command(ServerState *ss, RJson *tool_args) {
 	return tool_cmd_response_paginated (ss, r2mcp_cmd (ss, command), tool_args);
 }
 
+#if HAVE_VSQL
 static char *tool_sql(ServerState *ss, RJson *tool_args) {
 	const char *query;
 	RCore *core;
@@ -1228,6 +1215,7 @@ static char *tool_sql(ServerState *ss, RJson *tool_args) {
 	}
 	return tool_cmd_response (res);
 }
+#endif
 
 static char *tool_run_javascript(ServerState *ss, RJson *tool_args) {
 	const char *script;
@@ -1714,7 +1702,9 @@ ToolSpec tool_specs[] = {
 	{ "run_javascript", "Executes JavaScript code using radare2's qjs runtime", "{\"type\":\"object\",\"properties\":{\"script\":{\"type\":\"string\",\"description\":\"The JavaScript code to execute\"}},\"required\":[\"script\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_EXEC, tool_run_javascript },
 	{ "run_frida_script", "Executes Frida JavaScript code", "{\"type\":\"object\",\"properties\":{\"script\":{\"type\":\"string\",\"description\":\"The script code to execute\"}},\"required\":[\"script\"]}", TOOL_MODE_FRIDA | TOOL_MODE_EXEC, tool_run_frida_script },
 	{ "run_command", "Executes a raw radare2 command directly", TOOL_SCHEMA_COMMAND_PAGE, TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_EXEC, tool_run_command },
+#if HAVE_VSQL
 	{ "sql", "Runs an SQL query through the r2vsql plugin", TOOL_SCHEMA_SQL, TOOL_MODE_NORMAL | TOOL_MODE_MINI, tool_sql },
+#endif
 	{ "run_script", "Runs a local radare2 command script file through r2's command-file API. The path must satisfy MCP path policy and the active r2 sandbox.", TOOL_SCHEMA_SCRIPT_FILE_PAGE, TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_FRIDA | TOOL_MODE_EXEC, tool_run_script },
 	{ "list_sessions", "Lists available r2agent sessions in JSON format", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_SESSIONS, tool_list_sessions },
 	{ "open_session", "Connects to a remote r2 instance using r2pipe API", "{\"type\":\"object\",\"properties\":{\"url\":{\"type\":\"string\",\"description\":\"URL of the remote r2 instance to connect to\"}},\"required\":[\"url\"]}", TOOL_MODE_SESSIONS, tool_open_session },
