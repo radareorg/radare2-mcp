@@ -495,12 +495,8 @@ static char *tool_close_file(ServerState *ss, RJson *tool_args) {
 			r_sandbox_disable (true);
 		}
 		free (r2mcp_cmd (ss, "o-*"));
-		if (core->anal) {
-			r_anal_purge (core->anal);
-		}
-		if (core->flags) {
-			r_flag_unset_all (core->flags);
-		}
+		r_anal_purge (core->anal);
+		r_flag_unset_all (core->flags);
 		if (was_sandboxed) {
 			r_sandbox_disable (false);
 		}
