@@ -89,7 +89,9 @@ r_deps = {
   'r_util': ['r_util', 'libr_util'],
   'r_cons': ['r_cons', 'libr_cons'],
   'r_config': ['r_config', 'libr_config'],
-  'r_socket': ['r_socket', 'libr_socket']
+  'r_socket': ['r_socket', 'libr_socket'],
+  'r_anal': ['r_anal', 'libr_anal'],
+  'r_flag': ['r_flag', 'libr_flag']
 }
 
 foreach dep_name, lib_names : r_deps
@@ -162,7 +164,7 @@ endif
 executable(
   'r2mcp',
   srcs,
-  dependencies: [r_core_dep, r_socket_dep, r_util_dep, r_cons_dep, r_config_dep],
+  dependencies: [r_core_dep, r_socket_dep, r_util_dep, r_cons_dep, r_config_dep, r_anal_dep, r_flag_dep],
   c_args: c_args,
   link_args: link_args,
   install: true,
@@ -171,7 +173,7 @@ executable(
 plugin_lib = shared_library(
   'core_r2mcp',
   plugin_srcs,
-  dependencies: [r_core_dep, r_socket_dep, r_util_dep, r_cons_dep, r_config_dep],
+  dependencies: [r_core_dep, r_socket_dep, r_util_dep, r_cons_dep, r_config_dep, r_anal_dep, r_flag_dep],
   c_args: c_args,
   link_args: link_args,
   install: false,
