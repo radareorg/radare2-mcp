@@ -94,10 +94,7 @@ static bool is_boolean_string(const RJson *field) {
 	if (!field || field->type != R_JSON_STRING || R_STR_ISEMPTY (field->str_value)) {
 		return false;
 	}
-	const char *s = field->str_value;
-	return !r_str_casecmp (s, "true") || !r_str_casecmp (s, "false")
-		|| !r_str_casecmp (s, "yes") || !r_str_casecmp (s, "no")
-		|| !strcmp (s, "1") || !strcmp (s, "0");
+	return r_str_is_bool (field->str_value);
 }
 
 static bool json_matches_schema_type(const RJson *field, const char *expected_type) {
