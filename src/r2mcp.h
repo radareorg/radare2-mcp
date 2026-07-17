@@ -168,7 +168,7 @@ const char *r2mcp_effective_sandbox_grain(const ServerState *ss);
 // Additional public wrappers exposed so other modules (eg. tools.c) can use
 // functionality implemented in r2api.inc.c. These simply forward to the
 // internal static helpers so we keep the original separation.
-bool r2_open_file(ServerState *ss, const char *filepath, ut64 baddr);
+bool r2_open_file(ServerState *ss, const char *filepath, ut64 baddr, const char *arch, int bits, const char *cpu);
 char *r2_analyze(ServerState *ss, int level, int timeout_seconds);
 int r2_function_count(ServerState *ss);
 
