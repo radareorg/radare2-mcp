@@ -1114,9 +1114,7 @@ static char *tool_sql(ServerState *ss, RJson *tool_args) {
 		return jsonrpc_error_file_required ();
 	}
 	cmd = r_str_newf ("r2vsql %s", query);
-	R_CRITICAL_ENTER (core);
-	res = r_core_call_str_at (core, core->addr, cmd);
-	R_CRITICAL_LEAVE (core);
+	res = r2mcp_cmd (ss, cmd);
 	free (cmd);
 	if (!res) {
 		res = strdup ("Error: r2vsql command returned NULL");

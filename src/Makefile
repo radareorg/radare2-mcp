@@ -26,6 +26,7 @@ COMMON_SRC += prompts.c
 COMMON_SRC += jsonrpc.c
 COMMON_SRC += validation.c
 COMMON_SRC += sessions.c
+COMMON_SRC += compat.c
 BIN_SRC = main.c $(COMMON_SRC)
 PLUGIN_SRC = plugin.c $(COMMON_SRC)
 INC = utils.inc.c
