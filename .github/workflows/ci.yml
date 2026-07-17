@@ -23,11 +23,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Installing radare2 from git
-        run: |
-          git clone --depth=1 https://github.com/radareorg/radare2
-          cd radare2
-          sys/install.sh /usr > /dev/null
+      - name: Install radare2 from git
+        uses: radareorg/github-actions@v3
+        with:
+          from-git: true
       - name: Building radare2-mcp
         run: ./configure && make
       - name: Create Linux zip archive
@@ -50,12 +49,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Installing radare2 from deb
-        run: |
-          BASE_URL="https://github.com/radareorg/radare2/releases/download/${{env.R2V}}"
-          wget "${BASE_URL}/radare2_${{env.R2V}}_amd64.deb"
-          wget "${BASE_URL}/radare2-dev_${{env.R2V}}_amd64.deb"
-          sudo dpkg -i *.deb
+      - name: Install radare2
+        uses: radareorg/github-actions@v3
+        with:
+          version: ${{ env.R2V }}
       - name: Building radare2-mcp
         run: ./configure && make
       - name: Run tests
@@ -80,12 +77,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Installing radare2 from deb
-        run: |
-          BASE_URL="https://github.com/radareorg/radare2/releases/download/${{env.R2V}}"
-          wget "${BASE_URL}/radare2_${{env.R2V}}_amd64.deb"
-          wget "${BASE_URL}/radare2-dev_${{env.R2V}}_amd64.deb"
-          sudo dpkg -i *.deb
+      - name: Install radare2
+        uses: radareorg/github-actions@v3
+        with:
+          version: ${{ env.R2V }}
       - name: Install Meson and Ninja
         run: sudo apt update && sudo apt install -y meson ninja-build
       - name: Configure Meson
@@ -123,12 +118,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Cloning radare2
-        run: git clone --depth=1 --branch "${{env.R2V}}" https://github.com/radareorg/radare2
-      - name: Building and installing radare2
-        run: |
-          cd radare2
-          sys/install.sh > /dev/null
+      - name: Install radare2 from git
+        uses: radareorg/github-actions@v3
+        with:
+          version: ${{ env.R2V }}
+          from-git: true
       - name: Building radare2-mcp
         run: ./configure && make
       - name: Check build output
@@ -171,33 +165,16 @@ jobs:
           python -m pip install --upgrade pip
           pip install meson
 
-      - name: Download and extract radare2 release
-        shell: powershell
-        run: |
-          $R2V = '${{ env.R2V }}'
-          $baseUrl = "https://github.com/radareorg/radare2/releases/download/$R2V"
-          $url = "$baseUrl/radare2-$R2V-w64.zip"
-          $dest = "$env:TEMP\radare2.zip"
-          Write-Output "Downloading $url"
-          Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing
-          $prefix = 'C:\\radare2'
-          if (Test-Path $prefix) { Remove-Item -Path $prefix -Recurse -Force }
-          New-Item -ItemType Directory -Force -Path $prefix | Out-Null
-          Expand-Archive -Path $dest -DestinationPath $prefix -Force
-          # Some zips include a top-level folder; move its contents up if needed
-          $inner = Get-ChildItem -Path $prefix | Where-Object { $_.PSIsContainer } | Select-Object -First 1
-            if ($inner -and (Get-ChildItem -Path $inner.FullName |
-                Measure-Object).Count -gt 0) {
-              Get-ChildItem -Path $inner.FullName -Force | Move-Item -Destination $prefix -Force
-            Remove-Item -Path $inner.FullName -Recurse -Force
-          }
-          Write-Output "Extracted radare2 contents to $prefix"
+      - name: Install radare2
+        id: r2
+        uses: radareorg/github-actions@v3
+        with:
+          version: ${{ env.R2V }}
 
       - name: Configure Meson
         shell: powershell
         run: |
-          $R2V = '${{ env.R2V }}'
-          $prefix = 'C:\\radare2'
+          $prefix = '${{ steps.r2.outputs.prefix }}'
           Write-Output "Using radare2 prefix: $prefix"
           $posix = $prefix -replace '\\','/'
           Write-Output "Passing r2_prefix as: $posix"
