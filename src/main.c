@@ -39,6 +39,7 @@ void r2mcp_help(void) {
 		"Usage: r2mcp [-flags]\n"
 		" -A         generate and require a random HTTP Bearer auth token\n"
 		" -C [mode]  content mode: text (default), json, structured, both\n"
+		" -D         deny access to paths containing hidden components\n"
 		" -a [token] require HTTP Authorization: Bearer [token] (use 'random' to generate)\n"
 		" -c [cmd]   run those commands before entering the mcp loop\n"
 		" -d [pdc]   select a different decompiler (pdc by default)\n"
@@ -87,6 +88,7 @@ int r2mcp_main(int argc, const char **argv) {
 	bool readonly_mode = false;
 	bool list_tools = false;
 	bool show_help = false;
+	bool deny_hidden_paths = false;
 	int exit_status = 0;
 	char *sandbox_grain_msg = NULL;
 	RList *cmds = r_list_newf (free);
@@ -116,7 +118,7 @@ int r2mcp_main(int argc, const char **argv) {
 	const char *dsl_tests = NULL;
 	RList *disabled_tools = NULL;
 	RGetopt opt;
-	r_getopt_init (&opt, argc, argv, "AC:a:E:H:hmvtpd:nc:u:g:l:s:rite:RT:S:P:NLX:");
+	r_getopt_init (&opt, argc, argv, "AC:a:DE:H:hmvtpd:nc:u:g:l:s:rite:RT:S:P:NLX:");
 	int c;
 	while ((c = r_getopt_next (&opt)) != -1) {
 		switch (c) {
@@ -128,6 +130,9 @@ int r2mcp_main(int argc, const char **argv) {
 				R_LOG_ERROR ("Failed to generate HTTP bearer token");
 				return 1;
 			}
+			break;
+		case 'D':
+			deny_hidden_paths = true;
 			break;
 		case 'C':
 			content_mode = r2mcp_content_mode_from_string (opt.arg);
@@ -354,6 +359,7 @@ int r2mcp_main(int argc, const char **argv) {
 		.auth_token = auth_token,
 		.auth_token_generated = auth_token_generated,
 		.sandbox = sandbox,
+		.deny_hidden_paths = deny_hidden_paths,
 		.sandbox_grain = sandbox_grain,
 		.logfile = logfile,
 		.prompts_dir = prompts_dir,

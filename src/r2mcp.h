@@ -107,6 +107,8 @@ typedef struct {
 	bool auth_token_generated;
 	/* Optional sandbox path. When set, only allow opening files under this dir */
 	char *sandbox;
+	/* When true, reject paths containing hidden components */
+	bool deny_hidden_paths;
 	/* Optional radare2 sandbox grain mask; NULL selects a mode-aware default */
 	char *sandbox_grain;
 	/* Optional path to append debug logs when set via -l */

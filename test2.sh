@@ -672,6 +672,33 @@ run_sandbox_regressions() {
 	}
 }
 
+run_hidden_path_regression() {
+	local hidden_dir="$TMPDIR/.hidden"
+	local req="$TMPDIR/hidden-path.req"
+	local resp="$TMPDIR/hidden-path.resp"
+	local deny_resp="$TMPDIR/hidden-path-deny.resp"
+	mkdir -p "$hidden_dir"
+	cp /bin/ls "$hidden_dir/ls"
+	: > "$req"
+
+	append_request "$req" 1 initialize '{"capabilities":{},"clientInfo":{"name":"testsuite","version":"1"}}'
+	append_notification "$req" notifications/initialized '{}'
+	append_tool_call "$req" 2 open_file "$(jq -cn --arg file "$hidden_dir/ls" '{file_path:$file}')"
+	run_session "$req" "$resp"
+	run_session "$req" "$deny_resp" -D
+
+	local open_hidden
+	local deny_hidden
+	open_hidden=$(response_by_id "$resp" 2)
+	deny_hidden=$(response_by_id "$deny_resp" 2)
+	printf '%s\n' "$open_hidden" | jq -e '.result.content[0].text | contains("File opened")' >/dev/null 2>&1 || {
+		fail "open_file should allow files under hidden directories, got $open_hidden"
+	}
+	printf '%s\n' "$deny_hidden" | jq -e '.result.content[0].text == "Failed to open file."' >/dev/null 2>&1 || {
+		fail "-D should deny files under hidden directories, got $deny_hidden"
+	}
+}
+
 run_command_smoke_regression() {
 	local req="$TMPDIR/runcmd_smoke.req"
 	local resp="$TMPDIR/runcmd_smoke.resp"
@@ -828,6 +855,7 @@ run_open_session_regression
 run_http_sandbox_grain_regression
 run_http_auth_regression
 run_sandbox_regressions
+run_hidden_path_regression
 run_command_smoke_regression
 run_command_json_pagination_regression
 run_command_filter_regression
