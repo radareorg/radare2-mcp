@@ -1,5 +1,7 @@
 # Radare2 MCP Server
 
+[![MCP Toplist](https://mcptoplist.com/badge/mcp.so%2Fradare2-mcp%2Fradareorg.svg)](https://mcptoplist.com/server/mcp.so%2Fradare2-mcp%2Fradareorg)
+
 [![ci](https://github.com/radareorg/radare2-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/radareorg/radare2-mcp/actions/workflows/ci.yml)
 [![radare2](https://img.shields.io/badge/radare2-6.1.8-green)](https://github.com/radareorg/radare2)
 
