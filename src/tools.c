@@ -822,7 +822,7 @@ static char *tool_use_decompiler(ServerState *ss, RJson *tool_args) {
 	}
 	char *decompilersAvailable = r2mcp_cmd (ss, "e cmd.pdc=?");
 	const char *response = "ok";
-	if (strstr (deco, "ghidra")) {
+	if (strstr (deco, "ghidra") || !strcmp (deco, "pdg")) {
 		if (strstr (decompilersAvailable, "pdg")) {
 			free (r2mcp_cmd (ss, "-e cmd.pdc=pdg"));
 		} else {
@@ -834,12 +834,18 @@ static char *tool_use_decompiler(ServerState *ss, RJson *tool_args) {
 		} else {
 			response = "This decompiler is not available";
 		}
-	} else if (strstr (deco, "r2dec")) {
+	} else if (strstr (deco, "r2dec") || !strcmp (deco, "pdd")) {
 		if (strstr (decompilersAvailable, "pdd")) {
 			free (r2mcp_cmd (ss, "-e cmd.pdc=pdd"));
 		} else {
 			response = "This decompiler is not available";
 		}
+	} else if (!strcmp (deco, "pdc")) {
+		free (r2mcp_cmd (ss, "-e cmd.pdc=pdc"));
+	} else if (strstr (decompilersAvailable, deco)) {
+		char *cmd = r_str_newf ("-e cmd.pdc=%s", deco);
+		free (r2mcp_cmd (ss, cmd));
+		free (cmd);
 	} else {
 		response = "Unknown decompiler";
 	}
@@ -893,7 +899,14 @@ static char *tool_decompile_function(ServerState *ss, RJson *tool_args) {
 	if (!validate_address_param (tool_args, "address", &address)) {
 		return jsonrpc_error_missing_param ("address");
 	}
-	return tool_cmd_response_paginated (ss, r2mcp_cmdf (ss, "'@%s'pdc", address), tool_args);
+	char *decompiler = r2mcp_cmd (ss, "e cmd.pdc");
+	if (decompiler) {
+		r_str_trim (decompiler);
+	}
+	const char *deco = (decompiler && *decompiler) ? decompiler : "pdc";
+	char *result = tool_cmd_response_paginated (ss, r2mcp_cmdf (ss, "'@%s'%s", address, deco), tool_args);
+	free (decompiler);
+	return result;
 }
 
 static char *tool_get_pid(ServerState *ss, RJson *tool_args) {
