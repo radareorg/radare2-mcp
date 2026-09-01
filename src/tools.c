@@ -1031,9 +1031,6 @@ static char *tool_run_command(ServerState *ss, RJson *tool_args) {
 #if HAVE_VSQL
 static char *tool_sql(ServerState *ss, RJson *tool_args) {
 	const char *query;
-	RCore *core;
-	char *cmd;
-	char *res;
 	if (!validate_required_string_param (tool_args, "query", &query)) {
 		return jsonrpc_error_missing_param ("query");
 	}
@@ -1043,20 +1040,20 @@ static char *tool_sql(ServerState *ss, RJson *tool_args) {
 	if (!ss->rstate) {
 		return jsonrpc_error_response (-32603, "Cannot run SQL without server state", NULL, NULL);
 	}
-	core = ss->rstate->core;
+	RCore *core = ss->rstate->core;
 	if (core && !ss->rstate->own_core) {
 		ss->rstate->file_opened = core->io && core->io->desc;
 	}
 	if (!core || !ss->rstate->file_opened) {
 		return jsonrpc_error_file_required ();
 	}
-	cmd = r_str_newf ("r2vsql %s", query);
+	char *cmd = r_str_newf ("sql %s", query);
 	R_CRITICAL_ENTER (core);
-	res = r_core_call_str_at (core, core->addr, cmd);
+	char *res = r_core_call_str_at (core, core->addr, cmd);
 	R_CRITICAL_LEAVE (core);
 	free (cmd);
 	if (!res) {
-		res = strdup ("Error: r2vsql command returned NULL");
+		res = strdup ("Error: sql command returned NULL");
 	}
 	return tool_cmd_response (res);
 }

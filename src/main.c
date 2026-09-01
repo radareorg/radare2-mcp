@@ -414,10 +414,10 @@ int r2mcp_main(int argc, const char **argv) {
 			if (!strcmp (deco, "decai")) {
 				deco = "decai -d";
 			}
-			char *pdc = r_str_newf ("e cmd.pdc=%s", deco);
-			R_LOG_INFO ("[R2MCP] Using Decompiler: %s", pdc);
-			r2mcp_cmd (&ss, pdc);
-			free (pdc);
+			R_LOG_INFO ("[R2MCP] Using Decompiler: %s", deco);
+			/* r2mcp_cmd refuses to run before open_file, so set the
+			 * configuration directly on the core */
+			r_config_set (ss.rstate->core->config, "cmd.pdc", deco);
 		}
 	} else {
 		r2mcp_log_pub (&ss, "HTTP r2pipe client mode active - skipping local r2 initialization");
