@@ -147,8 +147,8 @@ if host_machine.system() == 'windows'
 
   link_args = []
   c_args = []
-  if cc.get_id() == 'msvc' or cc.get_id() == 'clang-cl'
-    link_args += ['/SUBSYSTEM:CONSOLE', '/DEFAULTLIB:setupapi.lib', '/DEFAULTLIB:ws2_32.lib']
+  if host_machine.system() == 'windows'
+    link_args += ['-lws2_32', '-lsetupapi']
   endif
 else
   conf_data = configuration_data()
