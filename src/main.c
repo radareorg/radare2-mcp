@@ -67,7 +67,7 @@ void r2mcp_help(void) {
 		" -p         permissive tools: allow calling non-listed tools\n"
 		" -P [dir]   colon-separated list of directories with prompts\n"
 #ifndef __wasi__
-		" -r         enable the dangerous run_* tools\n"
+		" -r         enable the dangerous run_* and sql tools\n"
 #endif
 		" -R         enable read-only mode (expose only non-mutating tools)\n"
 		" -s [dir]   enable sandbox mode; only allow files under [dir]\n"
@@ -428,6 +428,15 @@ int r2mcp_main(int argc, const char **argv) {
 		}
 		free (cmd_result);
 	}
+	/* Startup commands configure the core before open_file (e.g. load plugins).
+	 * Capture and discard output so it cannot corrupt the MCP stdout stream. */
+	RListIter *iter;
+	const char *cmd;
+	r_list_foreach (cmds, iter, cmd) {
+		char *res = ss.http_mode? r2mcp_cmd (&ss, cmd): r_core_cmd_str (ss.rstate->core, cmd);
+		free (res);
+	}
+	r_list_free (cmds);
 	/* If -T was provided, run DSL tests and exit */
 	if (dsl_tests) {
 		int r = r2mcp_run_dsl_tests (&ss, dsl_tests, NULL);
@@ -452,12 +461,6 @@ int r2mcp_main(int argc, const char **argv) {
 		}
 		return r == 0? 0: 2;
 	}
-	RListIter *iter;
-	const char *cmd;
-	r_list_foreach (cmds, iter, cmd) {
-		r2mcp_cmd (&ss, cmd);
-	}
-	r_list_free (cmds);
 	r2mcp_running_set (1);
 #if R2__UNIX__ && !defined(__wasi__)
 	/* Install signals AFTER r_core_new so we override any handlers it may

@@ -8,8 +8,6 @@
 #include "utils.inc.c"
 #include "jsonrpc.h"
 
-#define HAVE_VSQL 0
-
 typedef char *(*ToolFunc)(ServerState *ss, RJson *tool_args);
 
 typedef struct {
@@ -316,7 +314,7 @@ static const ToolModeHelp tool_mode_help[] = {
 	{ 'F', TOOL_MODE_FRIDA, "frida", "frida://", "Frida target/process tools" },
 	{ 'R', TOOL_MODE_RO, "readonly", "-R", "non-mutating tools; overrides N/M/H/F selection" },
 	{ 'S', TOOL_MODE_SESSIONS, "sessions", "-L", "session management tools; additive" },
-	{ 'X', TOOL_MODE_EXEC, "exec", "-r", "permit run_* tools" },
+	{ 'X', TOOL_MODE_EXEC, "exec", "-r", "permit run_* and sql tools" },
 	{ 'N', TOOL_MODE_NORMAL, "normal", "default", "standard local radare2 tools" },
 	{ 0, 0, NULL, NULL, NULL }
 };
@@ -1028,7 +1026,6 @@ static char *tool_run_command(ServerState *ss, RJson *tool_args) {
 	return tool_cmd_response_paginated (ss, r2mcp_cmd (ss, command), tool_args);
 }
 
-#if HAVE_VSQL
 static char *tool_sql(ServerState *ss, RJson *tool_args) {
 	const char *query;
 	if (!validate_required_string_param (tool_args, "query", &query)) {
@@ -1049,15 +1046,20 @@ static char *tool_sql(ServerState *ss, RJson *tool_args) {
 	}
 	char *cmd = r_str_newf ("sql %s", query);
 	R_CRITICAL_ENTER (core);
-	char *res = r_core_call_str_at (core, core->addr, cmd);
+	/* Dispatch directly to a core plugin: SQL operators and quoted text are
+	 * data, not r2 redirection, pipes or command separators. */
+	r_cons_push (core->cons);
+	bool handled = r_core_plugin_check (core->rcmd, cmd);
+	char *res = strdup (r_str_get (r_cons_get_buffer (core->cons, NULL)));
+	r_cons_pop (core->cons);
 	R_CRITICAL_LEAVE (core);
 	free (cmd);
-	if (!res) {
-		res = strdup ("Error: sql command returned NULL");
+	if (!handled) {
+		free (res);
+		return jsonrpc_error_response (-32603, "No SQL core plugin is loaded; install or load r2xsql", NULL, NULL);
 	}
 	return tool_cmd_response (res);
 }
-#endif
 
 static char *tool_run_javascript(ServerState *ss, RJson *tool_args) {
 	const char *script;
@@ -1535,7 +1537,7 @@ cleanup:
 #define TOOL_SCHEMA_LIST_WITH_STRING_PARAM(name, desc) "{\"type\":\"object\",\"properties\":{\"" name "\":{\"type\":\"string\",\"description\":\"" desc "\"}," TOOL_SCHEMA_LIST_PROPS "},\"required\":[\"" name "\"]}"
 #define TOOL_SCHEMA_ADDRESS_PAGE(desc) "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"" desc "\"}," TOOL_SCHEMA_PAGE_PROPS "},\"required\":[\"address\"]}"
 #define TOOL_SCHEMA_COMMAND_PAGE "{\"type\":\"object\",\"properties\":{\"command\":{\"type\":\"string\",\"description\":\"The radare2 command to execute\"}," TOOL_SCHEMA_PAGE_PROPS "},\"required\":[\"command\"]}"
-#define TOOL_SCHEMA_SQL "{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\",\"description\":\"SQL query to pass to the r2vsql plugin\"}},\"required\":[\"query\"]}"
+#define TOOL_SCHEMA_SQL "{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\",\"description\":\"SQL statement to pass to the loaded SQL core plugin (r2xsql)\"}},\"required\":[\"query\"]}"
 #define TOOL_SCHEMA_SCRIPT_FILE_PAGE "{\"type\":\"object\",\"properties\":{\"file_path\":{\"type\":\"string\",\"description\":\"Absolute path to the radare2 script file to execute\"}," TOOL_SCHEMA_PAGE_PROPS "},\"required\":[\"file_path\"]}"
 
 ToolSpec tool_specs[] = {
@@ -1543,9 +1545,7 @@ ToolSpec tool_specs[] = {
 	{ "run_javascript", "Executes JavaScript code using radare2's qjs runtime", "{\"type\":\"object\",\"properties\":{\"script\":{\"type\":\"string\",\"description\":\"The JavaScript code to execute\"}},\"required\":[\"script\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_EXEC, tool_run_javascript },
 	{ "run_frida_script", "Executes Frida JavaScript code", "{\"type\":\"object\",\"properties\":{\"script\":{\"type\":\"string\",\"description\":\"The script code to execute\"}},\"required\":[\"script\"]}", TOOL_MODE_FRIDA | TOOL_MODE_EXEC, tool_run_frida_script },
 	{ "run_command", "Executes a raw radare2 command directly", TOOL_SCHEMA_COMMAND_PAGE, TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_EXEC, tool_run_command },
-#if HAVE_VSQL
-	{ "sql", "Runs an SQL query through the r2vsql plugin", TOOL_SCHEMA_SQL, TOOL_MODE_NORMAL | TOOL_MODE_MINI, tool_sql },
-#endif
+	{ "sql", "Runs one SQL statement through a loaded SQL core plugin such as r2xsql; supports reads and writes", TOOL_SCHEMA_SQL, TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_EXEC, tool_sql },
 	{ "run_script", "Runs a local radare2 command script file through r2's command-file API. The path must satisfy MCP path policy and the active r2 sandbox.", TOOL_SCHEMA_SCRIPT_FILE_PAGE, TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_FRIDA | TOOL_MODE_EXEC, tool_run_script },
 	{ "list_sessions", "Lists available r2agent sessions in JSON format", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_SESSIONS, tool_list_sessions },
 	{ "open_session", "Connects to a remote r2 instance using r2pipe API", "{\"type\":\"object\",\"properties\":{\"url\":{\"type\":\"string\",\"description\":\"URL of the remote r2 instance to connect to\"}},\"required\":[\"url\"]}", TOOL_MODE_SESSIONS, tool_open_session },
