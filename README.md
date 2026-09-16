@@ -154,6 +154,27 @@ When loading the plugin manually with `-i`, set these keys after the plugin is
 loaded, for example with `-c 'e r2mcp.port=8765'`, because radare2 processes
 early `-e` options before ad hoc plugin initialization.
 
+### SQL through r2xsql
+
+Install the [r2xsql](https://github.com/radareorg/r2xsql) core plugin for the
+same radare2 build that r2mcp uses. Enable the `sql` tool with `-r`, then call
+`open_file`, `analyze`, and `sql` with arguments such as:
+
+```json
+{"query":"SELECT name, size FROM funcs WHERE size > 100 ORDER BY size DESC LIMIT 10"}
+```
+
+The `sql` tool passes one statement directly to the loaded SQL core plugin,
+preserving SQL operators and quoted text. Results are the plugin's text output.
+It supports SQL writes, so it requires `-r` and is excluded from read-only mode.
+Use it with a local r2mcp server or r2mcp's core plugin; remote r2 HTTP client
+mode (`-u`) does not expose this tool.
+
+An installed plugin loads automatically. To load a build explicitly, add
+`-c 'L /absolute/path/core_r2xsql.so'` to the r2mcp command. Startup commands
+run in order before MCP requests or `-T` tests, and their output is discarded
+to keep stdout valid for MCP. On macOS/Windows use the actual plugin filename.
+
 ### Claude Desktop Integration
 
 In the Claude Desktop app, press `CMD + ,` to open the Developer settings. Edit the configuration file and restart the client after editing the JSON file as explained below:

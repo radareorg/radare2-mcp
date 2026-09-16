@@ -736,6 +736,35 @@ run_sandbox_regressions() {
 	}
 }
 
+run_startup_command_regression() {
+	local req="$TMPDIR/startup.req"
+	local resp="$TMPDIR/startup.resp"
+	: > "$req"
+	append_request "$req" 1 initialize '{"capabilities":{},"clientInfo":{"name":"testsuite","version":"1"}}'
+	append_tool_call "$req" 2 run_command '{"command":"e cmd.prompt"}'
+	append_tool_call "$req" 3 open_file "$(jq -cn --arg file "$TEST_FILE" '{file_path:$file}')"
+	append_tool_call "$req" 4 run_command '{"command":"e cmd.prompt"}'
+	"$BIN" -n -N -r -c 'e cmd.prompt=first' \
+		-c 'e cmd.prompt=R2MCP_STARTUP; ?e ignored output' < "$req" > "$resp"
+	jq -s -e 'length == 4 and all(.[]; .jsonrpc == "2.0")' "$resp" >/dev/null || fail "startup output corrupted MCP stdout"
+	response_by_id "$resp" 2 | jq -e '.error.code == -32611 and (.error.message | contains("open_file"))' >/dev/null
+	response_by_id "$resp" 4 | jq -e '.result.content[0].text == "R2MCP_STARTUP\n"' >/dev/null || fail "startup commands did not run in order"
+	"$BIN" -n -N -r -c 'e cmd.prompt=R2MCP_STARTUP' \
+		-T "open_file file_path=\"$TEST_FILE\"; run_command command=\"e cmd.prompt\"" 2> "$resp"
+	grep -q '"text":"R2MCP_STARTUP\\n"' "$resp" || fail "startup commands did not run before DSL tests"
+}
+
+run_sql_plugin_missing_regression() {
+	local req="$TMPDIR/sql_missing.req"
+	local resp="$TMPDIR/sql_missing.resp"
+	: > "$req"
+	append_request "$req" 1 initialize '{"capabilities":{},"clientInfo":{"name":"testsuite","version":"1"}}'
+	append_tool_call "$req" 2 open_file "$(jq -cn --arg file "$TEST_FILE" '{file_path:$file}')"
+	append_tool_call "$req" 3 sql '{"query":"SELECT 1"}'
+	run_session "$req" "$resp" -n -N -r
+	response_by_id "$resp" 3 | jq -e '.error.code == -32603 and (.error.message | contains("No SQL core plugin"))' >/dev/null || fail "missing SQL plugin must be reported"
+}
+
 run_command_smoke_regression() {
 	local req="$TMPDIR/runcmd_smoke.req"
 	local resp="$TMPDIR/runcmd_smoke.resp"
@@ -860,6 +889,7 @@ jq -e '
 ' "$NORMAL_CATALOG" >/dev/null
 jq -e 'map(.name) as $names
 	| ($names | index("list_sessions") | not)
+	and ($names | index("sql") | not)
 	and ($names | index("open_session") | not)
 	and ($names | index("close_session") | not)' "$NORMAL_CATALOG" >/dev/null
 jq -e 'map(.name) as $names
@@ -873,7 +903,7 @@ jq '[.[] | select(.name != "open_file" and .name != "list_sessions" and .name !=
 jq --slurpfile normal "$NORMAL_CATALOG" '
 	[.[] | select(.name as $name | ($normal[0] | map(.name) | index($name) | not))]
 ' "$DANGEROUS_CATALOG" > "$DANGEROUS_ONLY"
-jq -e 'map(.name) | index("run_command") and index("run_javascript") and index("run_script")' "$DANGEROUS_CATALOG" >/dev/null
+jq -e 'map(.name) | index("run_command") and index("run_javascript") and index("run_script") and index("sql")' "$DANGEROUS_CATALOG" >/dev/null
 echo "normal tools: $(jq 'length' "$NORMAL_RUNTIME_CATALOG")"
 echo "dangerous-only tools: $(jq 'length' "$DANGEROUS_ONLY")"
 echo "session tools: $(jq 'length' "$SESSION_ONLY_CATALOG")"
@@ -894,6 +924,8 @@ run_open_session_regression
 run_http_sandbox_grain_regression
 run_http_auth_regression
 run_sandbox_regressions
+run_startup_command_regression
+run_sql_plugin_missing_regression
 run_command_smoke_regression
 run_command_json_pagination_regression
 run_command_filter_regression
