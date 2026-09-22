@@ -771,12 +771,6 @@ bool r2mcp_eventloop_http(ServerState *ss, const char *address_port) {
 		r2mcp_bind_fini (&bind);
 		return false;
 	}
-#ifdef _WIN32
-	{
-		int sndbuf = 65536;
-		setsockopt (server->fd, SOL_SOCKET, SO_SNDBUF, (const char *)&sndbuf, sizeof (sndbuf));
-	}
-#endif
 	http_server_fd = server->fd;
 	R_LOG_INFO ("r2mcp HTTP server listening on %s:%s", bind.address, bind.port);
 	{
@@ -808,15 +802,6 @@ bool r2mcp_eventloop_http(ServerState *ss, const char *address_port) {
 		if (!rs) {
 			continue;
 		}
-#ifdef _WIN32
-		/* Work around radare2 SO_SNDBUF=1500 on the listening socket which
-		 * gets inherited by accepted sockets on Windows, truncating HTTP
-		 * responses larger than ~1500 bytes. */
-		if (rs->s && rs->s->fd != R_INVALID_SOCKET) {
-			int sndbuf = 65536;
-			setsockopt (rs->s->fd, SOL_SOCKET, SO_SNDBUF, (const char *)&sndbuf, sizeof (sndbuf));
-		}
-#endif
 		if (!rs->method) {
 			r_socket_http_response (rs, 400, "Bad Request", 0, NULL);
 			r_socket_http_close (rs);
