@@ -67,7 +67,7 @@ void r2mcp_help(void) {
 		" -p         permissive tools: allow calling non-listed tools\n"
 		" -P [dir]   colon-separated list of directories with prompts\n"
 #ifndef __wasi__
-		" -r         enable the dangerous run_* and sql tools\n"
+		" -r         enable the dangerous run_* tools\n"
 #endif
 		" -R         enable read-only mode (expose only non-mutating tools)\n"
 		" -s [dir]   enable sandbox mode; only allow files under [dir]\n"

@@ -761,7 +761,7 @@ run_sql_plugin_missing_regression() {
 	append_request "$req" 1 initialize '{"capabilities":{},"clientInfo":{"name":"testsuite","version":"1"}}'
 	append_tool_call "$req" 2 open_file "$(jq -cn --arg file "$TEST_FILE" '{file_path:$file}')"
 	append_tool_call "$req" 3 sql '{"query":"SELECT 1"}'
-	run_session "$req" "$resp" -n -N -r
+	run_session "$req" "$resp" -n -N
 	response_by_id "$resp" 3 | jq -e '.error.code == -32603 and (.error.message | contains("No SQL core plugin"))' >/dev/null || fail "missing SQL plugin must be reported"
 }
 
@@ -871,6 +871,7 @@ printf '?e R2MCP_SCRIPT_ONE\r\n# comment\r\n?e R2MCP_SCRIPT_TWO\r\n' > "$TEST_SC
 
 NORMAL_CATALOG="$TMPDIR/catalog.normal.json"
 DANGEROUS_CATALOG="$TMPDIR/catalog.dangerous.json"
+READONLY_CATALOG="$TMPDIR/catalog.readonly.json"
 SESSION_CATALOG="$TMPDIR/catalog.sessions.json"
 SESSION_ONLY_CATALOG="$TMPDIR/catalog.sessions.only.json"
 NORMAL_RUNTIME_CATALOG="$TMPDIR/catalog.normal.runtime.json"
@@ -879,6 +880,7 @@ DANGEROUS_ONLY="$TMPDIR/catalog.dangerous.only.json"
 echo "== Catalog =="
 fetch_catalog "$NORMAL_CATALOG"
 fetch_catalog "$DANGEROUS_CATALOG" -r
+fetch_catalog "$READONLY_CATALOG" -R
 fetch_catalog "$SESSION_CATALOG" -L
 jq -e '
 	length > 0
@@ -889,7 +891,7 @@ jq -e '
 ' "$NORMAL_CATALOG" >/dev/null
 jq -e 'map(.name) as $names
 	| ($names | index("list_sessions") | not)
-	and ($names | index("sql") | not)
+	and ($names | index("sql"))
 	and ($names | index("open_session") | not)
 	and ($names | index("close_session") | not)' "$NORMAL_CATALOG" >/dev/null
 jq -e 'map(.name) as $names
@@ -903,7 +905,8 @@ jq '[.[] | select(.name != "open_file" and .name != "list_sessions" and .name !=
 jq --slurpfile normal "$NORMAL_CATALOG" '
 	[.[] | select(.name as $name | ($normal[0] | map(.name) | index($name) | not))]
 ' "$DANGEROUS_CATALOG" > "$DANGEROUS_ONLY"
-jq -e 'map(.name) | index("run_command") and index("run_javascript") and index("run_script") and index("sql")' "$DANGEROUS_CATALOG" >/dev/null
+jq -e 'map(.name) | index("run_command") and index("run_javascript") and index("run_script") and (index("sql") | not)' "$DANGEROUS_ONLY" >/dev/null
+jq -e 'map(.name) | index("sql") | not' "$READONLY_CATALOG" >/dev/null
 echo "normal tools: $(jq 'length' "$NORMAL_RUNTIME_CATALOG")"
 echo "dangerous-only tools: $(jq 'length' "$DANGEROUS_ONLY")"
 echo "session tools: $(jq 'length' "$SESSION_ONLY_CATALOG")"
