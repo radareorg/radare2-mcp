@@ -8,6 +8,11 @@ $(SRC_TARGETS): src/Makefile
 test:
 	bash test.sh
 	bash test2.sh
+	@if command -v python3 >/dev/null 2>&1; then \
+		python3 test-http.py; \
+	else \
+		echo "skip test-http.py (python3 not found)"; \
+	fi
 
 format fmt indent:
 	clang-format-radare2 src/*.c svc/*.c src/*.h
