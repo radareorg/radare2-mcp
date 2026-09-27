@@ -314,7 +314,7 @@ static const ToolModeHelp tool_mode_help[] = {
 	{ 'F', TOOL_MODE_FRIDA, "frida", "frida://", "Frida target/process tools" },
 	{ 'R', TOOL_MODE_RO, "readonly", "-R", "non-mutating tools; overrides N/M/H/F selection" },
 	{ 'S', TOOL_MODE_SESSIONS, "sessions", "-L", "session management tools; additive" },
-	{ 'X', TOOL_MODE_EXEC, "exec", "-r", "permit run_* and sql tools" },
+	{ 'X', TOOL_MODE_EXEC, "exec", "-r", "permit run_* tools" },
 	{ 'N', TOOL_MODE_NORMAL, "normal", "default", "standard local radare2 tools" },
 	{ 0, 0, NULL, NULL, NULL }
 };
@@ -1545,7 +1545,7 @@ ToolSpec tool_specs[] = {
 	{ "run_javascript", "Executes JavaScript code using radare2's qjs runtime", "{\"type\":\"object\",\"properties\":{\"script\":{\"type\":\"string\",\"description\":\"The JavaScript code to execute\"}},\"required\":[\"script\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_EXEC, tool_run_javascript },
 	{ "run_frida_script", "Executes Frida JavaScript code", "{\"type\":\"object\",\"properties\":{\"script\":{\"type\":\"string\",\"description\":\"The script code to execute\"}},\"required\":[\"script\"]}", TOOL_MODE_FRIDA | TOOL_MODE_EXEC, tool_run_frida_script },
 	{ "run_command", "Executes a raw radare2 command directly", TOOL_SCHEMA_COMMAND_PAGE, TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_EXEC, tool_run_command },
-	{ "sql", "Runs one SQL statement through a loaded SQL core plugin such as r2xsql; supports reads and writes", TOOL_SCHEMA_SQL, TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_EXEC, tool_sql },
+	{ "sql", "Runs one SQL statement through a loaded SQL core plugin such as r2xsql; supports reads and writes", TOOL_SCHEMA_SQL, TOOL_MODE_NORMAL | TOOL_MODE_MINI, tool_sql },
 	{ "run_script", "Runs a local radare2 command script file through r2's command-file API. The path must satisfy MCP path policy and the active r2 sandbox.", TOOL_SCHEMA_SCRIPT_FILE_PAGE, TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_FRIDA | TOOL_MODE_EXEC, tool_run_script },
 	{ "list_sessions", "Lists available r2agent sessions in JSON format", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_SESSIONS, tool_list_sessions },
 	{ "open_session", "Connects to a remote r2 instance using r2pipe API", "{\"type\":\"object\",\"properties\":{\"url\":{\"type\":\"string\",\"description\":\"URL of the remote r2 instance to connect to\"}},\"required\":[\"url\"]}", TOOL_MODE_SESSIONS, tool_open_session },

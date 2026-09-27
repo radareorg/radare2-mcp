@@ -157,8 +157,8 @@ early `-e` options before ad hoc plugin initialization.
 ### SQL through r2xsql
 
 Install the [r2xsql](https://github.com/radareorg/r2xsql) core plugin for the
-same radare2 build that r2mcp uses. Enable the `sql` tool with `-r`, then call
-`open_file`, `analyze`, and `sql` with arguments such as:
+same radare2 build that r2mcp uses. The `sql` tool is available without `-r`
+in local mode. Call `open_file`, `analyze`, and `sql` with arguments such as:
 
 ```json
 {"query":"SELECT name, size FROM funcs WHERE size > 100 ORDER BY size DESC LIMIT 10"}
@@ -166,7 +166,7 @@ same radare2 build that r2mcp uses. Enable the `sql` tool with `-r`, then call
 
 The `sql` tool passes one statement directly to the loaded SQL core plugin,
 preserving SQL operators and quoted text. Results are the plugin's text output.
-It supports SQL writes, so it requires `-r` and is excluded from read-only mode.
+It supports SQL writes, so it is excluded from read-only mode (`-R`).
 Use it with a local r2mcp server or r2mcp's core plugin; remote r2 HTTP client
 mode (`-u`) does not expose this tool.
 
