@@ -138,21 +138,19 @@ plugin_srcs = [
   'src/sessions.c',
 ]
 
+conf_data = configuration_data()
+conf_data.set('R2MCP_VERSION', meson.project_version())
+
 if host_machine.system() == 'windows'
   configure_file(
     input: 'config.h.w64',
     output: 'config.h',
-    copy: true
+    configuration: conf_data
   )
 
-  link_args = []
+  link_args = ['-lsetupapi']
   c_args = []
-  if cc.get_id() == 'msvc' or cc.get_id() == 'clang-cl'
-    link_args += ['/SUBSYSTEM:CONSOLE', '/DEFAULTLIB:setupapi.lib']
-  endif
 else
-  conf_data = configuration_data()
-  conf_data.set('R2MCP_VERSION', meson.project_version())
   configure_file(
     input: 'src/config.h.acr',
     output: 'config.h',

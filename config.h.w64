@@ -1,23 +1,28 @@
-#ifndef CONFIG_H
-#define CONFIG_H
+#ifndef R2MCP_CONFIG_H
+#define R2MCP_CONFIG_H
 
 /* Windows-specific configuration for r2mcp */
 
-/* Version information */
-#define R2MCP_VERSION "1.2.0"
-#define R2MCP_VERSION_MAJOR 1
-#define R2MCP_VERSION_MINOR 2
-#define R2MCP_VERSION_PATCH 0
-
-/* Platform detection */
-#define WINDOWS 1
-#define WIN32 1
-#define _WIN32 1
-#define _WIN64 1
+/* Version information (substituted by meson from the project version) */
+#define R2MCP_VERSION "@R2MCP_VERSION@"
 
 /* Compiler-specific definitions */
 #ifdef _MSC_VER
 #define HAVE_MSC_VER 1
+/* POSIX compatibility for MSVC */
+#include <io.h>
+#include <BaseTsd.h>
+typedef SSIZE_T ssize_t;
+_Static_assert (sizeof (ssize_t) == sizeof (void *), "ssize_t must be pointer-sized");
+#ifndef STDIN_FILENO
+#define STDIN_FILENO 0
+#endif
+#ifndef STDOUT_FILENO
+#define STDOUT_FILENO 1
+#endif
+#ifndef STDERR_FILENO
+#define STDERR_FILENO 2
+#endif
 #endif
 
 /* Standard C library features */
@@ -161,11 +166,6 @@
 #define WORDS_BIGENDIAN 0
 #define WORDS_LITTLEENDIAN 1
 
-/* Architecture */
-#define ARCH_X86 1
-#define ARCH_X86_64 1
-#define ARCH_AMD64 1
-
 /* Build configuration */
 #define DEBUG 0
 #define NDEBUG 1
@@ -196,4 +196,4 @@
 #pragma warning(disable: 4267) /* conversion from 'size_t' to 'type' */
 #endif
 
-#endif /* CONFIG_H */
+#endif /* R2MCP_CONFIG_H */

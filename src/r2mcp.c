@@ -1,5 +1,6 @@
 /* r2mcp - MIT - Copyright 2025-2026 - pancake, dnakov */
 
+#include "config.h"
 #include <signal.h>
 #if R2__UNIX__
 #include <fcntl.h>
@@ -7,7 +8,6 @@
 #include <unistd.h>
 #endif
 #include <r_core.h>
-#include "config.h"
 #include "jsonrpc.h"
 #include "r2mcp.h"
 #include "sessions.h"
