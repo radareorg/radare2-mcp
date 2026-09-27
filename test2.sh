@@ -820,6 +820,85 @@ run_script_sandbox_regression() {
 	}
 }
 
+run_use_decompiler_regression() {
+	local req="$TMPDIR/decompiler.req"
+	local resp="$TMPDIR/decompiler.resp"
+	local rejected="Unknown or unavailable decompiler"
+	local available
+	local ghidra_expected
+	local selected
+	: > "$req"
+
+	append_request "$req" 1 initialize '{"capabilities":{},"clientInfo":{"name":"testsuite","version":"1"}}'
+	append_notification "$req" notifications/initialized '{}'
+	append_tool_call "$req" 2 open_file "$(jq -cn --arg file "$TEST_FILE" '{file_path:$file}')"
+	append_tool_call "$req" 3 run_command '{"command":"e cmd.pdc=?"}'
+	# A fresh core may leave cmd.pdc empty even though pdc is available.
+	# Select a known backend before checking that rejected names preserve it.
+	append_tool_call "$req" 4 use_decompiler '{"name":"pdc"}'
+	append_tool_call "$req" 5 run_command '{"command":"e cmd.pdc"}'
+	# Partial/arbitrary names must be rejected: only complete registered
+	# commands may be selected ("pd", "c" used to be accepted as substrings).
+	append_tool_call "$req" 6 use_decompiler '{"name":"pd"}'
+	append_tool_call "$req" 7 use_decompiler '{"name":"c"}'
+	# Rejected input must retain the previous selection.
+	append_tool_call "$req" 8 run_command '{"command":"e cmd.pdc"}'
+	# Empty names are a parameter error.
+	append_tool_call "$req" 9 use_decompiler '{"name":""}'
+	# Alias for the optional Ghidra backend (accepted only when advertised).
+	append_tool_call "$req" 10 use_decompiler '{"name":"ghidra"}'
+	append_tool_call "$req" 11 use_decompiler '{"name":"pd:g"}'
+	# Reset to pdc and verify decompile_function keeps pdc dispatch semantics
+	# (asm.addr.base is set/restored inside radare2, not by the tool).
+	append_tool_call "$req" 12 use_decompiler '{"name":"pdc"}'
+	append_tool_call "$req" 13 run_command '{"command":"e asm.addr.base=10"}'
+	append_tool_call "$req" 14 decompile_function '{"address":"entry0"}'
+	append_tool_call "$req" 15 run_command '{"command":"e asm.addr.base"}'
+	run_session "$req" "$resp" -r
+
+	available=$(response_by_id "$resp" 3 | jq -r '.result.content[0].text')
+	if printf '%s\n' "$available" | grep -qx 'pdg'; then
+		ghidra_expected="ok"
+	else
+		ghidra_expected="$rejected"
+	fi
+
+	printf '%s\n' "$(response_by_id "$resp" 4)" | jq -e '.result.content[0].text == "ok"' >/dev/null 2>&1 || {
+		fail "use_decompiler: pdc should be accepted, got $(response_by_id "$resp" 4)"
+	}
+	selected=$(response_by_id "$resp" 5 | jq -r '.result.content[0].text')
+	[ "$selected" = "pdc" ] || {
+		fail "use_decompiler: expected cmd.pdc=pdc after selection, got $(response_by_id "$resp" 5)"
+	}
+	printf '%s\n' "$(response_by_id "$resp" 6)" | jq -e --arg m "$rejected" '.result.content[0].text == $m' >/dev/null 2>&1 || {
+		fail "use_decompiler: partial name 'pd' must be rejected, got $(response_by_id "$resp" 6)"
+	}
+	printf '%s\n' "$(response_by_id "$resp" 7)" | jq -e --arg m "$rejected" '.result.content[0].text == $m' >/dev/null 2>&1 || {
+		fail "use_decompiler: partial name 'c' must be rejected, got $(response_by_id "$resp" 7)"
+	}
+	[ "$(response_by_id "$resp" 8 | jq -r '.result.content[0].text')" = "$selected" ] || {
+		fail "use_decompiler: rejected input changed cmd.pdc, got $(response_by_id "$resp" 8)"
+	}
+	assert_error_contains_param "$(response_by_id "$resp" 9)" "name" "use_decompiler:empty-name"
+	printf '%s\n' "$(response_by_id "$resp" 10)" | jq -e --arg m "$ghidra_expected" '.result.content[0].text == $m' >/dev/null 2>&1 || {
+		fail "use_decompiler: 'ghidra' expected '$ghidra_expected', got $(response_by_id "$resp" 10)"
+	}
+	if [ "$ghidra_expected" = "ok" ]; then
+		printf '%s\n' "$(response_by_id "$resp" 11)" | jq -e '.result.content[0].text == "ok"' >/dev/null 2>&1 || {
+			fail "use_decompiler: 'pd:g' alias should resolve, got $(response_by_id "$resp" 11)"
+		}
+	fi
+	printf '%s\n' "$(response_by_id "$resp" 12)" | jq -e '.result.content[0].text == "ok"' >/dev/null 2>&1 || {
+		fail "use_decompiler: reset to pdc failed, got $(response_by_id "$resp" 12)"
+	}
+	printf '%s\n' "$(response_by_id "$resp" 14)" | jq -e '.result.content[0].text | type == "string" and length > 0' >/dev/null 2>&1 || {
+		fail "decompile_function: expected non-empty text, got $(response_by_id "$resp" 14)"
+	}
+	printf '%s\n' "$(response_by_id "$resp" 15)" | jq -e '.result.content[0].text | contains("10")' >/dev/null 2>&1 || {
+		fail "decompile_function: pdc dispatch must restore asm.addr.base, got $(response_by_id "$resp" 15)"
+	}
+}
+
 need_cmd jq
 need_cmd mktemp
 need_cmd curl
@@ -898,5 +977,6 @@ run_command_smoke_regression
 run_command_json_pagination_regression
 run_command_filter_regression
 run_script_sandbox_regression
+run_use_decompiler_regression
 
 echo "== OK =="
