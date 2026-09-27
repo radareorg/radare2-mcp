@@ -813,36 +813,35 @@ static char *tool_disassemble(ServerState *ss, RJson *tool_args) {
 	return tool_cmd_response (r2mcp_cmdf (ss, "'@%s'pd %d", address, num_instructions));
 }
 
+// Resolve a user-supplied decompiler name to a registered `cmd.pdc` command.
+// Names are matched as complete entries, not substrings, so "pd", "c" or an
+// empty string can no longer select an arbitrary command. `pd:` aliases are
+// normalized to whichever spelling the installed plugin advertises.
+static const char *decompiler_command(const char *name, const char *available) {
+	const char *cmd = name;
+	if (r_str_cmp_list ("ghidra,r2ghidra,pdg,pd:g", name, ',')) {
+		cmd = r_str_cmp_list (available, "pd:g", '\n')? "pd:g": "pdg";
+	} else if (r_str_cmp_list ("r2dec,pdd,pd:d", name, ',')) {
+		cmd = r_str_cmp_list (available, "pd:d", '\n')? "pd:d": "pdd";
+	}
+	if (R_STR_ISEMPTY (cmd) || !r_str_cmp_list (available, cmd, '\n')) {
+		return NULL;
+	}
+	return !strcmp (cmd, "decai")? "decai -d": cmd;
+}
+
 static char *tool_use_decompiler(ServerState *ss, RJson *tool_args) {
-	const char *deco;
-	if (!validate_required_string_param (tool_args, "name", &deco)) {
+	const char *name;
+	if (!validate_required_string_param (tool_args, "name", &name) || R_STR_ISEMPTY (name)) {
 		return jsonrpc_error_missing_param ("name");
 	}
-	char *decompilersAvailable = r2mcp_cmd (ss, "e cmd.pdc=?");
-	const char *response = "ok";
-	if (strstr (deco, "ghidra")) {
-		if (strstr (decompilersAvailable, "pdg")) {
-			free (r2mcp_cmd (ss, "-e cmd.pdc=pdg"));
-		} else {
-			response = "This decompiler is not available";
-		}
-	} else if (strstr (deco, "decai")) {
-		if (strstr (decompilersAvailable, "decai")) {
-			free (r2mcp_cmd (ss, "-e cmd.pdc=decai -d"));
-		} else {
-			response = "This decompiler is not available";
-		}
-	} else if (strstr (deco, "r2dec")) {
-		if (strstr (decompilersAvailable, "pdd")) {
-			free (r2mcp_cmd (ss, "-e cmd.pdc=pdd"));
-		} else {
-			response = "This decompiler is not available";
-		}
-	} else {
-		response = "Unknown decompiler";
+	char *available = r2mcp_cmd (ss, "e cmd.pdc=?");
+	const char *cmd = decompiler_command (name, available);
+	if (cmd) {
+		free (r2mcp_cmdf (ss, "-e cmd.pdc=%s", cmd));
 	}
-	free (decompilersAvailable);
-	return jsonrpc_tooltext_response (response);
+	free (available);
+	return jsonrpc_tooltext_response (cmd? "ok": "Unknown or unavailable decompiler");
 }
 
 static char *tool_xrefs_to(ServerState *ss, RJson *tool_args) {
@@ -891,7 +890,10 @@ static char *tool_decompile_function(ServerState *ss, RJson *tool_args) {
 	if (!validate_address_param (tool_args, "address", &address)) {
 		return jsonrpc_error_missing_param ("address");
 	}
-	return tool_cmd_response_paginated (ss, r2mcp_cmdf (ss, "'@%s'pdc", address), tool_args);
+	// Keep execution delegated to `pdc`: radare2's dispatcher routes it through
+	// cmd.pdc and applies asm.addr.relto / asm.addr.base semantics around it.
+	return tool_cmd_response_paginated (ss,
+		r2mcp_cmdf (ss, "'@%s'pdc", address), tool_args);
 }
 
 static char *tool_get_pid(ServerState *ss, RJson *tool_args) {
