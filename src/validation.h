@@ -11,7 +11,9 @@ typedef struct {
 	char *error_message;
 } ValidationResult;
 
-ValidationResult validate_arguments(RJson *args, const char *schema_json);
+/* Evaluate numeric input with r2 semantics; callers serialize the result. */
+bool parse_math_expression(RNum *num, const char *expression, ut64 *out_value);
+ValidationResult validate_arguments(RJson *args, const char *schema_json, RNum *num);
 
 /* Helper: Check if a required string parameter exists and is a string */
 ValidationResult validate_required_string(RJson *args, const char *param_name);
