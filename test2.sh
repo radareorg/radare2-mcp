@@ -488,6 +488,140 @@ run_numeric_string_regression() {
 	}
 }
 
+run_tool_argument_regressions() {
+	local req="$TMPDIR/tool-arguments.req"
+	local resp="$TMPDIR/tool-arguments.resp"
+	local cases="$TMPDIR/tool-arguments.cases.json"
+	local meta="$TMPDIR/tool-arguments.meta.jsonl"
+	local literal_path="$TEST_DIR/literal;quote'line
+break"
+	local payload="one;f $INJECT_MARKER=1337
+three#four'five"
+	mkdir -p "$literal_path"
+	: > "$literal_path/kept.txt"
+	: > "$req"
+	: > "$meta"
+	append_request "$req" 1 initialize '{"capabilities":{},"clientInfo":{"name":"testsuite","version":"1"}}'
+	append_notification "$req" notifications/initialized '{}'
+	append_tool_call "$req" 2 open_file "$(jq -cn --arg file "$TEST_FILE" '{file_path:$file}')"
+	append_tool_call "$req" 3 run_command '{"command":"f R2MCP_HIGH=0xffffffffffffffff"}'
+	append_tool_call "$req" 4 lookup_address '{"address":"0xffffffffffffffff"}'
+	append_tool_call "$req" 5 hexdump '{"address":"0","size":"0x10"}'
+	append_tool_call "$req" 6 hexdump '{"address":"0","size":""}'
+	append_tool_call "$req" 7 hexdump '{"address":"0"}'
+	append_tool_call "$req" 8 search '{"type":"value","query":"0","value_size":1}'
+	append_tool_call "$req" 9 lookup_symbol '{"address":"0xffffffffffffffff"}'
+	build_cases "$NORMAL_CATALOG" "$cases"
+	jq --arg marker "$INJECT_MARKER" '
+		["hexdump", "lookup_address", "lookup_symbol"] as $tools
+		| [.[] | select(.kind == "smoke" and (.args | has("address")))
+			| .args.address = ("0\u0027f " + $marker + "=1337;\u0027")
+			| . + {kind:"invalid-numeric",param:"address"}]
+		+ [$tools[] as $tool
+			| ["", "0x", "0xgg", "0xff..bad", "0x10000000000000000", "18446744073709551616", "02000000000000000000000", "12junk", "-1", "entry0", "0+1"][] as $address
+			| {tool:$tool,kind:"invalid-numeric",param:"address",args:{address:$address,size:"16"}}]
+		+ [["bad", "0x", "16junk", "0;f " + $marker + "=1337", "-1", "0", "2147483648"][] as $size
+			| {tool:"hexdump",kind:"invalid-numeric",param:"size",args:{address:"0",size:$size}}]
+		+ [["bad", "0x", "16junk", "0;f " + $marker + "=1337", "-1", "18446744073709551616"][] as $query
+			| {tool:"search",kind:"invalid-numeric",param:"query",args:{type:"value",query:$query}}]
+		+ [{tool:"search",kind:"invalid-numeric",param:"value_size",args:{type:"value",query:"0",value_size:3}}]
+	' "$cases" > "$cases.new"
+	mv "$cases.new" "$cases"
+	NEXT_ID=10
+	append_cases "$cases" "$req" "$meta"
+	local literal_id="$NEXT_ID"
+	append_tool_call "$req" "$literal_id" list_files "$(jq -cn --arg path "$literal_path" '{path:$path}')"
+	NEXT_ID=$((NEXT_ID + 1))
+	append_tool_call "$req" "$NEXT_ID" list_methods "$(jq -cn --arg classname "$payload" '{classname:$classname}')"
+	NEXT_ID=$((NEXT_ID + 1))
+	append_tool_call "$req" "$NEXT_ID" lookup_export "$(jq -cn --arg name "$payload" '{name:$name}')"
+	NEXT_ID=$((NEXT_ID + 1))
+	append_tool_call "$req" "$NEXT_ID" run_command '{"command":"o malloc://256"}'
+	NEXT_ID=$((NEXT_ID + 1))
+	append_tool_call "$req" "$NEXT_ID" run_command "$(jq -cn --arg hex "$(printf '%s' "$payload" | od -An -tx1 | tr -d ' \n')" '{command:("wx " + $hex)}')"
+	NEXT_ID=$((NEXT_ID + 1))
+	local search_id="$NEXT_ID"
+	append_tool_call "$req" "$search_id" search "$(jq -cn --arg query "$payload" '{query:$query}')"
+	NEXT_ID=$((NEXT_ID + 1))
+	append_tool_call "$req" "$NEXT_ID" search "$(jq -cn --arg query "$payload" '{query:$query,type:"wide"}')"
+	NEXT_ID=$((NEXT_ID + 1))
+	append_tool_call "$req" "$NEXT_ID" search "$(jq -cn --arg marker "$INJECT_MARKER" '{query:("6161;f " + $marker + "=1337"),type:"hex"}')"
+	NEXT_ID=$((NEXT_ID + 1))
+	append_tool_call "$req" "$NEXT_ID" calculate "$(jq -cn --arg expression "$INJECT_MARKER" '{expression:$expression}')"
+	run_session "$req" "$resp" -r -g all
+
+	printf '%s\n' "$(response_by_id "$resp" 4)" | jq -e '.result.content[0].text | contains("R2MCP_HIGH")' >/dev/null || {
+		fail "lookup_address: full-width hexadecimal address was not preserved"
+	}
+	local id
+	for id in 5 6 7 8 9; do
+		printf '%s\n' "$(response_by_id "$resp" "$id")" | jq -e '.result.content[0].text != null and (.error | not)' >/dev/null || {
+			fail "tool argument regression: numeric zero, full-width address, or optional hexdump size failed (#$id)"
+		}
+	done
+	while IFS= read -r case_json; do
+		id=$(printf '%s\n' "$case_json" | jq -r '.id')
+		local param
+		param=$(printf '%s\n' "$case_json" | jq -r '.param')
+		assert_error_contains_param "$(response_by_id "$resp" "$id")" "$param" "tool argument regression:#$id"
+	done < "$meta"
+	printf '%s\n' "$(response_by_id "$resp" "$literal_id")" | jq -e '.result.content[0].text | contains("kept.txt")' >/dev/null || {
+		fail "list_files: semicolon, quote, and newline in path must be literal"
+	}
+	printf '%s\n' "$(response_by_id "$resp" "$search_id")" | jq -e '.result.content[0].text | test("hit[0-9]+_[0-9]+")' >/dev/null || {
+		fail "search: semicolon, quote, and newline in string must be literal"
+	}
+	printf '%s\n' "$(response_by_id "$resp" "$NEXT_ID")" | jq -e '.result.content[0].text == "0x0"' >/dev/null || {
+		fail "tool argument regression: input created injection marker"
+	}
+
+	: > "$req"
+	append_request "$req" 1 initialize '{"capabilities":{},"clientInfo":{"name":"testsuite","version":"1"}}'
+	append_notification "$req" notifications/initialized '{}'
+	append_tool_call "$req" 2 open_file "$(jq -cn --arg file "$TEST_FILE" '{file_path:$file}')"
+	append_tool_call "$req" 3 decompile_function "$(jq -cn --arg address "0'f $INJECT_MARKER=1337;'" '{address:$address}')"
+	append_tool_call "$req" 4 list_methods "$(jq -cn --arg classname "$payload" '{classname:$classname}')"
+	append_tool_call "$req" 5 list_files "$(jq -cn --arg path "$literal_path" '{path:$path}')"
+	append_tool_call "$req" 6 calculate "$(jq -cn --arg expression "$INJECT_MARKER" '{expression:$expression}')"
+	run_session "$req" "$resp" -p -R -g all
+	assert_error_contains_param "$(response_by_id "$resp" 3)" address "read-only address injection"
+	printf '%s\n' "$(response_by_id "$resp" 5)" | jq -e '.result.content[0].text | contains("kept.txt")' >/dev/null || {
+		fail "read-only list_files: punctuation in path must be literal"
+	}
+	printf '%s\n' "$(response_by_id "$resp" 6)" | jq -e '.result.content[0].text == "0x0"' >/dev/null || {
+		fail "read-only tools: input created injection marker"
+	}
+}
+
+run_lookup_export_regression() {
+	local req="$TMPDIR/lookup-export.req"
+	local resp="$TMPDIR/lookup-export.resp"
+	: > "$req"
+	append_request "$req" 1 initialize '{"capabilities":{},"clientInfo":{"name":"testsuite","version":"1"}}'
+	append_tool_call "$req" 2 open_file "$(jq -cn --arg file "$TEST_OBJECT" '{file_path:$file}')"
+	append_tool_call "$req" 3 run_command '{"command":"iEj"}'
+	run_session "$req" "$resp" -r
+	local export
+	export=$(response_by_id "$resp" 3 | jq -c '.result.content[0].text | fromjson | .[0]')
+	[ "$export" != "null" ] || fail "lookup_export: object fixture has no exports"
+	local name
+	local address
+	name=$(printf '%s\n' "$export" | jq -r '.name')
+	address=$(printf '0x%x' "$(printf '%s\n' "$export" | jq -r '.vaddr')")
+	: > "$req"
+	append_request "$req" 1 initialize '{"capabilities":{},"clientInfo":{"name":"testsuite","version":"1"}}'
+	append_tool_call "$req" 2 open_file "$(jq -cn --arg file "$TEST_OBJECT" '{file_path:$file}')"
+	append_tool_call "$req" 3 lookup_export "$(jq -cn --arg name "$name" '{name:$name}')"
+	append_tool_call "$req" 4 lookup_export '{"name":"__R2MCP_NO_SUCH_EXPORT__"}'
+	run_session "$req" "$resp"
+	printf '%s\n' "$(response_by_id "$resp" 3)" | jq -e --arg address "$address" '.result.content[0].text == $address' >/dev/null || {
+		fail "lookup_export: '$name' did not resolve to $address"
+	}
+	printf '%s\n' "$(response_by_id "$resp" 4)" | jq -e '.result.content[0].text == "Export not found"' >/dev/null || {
+		fail "lookup_export: missing export should not match other exports"
+	}
+}
+
 run_list_filter_regressions() {
 	local req="$TMPDIR/list-filter.req"
 	local resp="$TMPDIR/list-filter.resp"
@@ -527,7 +661,7 @@ run_list_filter_regressions() {
 
 	run_session "$req" "$resp"
 
-	printf '%s\n' "$(response_by_id "$resp" 3)" | jq -e '.result.content[0].text | contains("sym.r2mcp_sandbox_check")' >/dev/null 2>&1 || {
+	printf '%s\n' "$(response_by_id "$resp" 3)" | jq -e '.result.content[0].text | test("(sym|dbg)\\.r2mcp_sandbox_check(\\s|$)")' >/dev/null 2>&1 || {
 		fail "list_functions filter: single matching row was lost, got $(response_by_id "$resp" 3)"
 	}
 	printf '%s\n' "$(response_by_id "$resp" 4)" | jq -e '.result.content[0].text == "1"' >/dev/null 2>&1 || {
@@ -856,6 +990,15 @@ run_use_decompiler_regression() {
 	local available
 	local ghidra_expected
 	local selected
+	local address_req="$TMPDIR/decompiler-address.req"
+	local address_resp="$TMPDIR/decompiler-address.resp"
+	: > "$address_req"
+	append_request "$address_req" 1 initialize '{"capabilities":{},"clientInfo":{"name":"testsuite","version":"1"}}'
+	append_tool_call "$address_req" 2 open_file "$(jq -cn --arg file "$TEST_FILE" '{file_path:$file}')"
+	append_tool_call "$address_req" 3 calculate '{"expression":"entry0"}'
+	run_session "$address_req" "$address_resp"
+	local address
+	address=$(response_by_id "$address_resp" 3 | jq -r '.result.content[0].text')
 	: > "$req"
 
 	append_request "$req" 1 initialize '{"capabilities":{},"clientInfo":{"name":"testsuite","version":"1"}}'
@@ -881,7 +1024,7 @@ run_use_decompiler_regression() {
 	# (asm.addr.base is set/restored inside radare2, not by the tool).
 	append_tool_call "$req" 12 use_decompiler '{"name":"pdc"}'
 	append_tool_call "$req" 13 run_command '{"command":"e asm.addr.base=10"}'
-	append_tool_call "$req" 14 decompile_function '{"address":"entry0"}'
+	append_tool_call "$req" 14 decompile_function "$(jq -cn --arg address "$address" '{address:$address}')"
 	append_tool_call "$req" 15 run_command '{"command":"e asm.addr.base"}'
 	run_session "$req" "$resp" -r
 
@@ -1000,6 +1143,8 @@ run_repeated_open_file_regression
 run_different_open_file_regression
 run_open_file_baddr_regression
 run_numeric_string_regression
+run_tool_argument_regressions
+run_lookup_export_regression
 run_list_filter_regressions
 run_close_file_regression
 run_open_session_regression

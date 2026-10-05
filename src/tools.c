@@ -27,8 +27,56 @@ static inline bool validate_required_string_param(RJson *args, const char *param
 	return false;
 }
 
-static bool validate_address_param(RJson *args, const char *param_name, const char **out_address) {
-	return validate_required_string_param (args, param_name, out_address);
+static bool parse_unsigned_literal(const char *value, ut64 *out_value) {
+	if (R_STR_ISEMPTY (value)) {
+		return false;
+	}
+	bool is_hex = r_str_startswith (value, "0x") || r_str_startswith (value, "0X");
+	if (is_hex? r_hex_str_is_valid (value + 2) <= 0: (*value == '-' || !r_str_isnumber (value))) {
+		return false;
+	}
+	if (!is_hex) {
+		while (*value == '0' && value[1]) {
+			value++;
+		}
+	}
+	RNum num = {0};
+	const char *error = NULL;
+	ut64 parsed = r_num_get_err (&num, value, &error);
+	if (error || r_num_failed (&num)) {
+		return false;
+	}
+	*out_value = parsed;
+	return true;
+}
+
+static bool validate_address_param(RJson *args, const char *param_name, ut64 *out_value) {
+	return parse_unsigned_literal (r_json_get_str (args, param_name), out_value);
+}
+
+static bool parse_positive_size_param(RJson *args, const char *param_name, int *out_value) {
+	const RJson *field = r_json_get (args, param_name);
+	if (!field) {
+		return false;
+	}
+	ut64 value;
+	if (field->type == R_JSON_INTEGER && field->num.s_value > 0) {
+		value = field->num.u_value;
+	} else if (field->type != R_JSON_STRING || !parse_unsigned_literal (field->str_value, &value)) {
+		return false;
+	}
+	if (!value || value > INT_MAX) {
+		return false;
+	}
+	*out_value = (int)value;
+	return true;
+}
+
+static char *jsonrpc_error_numeric_param(const char *param_name) {
+	char *message = r_str_newf ("Invalid parameter '%s': expected an unsigned numeric literal", param_name);
+	char *response = jsonrpc_error_response (-32602, message, NULL, NULL);
+	free (message);
+	return response;
 }
 
 static bool rjson_get_int_param(RJson *args, const char *param_name, int *out_value) {
@@ -699,13 +747,14 @@ static char *tool_calculate(ServerState *ss, RJson *tool_args) {
 }
 
 static char *tool_set_comment(ServerState *ss, RJson *tool_args) {
-	const char *address, *message;
+	ut64 address;
+	const char *message;
 	if (!validate_address_param (tool_args, "address", &address) ||
 		!validate_required_string_param (tool_args, "message", &message)) {
 		return jsonrpc_error_missing_param ("address and message");
 	}
 
-	char *cmd_cc = r_str_newf ("'@%s'CC %s", address, message);
+	char *cmd_cc = r_str_newf ("'@0x%"PFMT64x"'CC %s", address, message);
 	char *tmpres_cc = r2mcp_cmd (ss, cmd_cc);
 	free (tmpres_cc);
 	free (cmd_cc);
@@ -713,12 +762,13 @@ static char *tool_set_comment(ServerState *ss, RJson *tool_args) {
 }
 
 static char *tool_set_function_prototype(ServerState *ss, RJson *tool_args) {
-	const char *address, *prototype;
+	ut64 address;
+	const char *prototype;
 	if (!validate_address_param (tool_args, "address", &address) ||
 		!validate_required_string_param (tool_args, "prototype", &prototype)) {
 		return jsonrpc_error_missing_param ("address and prototype");
 	}
-	char *cmd_afs = r_str_newf ("'@%s'afs %s", address, prototype);
+	char *cmd_afs = r_str_newf ("'@0x%"PFMT64x"'afs %s", address, prototype);
 	char *tmpres_afs = r2mcp_cmd (ss, cmd_afs);
 	free (tmpres_afs);
 	free (cmd_afs);
@@ -726,11 +776,11 @@ static char *tool_set_function_prototype(ServerState *ss, RJson *tool_args) {
 }
 
 static char *tool_get_function_prototype(ServerState *ss, RJson *tool_args) {
-	const char *address;
+	ut64 address;
 	if (!validate_address_param (tool_args, "address", &address)) {
-		return jsonrpc_error_missing_param ("address");
+		return jsonrpc_error_numeric_param ("address");
 	}
-	char *s = r_str_newf ("'@%s'afs", address);
+	char *s = r_str_newf ("'@0x%"PFMT64x"'afs", address);
 	char *res = r2mcp_cmd (ss, s);
 	free (s);
 	return tool_cmd_response (res);
@@ -802,15 +852,15 @@ static char *tool_analyze(ServerState *ss, RJson *tool_args) {
 }
 
 static char *tool_disassemble(ServerState *ss, RJson *tool_args) {
-	const char *address;
+	ut64 address;
 	if (!validate_address_param (tool_args, "address", &address)) {
-		return jsonrpc_error_missing_param ("address");
+		return jsonrpc_error_numeric_param ("address");
 	}
 
 	int num_instructions = 10;
 	rjson_get_int_param (tool_args, "num_instructions", &num_instructions);
 
-	return tool_cmd_response (r2mcp_cmdf (ss, "'@%s'pd %d", address, num_instructions));
+	return tool_cmd_response (r2mcp_cmdf (ss, "'@0x%"PFMT64x"'pd %d", address, num_instructions));
 }
 
 // Resolve a user-supplied decompiler name to a registered `cmd.pdc` command.
@@ -845,29 +895,30 @@ static char *tool_use_decompiler(ServerState *ss, RJson *tool_args) {
 }
 
 static char *tool_xrefs_to(ServerState *ss, RJson *tool_args) {
-	const char *address;
+	ut64 address;
 	if (!validate_address_param (tool_args, "address", &address)) {
-		return jsonrpc_error_missing_param ("address");
+		return jsonrpc_error_numeric_param ("address");
 	}
-	return tool_cmd_response (r2mcp_cmdf (ss, "'@%s'axt", address));
+	return tool_cmd_response (r2mcp_cmdf (ss, "'@0x%"PFMT64x"'axt", address));
 }
 
 static char *tool_disassemble_function(ServerState *ss, RJson *tool_args) {
-	const char *address;
+	ut64 address;
 	if (!validate_address_param (tool_args, "address", &address)) {
-		return jsonrpc_error_missing_param ("address");
+		return jsonrpc_error_numeric_param ("address");
 	}
-	return tool_cmd_response_paginated (ss, r2mcp_cmdf (ss, "'@%s'pdf", address), tool_args);
+	return tool_cmd_response_paginated (ss, r2mcp_cmdf (ss, "'@0x%"PFMT64x"'pdf", address), tool_args);
 }
 
 static char *tool_rename_flag(ServerState *ss, RJson *tool_args) {
-	const char *address, *name, *new_name;
+	ut64 address;
+	const char *name, *new_name;
 	if (!validate_address_param (tool_args, "address", &address) ||
 		!validate_required_string_param (tool_args, "name", &name) ||
 		!validate_required_string_param (tool_args, "new_name", &new_name)) {
 		return jsonrpc_error_missing_param ("address, name, and new_name");
 	}
-	char *remove_res = r2mcp_cmdf (ss, "'@%s'fr %s %s", address, name, new_name);
+	char *remove_res = r2mcp_cmdf (ss, "'@0x%"PFMT64x"'fr %s %s", address, name, new_name);
 	if (R_STR_ISNOTEMPTY (remove_res)) {
 		return tool_cmd_response (remove_res);
 	}
@@ -876,24 +927,25 @@ static char *tool_rename_flag(ServerState *ss, RJson *tool_args) {
 }
 
 static char *tool_rename_function(ServerState *ss, RJson *tool_args) {
-	const char *address, *name;
+	ut64 address;
+	const char *name;
 	if (!validate_address_param (tool_args, "address", &address) ||
 		!validate_required_string_param (tool_args, "name", &name)) {
 		return jsonrpc_error_missing_param ("address and name");
 	}
-	free (r2mcp_cmdf (ss, "'@%s'afn %s", address, name));
+	free (r2mcp_cmdf (ss, "'@0x%"PFMT64x"'afn %s", address, name));
 	return jsonrpc_tooltext_response ("ok");
 }
 
 static char *tool_decompile_function(ServerState *ss, RJson *tool_args) {
-	const char *address;
+	ut64 address;
 	if (!validate_address_param (tool_args, "address", &address)) {
-		return jsonrpc_error_missing_param ("address");
+		return jsonrpc_error_numeric_param ("address");
 	}
 	// Keep execution delegated to `pdc`: radare2's dispatcher routes it through
 	// cmd.pdc and applies asm.addr.relto / asm.addr.base semantics around it.
 	return tool_cmd_response_paginated (ss,
-		r2mcp_cmdf (ss, "'@%s'pdc", address), tool_args);
+		r2mcp_cmdf (ss, "'@0x%"PFMT64x"'pdc", address), tool_args);
 }
 
 static char *tool_get_pid(ServerState *ss, RJson *tool_args) {
@@ -919,15 +971,19 @@ static char *tool_dump_registers(ServerState *ss, RJson *tool_args) {
 }
 
 static char *tool_hexdump(ServerState *ss, RJson *tool_args) {
-	const char *address;
+	ut64 address;
 	if (!validate_address_param (tool_args, "address", &address)) {
-		return jsonrpc_error_missing_param ("address");
+		return jsonrpc_error_numeric_param ("address");
 	}
 	const char *size = r_json_get_str (tool_args, "size");
 	if (R_STR_ISNOTEMPTY (size)) {
-		return tool_cmd_response (r2mcp_cmdf (ss, "'@%s'px %s", address, size));
+		int length;
+		if (!parse_positive_size_param (tool_args, "size", &length)) {
+			return jsonrpc_error_response (-32602, "Invalid parameter 'size': expected a positive byte count", NULL, NULL);
+		}
+		return tool_cmd_response (r2mcp_cmdf (ss, "'@0x%"PFMT64x"'px %d", address, length));
 	}
-	return tool_cmd_response (r2mcp_cmdf (ss, "'@%s'px", address));
+	return tool_cmd_response (r2mcp_cmdf (ss, "'@0x%"PFMT64x"'px", address));
 }
 
 static char *tool_memory_map_here(ServerState *ss, RJson *tool_args) {
@@ -943,30 +999,32 @@ static char *tool_list_heap_allocations(ServerState *ss, RJson *tool_args) {
 static char *tool_alloc_memory(ServerState *ss, RJson *tool_args) {
 	const char *string_value = r_json_get_str (tool_args, "string");
 	if (R_STR_ISNOTEMPTY (string_value)) {
-		return tool_cmd_response (r2mcp_cmdf (ss, ":dmas %s", string_value));
+		return tool_cmd_response (r2mcp_cmdf (ss, "':dmas %s", string_value));
 	}
 	int size = 0;
-	rjson_get_int_param (tool_args, "size", &size);
-	if (size <= 0) {
+	if (!parse_positive_size_param (tool_args, "size", &size)) {
 		return jsonrpc_error_response (-32602, "Provide either 'size' (number of bytes) or 'string' to allocate", NULL, NULL);
 	}
 	return tool_cmd_response (r2mcp_cmdf (ss, ":dma %d", size));
 }
 
 static char *tool_change_memory_protection(ServerState *ss, RJson *tool_args) {
-	const char *address, *protection;
+	ut64 address;
 	if (!validate_address_param (tool_args, "address", &address)) {
-		return jsonrpc_error_missing_param ("address");
+		return jsonrpc_error_numeric_param ("address");
 	}
 	int size = 0;
-	rjson_get_int_param (tool_args, "size", &size);
-	if (size <= 0) {
-		return jsonrpc_error_missing_param ("size");
+	if (!parse_positive_size_param (tool_args, "size", &size)) {
+		return jsonrpc_error_response (-32602, "Invalid parameter 'size': expected a positive byte count", NULL, NULL);
 	}
-	if (!validate_required_string_param (tool_args, "protection", &protection)) {
-		return jsonrpc_error_missing_param ("protection");
+	const char *protection = r_json_get_str (tool_args, "protection");
+	if (!protection || strlen (protection) != 3
+		|| (protection[0] != 'r' && protection[0] != '-')
+		|| (protection[1] != 'w' && protection[1] != '-')
+		|| (protection[2] != 'x' && protection[2] != '-')) {
+		return jsonrpc_error_response (-32602, "Invalid parameter 'protection': expected rwx permissions (e.g. r-x or rw-)", NULL, NULL);
 	}
-	return tool_cmd_response (r2mcp_cmdf (ss, ":dmp %s %d %s", address, size, protection));
+	return tool_cmd_response (r2mcp_cmdf (ss, ":dmp 0x%"PFMT64x" %d %s", address, size, protection));
 }
 
 static char *tool_search(ServerState *ss, RJson *tool_args) {
@@ -985,23 +1043,28 @@ static char *tool_search(ServerState *ss, RJson *tool_args) {
 		return tool_cmd_response (r2mcp_cmdf (ss, "'%s/w %s", fx (ss), query));
 	}
 	if (!strcmp (type, "value")) {
-		int value_size = 0;
-		rjson_get_int_param (tool_args, "value_size", &value_size);
-		if (value_size != 1 && value_size != 2 && value_size != 4 && value_size != 8) {
-			value_size = 4;
+		ut64 value;
+		if (!parse_unsigned_literal (query, &value)) {
+			return jsonrpc_error_numeric_param ("query");
 		}
-		return tool_cmd_response (r2mcp_cmdf (ss, "'%s/v%d %s", fx (ss), value_size, query));
+		int value_size = 4;
+		if (r_json_get (tool_args, "value_size")
+			&& (!parse_positive_size_param (tool_args, "value_size", &value_size)
+				|| (value_size != 1 && value_size != 2 && value_size != 4 && value_size != 8))) {
+			return jsonrpc_error_response (-32602, "Invalid parameter 'value_size': expected 1, 2, 4, or 8", NULL, NULL);
+		}
+		return tool_cmd_response (r2mcp_cmdf (ss, "'%s/v%d 0x%"PFMT64x, fx (ss), value_size, value));
 	}
 	// default: string search
 	return tool_cmd_response (r2mcp_cmdf (ss, "'%s/ %s", fx (ss), query));
 }
 
 static char *tool_lookup_address(ServerState *ss, RJson *tool_args) {
-	const char *address;
+	ut64 address;
 	if (!validate_address_param (tool_args, "address", &address)) {
-		return jsonrpc_error_missing_param ("address");
+		return jsonrpc_error_numeric_param ("address");
 	}
-	return tool_cmd_response (r2mcp_cmdf (ss, "%sfd @ %s", fx (ss), address));
+	return tool_cmd_response (r2mcp_cmdf (ss, "'%sfd 0x%"PFMT64x, fx (ss), address));
 }
 
 static char *tool_lookup_export(ServerState *ss, RJson *tool_args) {
@@ -1009,15 +1072,40 @@ static char *tool_lookup_export(ServerState *ss, RJson *tool_args) {
 	if (!validate_required_string_param (tool_args, "name", &name)) {
 		return jsonrpc_error_missing_param ("name");
 	}
-	return tool_cmd_response (r2mcp_cmdf (ss, "%siaE %s", fx (ss), name));
+	if (ss->frida_mode) {
+		return tool_cmd_response (r2mcp_cmdf (ss, "':iaE %s", name));
+	}
+	char *res = r2mcp_cmd (ss, "'iEj");
+	RJson *exports = r_json_parsedup (res);
+	if (!exports || exports->type != R_JSON_ARRAY) {
+		r_json_free (exports);
+		return tool_cmd_response (res);
+	}
+	free (res);
+	char *address = NULL;
+	const RJson *entry;
+	for (entry = exports->children.first; entry; entry = entry->next) {
+		const char *symbol_name = r_json_get_str (entry, "name");
+		const char *real_name = r_json_get_str (entry, "realname");
+		const RJson *vaddr = r_json_get (entry, "vaddr");
+		if (vaddr && vaddr->type == R_JSON_INTEGER
+			&& ((symbol_name && !strcmp (symbol_name, name)) || (real_name && !strcmp (real_name, name)))) {
+			address = r_str_newf ("0x%"PFMT64x, vaddr->num.u_value);
+			break;
+		}
+	}
+	r_json_free (exports);
+	char *response = jsonrpc_tooltext_response (address? address: "Export not found");
+	free (address);
+	return response;
 }
 
 static char *tool_lookup_symbol(ServerState *ss, RJson *tool_args) {
-	const char *address;
+	ut64 address;
 	if (!validate_address_param (tool_args, "address", &address)) {
-		return jsonrpc_error_missing_param ("address");
+		return jsonrpc_error_numeric_param ("address");
 	}
-	return tool_cmd_response (r2mcp_cmdf (ss, "%sis. @ %s", fx (ss), address));
+	return tool_cmd_response (r2mcp_cmdf (ss, "'@0x%"PFMT64x"'%sis.", address, fx (ss)));
 }
 
 static char *tool_run_command(ServerState *ss, RJson *tool_args) {
@@ -1537,7 +1625,7 @@ cleanup:
 #define TOOL_SCHEMA_LIST_PROPS TOOL_SCHEMA_FILTER_COUNT_PROPS "," TOOL_SCHEMA_PAGE_PROPS
 #define TOOL_SCHEMA_LIST "{\"type\":\"object\",\"properties\":{" TOOL_SCHEMA_LIST_PROPS "}}"
 #define TOOL_SCHEMA_LIST_WITH_STRING_PARAM(name, desc) "{\"type\":\"object\",\"properties\":{\"" name "\":{\"type\":\"string\",\"description\":\"" desc "\"}," TOOL_SCHEMA_LIST_PROPS "},\"required\":[\"" name "\"]}"
-#define TOOL_SCHEMA_ADDRESS_PAGE(desc) "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"" desc "\"}," TOOL_SCHEMA_PAGE_PROPS "},\"required\":[\"address\"]}"
+#define TOOL_SCHEMA_ADDRESS_PAGE(desc) "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"" desc ": unsigned numeric literal (e.g. 0x401000); resolve symbols with calculate\"}," TOOL_SCHEMA_PAGE_PROPS "},\"required\":[\"address\"]}"
 #define TOOL_SCHEMA_COMMAND_PAGE "{\"type\":\"object\",\"properties\":{\"command\":{\"type\":\"string\",\"description\":\"The radare2 command to execute\"}," TOOL_SCHEMA_PAGE_PROPS "},\"required\":[\"command\"]}"
 #define TOOL_SCHEMA_SQL "{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\",\"description\":\"SQL statement to pass to the loaded SQL core plugin (r2xsql)\"}},\"required\":[\"query\"]}"
 #define TOOL_SCHEMA_SCRIPT_FILE_PAGE "{\"type\":\"object\",\"properties\":{\"file_path\":{\"type\":\"string\",\"description\":\"Absolute path to the radare2 script file to execute\"}," TOOL_SCHEMA_PAGE_PROPS "},\"required\":[\"file_path\"]}"
@@ -1568,32 +1656,32 @@ ToolSpec tool_specs[] = {
 	{ "list_methods", "Lists all methods belonging to the specified class", TOOL_SCHEMA_LIST_WITH_STRING_PARAM ("classname", "Name of the class to list methods for"), TOOL_MODE_NORMAL | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_list_methods },
 	{ "list_classes", "Lists class names from various languages (C++, ObjC, Swift, Java, Dalvik)", TOOL_SCHEMA_LIST, TOOL_MODE_NORMAL | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_list_classes },
 	{ "list_decompilers", "Shows all available decompiler backends", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_RO, tool_list_decompilers },
-	{ "rename_function", "Renames the function at the specified address", "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"New function name\"},\"address\":{\"type\":\"string\",\"description\":\"Address of the function to rename\"}},\"required\":[\"name\",\"address\"]}", TOOL_MODE_NORMAL, tool_rename_function },
-	{ "rename_flag", "Renames a local variable or data reference within the specified address", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the flag containing the variable or data reference\"},\"name\":{\"type\":\"string\",\"description\":\"Current variable name or data reference\"},\"new_name\":{\"type\":\"string\",\"description\":\"New variable name or data reference\"}},\"required\":[\"address\",\"name\",\"new_name\"]}", TOOL_MODE_NORMAL | TOOL_MODE_HTTP, tool_rename_flag },
+	{ "rename_function", "Renames the function at the specified address", "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"New function name\"},\"address\":{\"type\":\"string\",\"description\":\"Unsigned numeric address (e.g. 0x401000); resolve symbols with calculate\"}},\"required\":[\"name\",\"address\"]}", TOOL_MODE_NORMAL, tool_rename_function },
+	{ "rename_flag", "Renames a local variable or data reference within the specified address", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Unsigned numeric address (e.g. 0x401000); resolve symbols with calculate\"},\"name\":{\"type\":\"string\",\"description\":\"Current variable name or data reference\"},\"new_name\":{\"type\":\"string\",\"description\":\"New variable name or data reference\"}},\"required\":[\"address\",\"name\",\"new_name\"]}", TOOL_MODE_NORMAL | TOOL_MODE_HTTP, tool_rename_flag },
 	{ "use_decompiler", "Selects which decompiler backend to use (default: pdc)", "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"Name of the decompiler\"}},\"required\":[\"name\"]}", TOOL_MODE_NORMAL, tool_use_decompiler },
-	{ "get_function_prototype", "Retrieves the function signature at the specified address", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the function\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | TOOL_MODE_RO, tool_get_function_prototype },
-	{ "set_function_prototype", "Sets the function signature (return type, name, arguments)", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the function\"},\"prototype\":{\"type\":\"string\",\"description\":\"Function signature in C-like syntax\"}},\"required\":[\"address\",\"prototype\"]}", TOOL_MODE_NORMAL, tool_set_function_prototype },
-	{ "set_comment", "Adds a comment at the specified address", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address to put the comment in\"},\"message\":{\"type\":\"string\",\"description\":\"Comment text to use\"}},\"required\":[\"address\",\"message\"]}", TOOL_MODE_NORMAL | TOOL_MODE_HTTP, tool_set_comment },
+	{ "get_function_prototype", "Retrieves the function signature at the specified address", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Unsigned numeric address (e.g. 0x401000); resolve symbols with calculate\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | TOOL_MODE_RO, tool_get_function_prototype },
+	{ "set_function_prototype", "Sets the function signature (return type, name, arguments)", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Unsigned numeric address (e.g. 0x401000); resolve symbols with calculate\"},\"prototype\":{\"type\":\"string\",\"description\":\"Function signature in C-like syntax\"}},\"required\":[\"address\",\"prototype\"]}", TOOL_MODE_NORMAL, tool_set_function_prototype },
+	{ "set_comment", "Adds a comment at the specified address", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Unsigned numeric address (e.g. 0x401000); resolve symbols with calculate\"},\"message\":{\"type\":\"string\",\"description\":\"Comment text to use\"}},\"required\":[\"address\",\"message\"]}", TOOL_MODE_NORMAL | TOOL_MODE_HTTP, tool_set_comment },
 	{ "list_strings", "Lists strings from data sections with optional regex filter", TOOL_SCHEMA_LIST, TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_list_strings },
 	{ "list_all_strings", "Scans the entire binary for strings with optional regex filter", TOOL_SCHEMA_LIST, TOOL_MODE_NORMAL | TOOL_MODE_RO, tool_list_all_strings },
 	{ "analyze", "Runs binary analysis with optional depth level", "{\"type\":\"object\",\"properties\":{\"level\":{\"type\":\"number\",\"description\":\"Analysis level (0-4, higher is more thorough)\"},\"timeout_seconds\":{\"type\":\"integer\",\"description\":\"Optional maximum analysis time in seconds for this call only. Use 0 to disable the timeout.\"}},\"required\":[]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_FRIDA, tool_analyze },
-	{ "xrefs_to", "Finds all code references to the specified address", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address to check for cross-references\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO, tool_xrefs_to },
+	{ "xrefs_to", "Finds all code references to the specified address", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Unsigned numeric address (e.g. 0x401000); resolve symbols with calculate\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO, tool_xrefs_to },
 	{ "decompile_function", "Show C-like pseudocode of the function in the given address. <think>Use this to inspect the code in a function, do not run multiple times in the same offset</think>", TOOL_SCHEMA_ADDRESS_PAGE ("Address of the function to decompile"), TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO, tool_decompile_function },
 	{ "list_files", "Lists files in the specified path using radare2's ls -q command. Files ending with / are directories, otherwise they are files.", TOOL_SCHEMA_LIST_WITH_STRING_PARAM ("path", "Path to list files from"), TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO, tool_list_files },
 	{ "disassemble_function", "Shows assembly listing of the function at the specified address", TOOL_SCHEMA_ADDRESS_PAGE ("Address of the function to disassemble"), TOOL_MODE_NORMAL | TOOL_MODE_RO, tool_disassemble_function },
-	{ "disassemble", "Disassembles a specific number of instructions from an address <think>Use this tool to inspect a portion of memory as code without depending on function analysis boundaries. Use this tool when functions are large and you are only interested on few instructions</think>", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address to start disassembly\"},\"num_instructions\":{\"type\":\"integer\",\"description\":\"Number of instructions to disassemble (default: 10)\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_disassemble },
+	{ "disassemble", "Disassembles a specific number of instructions from an address <think>Use this tool to inspect a portion of memory as code without depending on function analysis boundaries. Use this tool when functions are large and you are only interested on few instructions</think>", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Unsigned numeric address (e.g. 0x401000); resolve symbols with calculate\"},\"num_instructions\":{\"type\":\"integer\",\"description\":\"Number of instructions to disassemble (default: 10)\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_disassemble },
 	{ "calculate", "Evaluate a math expression using core->num (r_num_math). Usecases: do proper 64-bit math, resolve addresses for flag names/symbols, and avoid hallucinated results.", "{\"type\":\"object\",\"properties\":{\"expression\":{\"type\":\"string\",\"description\":\"Math expression to evaluate (eg. 0x100 + sym.flag - 4)\"}},\"required\":[\"expression\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_calculate },
 	{ "get_pid", "Get the process ID of the target process", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_FRIDA, tool_get_pid },
 	{ "list_threads", "List all threads in the target process with their IDs and state", TOOL_SCHEMA_LIST, TOOL_MODE_NORMAL | TOOL_MODE_FRIDA, tool_list_threads },
 	{ "dump_registers", "Show register values for the target process threads", "{\"type\":\"object\",\"properties\":{\"thread_id\":{\"type\":\"integer\",\"description\":\"Optional thread ID to show registers for a specific thread\"}}}", TOOL_MODE_NORMAL | TOOL_MODE_FRIDA, tool_dump_registers },
-	{ "hexdump", "Print memory contents in hexdump style at the given address", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address to hexdump\"},\"size\":{\"type\":\"string\",\"description\":\"Number of bytes to dump (empty string for default size)\"}},\"required\":[\"address\",\"size\"]}", TOOL_MODE_NORMAL | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_hexdump },
+	{ "hexdump", "Print memory contents in hexdump style at the given address", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Unsigned numeric address (e.g. 0x401000); resolve symbols with calculate\"},\"size\":{\"type\":\"string\",\"description\":\"Positive byte count as a numeric literal (omit or use empty string for default size)\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_hexdump },
 	{ "memory_map_here", "Show memory map information at the current address", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_FRIDA, tool_memory_map_here },
 	{ "list_heap_allocations", "List malloc/heap memory ranges in the target process", TOOL_SCHEMA_LIST, TOOL_MODE_NORMAL | TOOL_MODE_FRIDA, tool_list_heap_allocations },
 	{ "alloc_memory", "Allocate memory in the target process heap. Provide either size (bytes) or string to allocate", "{\"type\":\"object\",\"properties\":{\"size\":{\"type\":\"integer\",\"description\":\"Number of bytes to allocate\"},\"string\":{\"type\":\"string\",\"description\":\"String to allocate in target heap (returns its address)\"}}}", TOOL_MODE_FRIDA, tool_alloc_memory },
-	{ "change_memory_protection", "Change memory protection (rwx) at the given address and size", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the memory region\"},\"size\":{\"type\":\"integer\",\"description\":\"Size in bytes of the region\"},\"protection\":{\"type\":\"string\",\"description\":\"New protection string (e.g. rwx, r-x, rw-)\"}},\"required\":[\"address\",\"size\",\"protection\"]}", TOOL_MODE_FRIDA, tool_change_memory_protection },
-	{ "search", "Search for strings, hex patterns, wide strings, or numeric values", "{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\",\"description\":\"The search query (string, hex bytes, or numeric value)\"},\"type\":{\"type\":\"string\",\"description\":\"Search type: string (default), hex, wide, or value\"},\"value_size\":{\"type\":\"integer\",\"description\":\"For value search: byte width 1, 2, 4 (default), or 8\"}},\"required\":[\"query\"]}", TOOL_MODE_NORMAL | TOOL_MODE_FRIDA, tool_search },
-	{ "lookup_address", "Describe what is at a given address (flag name, symbol, module)", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address to describe\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_lookup_address },
+	{ "change_memory_protection", "Change memory protection (rwx) at the given address and size", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Unsigned numeric address (e.g. 0x401000); resolve symbols with calculate\"},\"size\":{\"type\":\"integer\",\"description\":\"Size in bytes of the region\"},\"protection\":{\"type\":\"string\",\"description\":\"New protection string (e.g. rwx, r-x, rw-)\"}},\"required\":[\"address\",\"size\",\"protection\"]}", TOOL_MODE_FRIDA, tool_change_memory_protection },
+	{ "search", "Search for strings, hex patterns, wide strings, or numeric values", "{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\",\"description\":\"The search query (string, hex bytes, or unsigned numeric literal for value search)\"},\"type\":{\"type\":\"string\",\"description\":\"Search type: string (default), hex, wide, or value\"},\"value_size\":{\"type\":\"integer\",\"description\":\"For value search: byte width 1, 2, 4 (default), or 8\"}},\"required\":[\"query\"]}", TOOL_MODE_NORMAL | TOOL_MODE_FRIDA, tool_search },
+	{ "lookup_address", "Describe what is at a given address (flag name, symbol, module)", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Unsigned numeric address (e.g. 0x401000); resolve symbols with calculate\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_lookup_address },
 	{ "lookup_export", "Resolve an export name to its implementation address", "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"Export name to look up\"}},\"required\":[\"name\"]}", TOOL_MODE_NORMAL | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_lookup_export },
-	{ "lookup_symbol", "Resolve an address to its symbol name", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address to resolve\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_lookup_symbol },
+	{ "lookup_symbol", "Resolve an address to its symbol name", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Unsigned numeric address (e.g. 0x401000); resolve symbols with calculate\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_lookup_symbol },
 	{ NULL, NULL, NULL, 0, NULL }
 };
