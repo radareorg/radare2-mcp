@@ -24,7 +24,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Install radare2 from git
-        uses: radareorg/github-actions@v3
+        uses: radareorg/github-actions@4ae27a8b29a049ac0fd5119f6eda37ecfc64ead8
         with:
           from-git: true
       - name: Building radare2-mcp
@@ -50,7 +50,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Install radare2
-        uses: radareorg/github-actions@v3
+        uses: radareorg/github-actions@4ae27a8b29a049ac0fd5119f6eda37ecfc64ead8
         with:
           version: ${{ env.R2V }}
       - name: Building radare2-mcp
@@ -78,7 +78,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Install radare2
-        uses: radareorg/github-actions@v3
+        uses: radareorg/github-actions@4ae27a8b29a049ac0fd5119f6eda37ecfc64ead8
         with:
           version: ${{ env.R2V }}
       - name: Install Meson and Ninja
@@ -119,7 +119,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Install radare2 from git
-        uses: radareorg/github-actions@v3
+        uses: radareorg/github-actions@4ae27a8b29a049ac0fd5119f6eda37ecfc64ead8
         with:
           version: ${{ env.R2V }}
           from-git: true
@@ -167,7 +167,7 @@ jobs:
 
       - name: Install radare2
         id: r2
-        uses: radareorg/github-actions@v3
+        uses: radareorg/github-actions@4ae27a8b29a049ac0fd5119f6eda37ecfc64ead8
         with:
           version: ${{ env.R2V }}
 
