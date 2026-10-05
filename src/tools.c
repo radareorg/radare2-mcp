@@ -26,6 +26,19 @@ static inline bool validate_required_string_param(RJson *args, const char *param
 	return false;
 }
 
+static bool has_cmd_separator_chars(const char *s) {
+	if (!s) {
+		return false;
+	}
+	const char *p;
+	for (p = s; *p; p++) {
+		if (*p == ';' || *p == '\n' || *p == '\r') {
+			return true;
+		}
+	}
+	return false;
+}
+
 static bool validate_address_param(RJson *args, const char *param_name, const char **out_address) {
 	return validate_required_string_param (args, param_name, out_address);
 }
@@ -434,6 +447,9 @@ static char *tool_list_files(ServerState *ss, RJson *tool_args) {
 	if (!validate_required_string_param (tool_args, "path", &path)) {
 		return jsonrpc_error_missing_param ("path");
 	}
+	if (has_cmd_separator_chars (path)) {
+		return jsonrpc_error_response (-32603, "Path contains forbidden command separator characters", NULL, NULL);
+	}
 
 	// Security checks
 	if (!path || path[0] != '/') {
@@ -472,6 +488,9 @@ static char *tool_list_methods(ServerState *ss, RJson *tool_args) {
 	const char *classname;
 	if (!validate_required_string_param (tool_args, "classname", &classname)) {
 		return jsonrpc_error_missing_param ("classname");
+	}
+	if (has_cmd_separator_chars (classname)) {
+		return jsonrpc_error_response (-32603, "Class name contains forbidden command separator characters", NULL, NULL);
 	}
 	const char *prefix = ss->frida_mode? ":": "'";
 	return tool_cmd_response (r2mcp_cmdf (ss, "%sic %s", prefix, classname));
