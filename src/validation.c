@@ -64,30 +64,29 @@ static const char *json_type_name(RJsonType type) {
 	}
 }
 
-static bool is_numeric_string(const RJson *field, bool integer_only) {
-	if (!field || field->type != R_JSON_STRING || R_STR_ISEMPTY (field->str_value)) {
+bool parse_math_expression(RNum *num, const char *expression, ut64 *out_value) {
+	if (!expression || R_STR_ISEMPTY (r_str_trim_head_ro (expression))) {
 		return false;
 	}
-	const char *s = field->str_value;
-	while (IS_WHITESPACE (*s)) {
-		s++;
+	RNum local_num = {0};
+	if (!num) {
+		num = &local_num;
 	}
-	if (R_STR_ISEMPTY (s)) {
+	const char *error = NULL;
+	ut64 value = r_num_math_err (num, expression, &error);
+	if (error || r_num_failed (num) || num->dbz) {
 		return false;
 	}
-	char *end = NULL;
-	if (integer_only) {
-		(void)strtoll (s, &end, 0);
-	} else {
-		(void)strtod (s, &end);
-	}
-	if (end == s) {
+	*out_value = value;
+	return true;
+}
+
+static bool is_numeric_string(RNum *num, const RJson *field) {
+	if (!field || field->type != R_JSON_STRING) {
 		return false;
 	}
-	while (IS_WHITESPACE (*end)) {
-		end++;
-	}
-	return !*end;
+	ut64 value;
+	return parse_math_expression (num, field->str_value, &value);
 }
 
 static bool is_boolean_string(const RJson *field) {
@@ -97,7 +96,7 @@ static bool is_boolean_string(const RJson *field) {
 	return r_str_is_bool (field->str_value);
 }
 
-static bool json_matches_schema_type(const RJson *field, const char *expected_type) {
+static bool json_matches_schema_type(RNum *num, const RJson *field, const char *expected_type) {
 	if (!field || !expected_type) {
 		return false;
 	}
@@ -114,10 +113,10 @@ static bool json_matches_schema_type(const RJson *field, const char *expected_ty
 		return false;
 	}
 	if (!strcmp (expected_type, "integer")) {
-		return field->type == R_JSON_INTEGER || is_numeric_string (field, true);
+		return field->type == R_JSON_INTEGER || is_numeric_string (num, field);
 	}
 	if (!strcmp (expected_type, "number")) {
-		return field->type == R_JSON_INTEGER || field->type == R_JSON_DOUBLE || is_numeric_string (field, false);
+		return field->type == R_JSON_INTEGER || field->type == R_JSON_DOUBLE || is_numeric_string (num, field);
 	}
 	if (!strcmp (expected_type, "object")) {
 		return field->type == R_JSON_OBJECT;
@@ -168,7 +167,7 @@ static RList *parse_required_properties(const char *schema_json) {
 }
 
 /* Validate arguments against JSON Schema */
-ValidationResult validate_arguments(RJson *args, const char *schema_json) {
+ValidationResult validate_arguments(RJson *args, const char *schema_json, RNum *num) {
 	if (!schema_json || !*schema_json) {
 		/* No schema defined - allow all arguments */
 		return (ValidationResult){ true, NULL };
@@ -214,7 +213,7 @@ ValidationResult validate_arguments(RJson *args, const char *schema_json) {
 		while (field) {
 			const RJson *prop_schema = field->key? r_json_get (properties, field->key): NULL;
 			const char *expected_type = prop_schema? r_json_get_str (prop_schema, "type"): NULL;
-			if (expected_type && !json_matches_schema_type (field, expected_type)) {
+			if (expected_type && !json_matches_schema_type (num, field, expected_type)) {
 				char *msg = r_str_newf ("Invalid parameter '%s': expected %s, got %s",
 					field->key,
 					expected_type,
