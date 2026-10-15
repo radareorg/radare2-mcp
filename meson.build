@@ -1,7 +1,7 @@
 project(
   'r2mcp',
   'c',
-version : '1.8.8',
+version : '1.9.0',
   default_options : ['warning_level=2', 'c_std=c11']
 )
 
