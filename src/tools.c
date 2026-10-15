@@ -28,24 +28,6 @@ static bool validate_address_param(ServerState *ss, RJson *args, const char *par
 	return parse_math_expression (tool_num (ss), r_json_get_str (args, param_name), out_value);
 }
 
-static bool parse_positive_size_param(ServerState *ss, RJson *args, const char *param_name, int *out_value) {
-	const RJson *field = r_json_get (args, param_name);
-	if (!field) {
-		return false;
-	}
-	ut64 value;
-	if (field->type == R_JSON_INTEGER && field->num.s_value > 0) {
-		value = field->num.u_value;
-	} else if (field->type != R_JSON_STRING || !parse_math_expression (tool_num (ss), field->str_value, &value)) {
-		return false;
-	}
-	if (!value || value > INT_MAX) {
-		return false;
-	}
-	*out_value = (int)value;
-	return true;
-}
-
 static char *jsonrpc_error_numeric_param(const char *param_name) {
 	char *message = r_str_newf ("Invalid parameter '%s': expected a valid numeric expression", param_name);
 	char *response = jsonrpc_error_response (-32602, message, NULL, NULL);
@@ -952,7 +934,7 @@ static char *tool_hexdump(ServerState *ss, RJson *tool_args) {
 	const char *size = r_json_get_str (tool_args, "size");
 	if (R_STR_ISNOTEMPTY (size)) {
 		int length;
-		if (!parse_positive_size_param (ss, tool_args, "size", &length)) {
+		if (!rjson_get_int_param (ss, tool_args, "size", &length) || length <= 0) {
 			return jsonrpc_error_response (-32602, "Invalid parameter 'size': expected a positive byte count", NULL, NULL);
 		}
 		return tool_cmd_response (r2mcp_cmdf (ss, "'@0x%"PFMT64x"'px %d", address, length));
@@ -976,7 +958,7 @@ static char *tool_alloc_memory(ServerState *ss, RJson *tool_args) {
 		return tool_cmd_response (r2mcp_cmdf (ss, "':dmas %s", string_value));
 	}
 	int size = 0;
-	if (!parse_positive_size_param (ss, tool_args, "size", &size)) {
+	if (!rjson_get_int_param (ss, tool_args, "size", &size) || size <= 0) {
 		return jsonrpc_error_response (-32602, "Provide either 'size' (number of bytes) or 'string' to allocate", NULL, NULL);
 	}
 	return tool_cmd_response (r2mcp_cmdf (ss, ":dma %d", size));
@@ -988,7 +970,7 @@ static char *tool_change_memory_protection(ServerState *ss, RJson *tool_args) {
 		return jsonrpc_error_numeric_param ("address");
 	}
 	int size = 0;
-	if (!parse_positive_size_param (ss, tool_args, "size", &size)) {
+	if (!rjson_get_int_param (ss, tool_args, "size", &size) || size <= 0) {
 		return jsonrpc_error_response (-32602, "Invalid parameter 'size': expected a positive byte count", NULL, NULL);
 	}
 	const char *protection = r_json_get_str (tool_args, "protection");
@@ -1023,7 +1005,7 @@ static char *tool_search(ServerState *ss, RJson *tool_args) {
 		}
 		int value_size = 4;
 		if (r_json_get (tool_args, "value_size")
-			&& (!parse_positive_size_param (ss, tool_args, "value_size", &value_size)
+			&& (!rjson_get_int_param (ss, tool_args, "value_size", &value_size)
 				|| (value_size != 1 && value_size != 2 && value_size != 4 && value_size != 8))) {
 			return jsonrpc_error_response (-32602, "Invalid parameter 'value_size': expected 1, 2, 4, or 8", NULL, NULL);
 		}
