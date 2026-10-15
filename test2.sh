@@ -504,7 +504,7 @@ three#four'five"
 	append_request "$req" 1 initialize '{"capabilities":{},"clientInfo":{"name":"testsuite","version":"1"}}'
 	append_notification "$req" notifications/initialized '{}'
 	append_tool_call "$req" 2 open_file "$(jq -cn --arg file "$TEST_FILE" '{file_path:$file}')"
-	append_tool_call "$req" 3 run_command '{"command":"f R2MCP_HIGH=0xffffffffffffffff;f R2MCP_MATH_ADDR=0x10"}'
+	append_tool_call "$req" 3 run_command '{"command":"f R2MCP_HIGH=0xffffffffffffffff;f R2MCP_MATH_ADDR=0x10;f R2MCP_0xgg=0x11"}'
 	append_tool_call "$req" 4 lookup_address '{"address":"0xffffffffffffffff"}'
 	append_tool_call "$req" 5 hexdump '{"address":"0","size":"0x10"}'
 	append_tool_call "$req" 6 hexdump '{"address":"0","size":""}'
@@ -516,6 +516,8 @@ three#four'five"
 	append_tool_call "$req" 12 lookup_address '{"address":"R2MCP_HIGH"}'
 	append_tool_call "$req" 13 search '{"type":"value","query":"-1","value_size":"1<<2"}'
 	append_tool_call "$req" 14 hexdump '{"address":"0+1","size":"0b100"}'
+	append_tool_call "$req" 15 hexdump '{"address":"(R2MCP_MATH_ADDR + 0X1)","size":"0x0000_0010"}'
+	append_tool_call "$req" 16 hexdump '{"address":"R2MCP_0xgg","size":"0x10u"}'
 	build_cases "$NORMAL_CATALOG" "$cases"
 	jq --arg marker "$INJECT_MARKER" '
 		["hexdump", "lookup_address", "lookup_symbol"] as $tools
@@ -523,17 +525,17 @@ three#four'five"
 			| .args.address = ("0\u0027f " + $marker + "=1337;\u0027")
 			| . + {kind:"numeric-boundary",param:"address"}]
 		+ [$tools[] as $tool
-			| ["", " ", "0x", "0xgg", "0x10000000000000000", "18446744073709551616", "12junk", "__R2MCP_MISSING_SYMBOL__", "(1+2", "1/0"][] as $address
+			| ["", " ", "0x", "0xgg", "0X", "0Xgg", "0x10zz", "1+0x", "1+0xgg", "0x10uJUNK", "0x10000000000000000", "18446744073709551616", "12junk", "__R2MCP_MISSING_SYMBOL__", "(1+2", "1/0"][] as $address
 			| {tool:$tool,kind:"invalid-numeric",param:"address",args:{address:$address,size:"16"}}]
-		+ [["bad", "0x", "16junk", "0;f " + $marker + "=1337", "-1", "0", "2147483648"][] as $size
+		+ [["bad", "0x", "0xgg", "0x10zz", "16+0xgg", "16junk", "0;f " + $marker + "=1337", "-1", "0", "2147483648"][] as $size
 			| {tool:"hexdump",kind:"invalid-numeric",param:"size",args:{address:"0",size:$size}}]
-		+ [["bad", "0x", "16junk", "18446744073709551616", "(1+2", "1/0"][] as $query
+		+ [["bad", "0x", "0xgg", "0x10zz", "1+0xgg", "16junk", "18446744073709551616", "(1+2", "1/0"][] as $query
 			| {tool:"search",kind:"invalid-numeric",param:"query",args:{type:"value",query:$query}}]
 		+ [{tool:"search",kind:"numeric-boundary",param:"query",args:{type:"value",query:("0;f " + $marker + "=1337")}}]
 		+ [{tool:"search",kind:"invalid-numeric",param:"value_size",args:{type:"value",query:"0",value_size:3}}]
 	' "$cases" > "$cases.new"
 	mv "$cases.new" "$cases"
-	NEXT_ID=15
+	NEXT_ID=17
 	append_cases "$cases" "$req" "$meta"
 	local literal_id="$NEXT_ID"
 	append_tool_call "$req" "$literal_id" list_files "$(jq -cn --arg path "$literal_path" '{path:$path}')"
@@ -560,14 +562,16 @@ three#four'five"
 		fail "lookup_address: full-width hexadecimal address was not preserved"
 	}
 	local id
-	for id in 5 6 7 8 9 10 11 12 13 14; do
+	for id in 5 6 7 8 9 10 11 12 13 14 15 16; do
 		printf '%s\n' "$(response_by_id "$resp" "$id")" | jq -e '.result.content[0].text != null and (.error | not)' >/dev/null || {
 			fail "tool argument regression: numeric expression or optional hexdump size failed (#$id)"
 		}
 	done
-	[ "$(response_by_id "$resp" 10 | jq -r '.result.content[0].text')" = "$(response_by_id "$resp" 11 | jq -r '.result.content[0].text')" ] || {
-		fail "hexdump: symbol, bitwise address, and size expressions must match their numeric values"
-	}
+	for id in 10 15 16; do
+		[ "$(response_by_id "$resp" "$id" | jq -r '.result.content[0].text')" = "$(response_by_id "$resp" 11 | jq -r '.result.content[0].text')" ] || {
+			fail "hexdump: symbol, bitwise address, and size expressions must match their numeric values (#$id)"
+		}
+	done
 	printf '%s\n' "$(response_by_id "$resp" 12)" | jq -e '.result.content[0].text | contains("R2MCP_HIGH")' >/dev/null || {
 		fail "lookup_address: flag name did not resolve"
 	}

@@ -64,8 +64,46 @@ static const char *json_type_name(RJsonType type) {
 	}
 }
 
+/* Older r2 releases accept empty or partially parsed 0x literals. */
+static bool validate_hex_literals(const char *expression) {
+	const char *p = expression;
+	while (*p) {
+		const char *token = p;
+		const char *extra = isdigit ((ut8)*p)? "_:.": "_.$?:\\";
+		while (*p && (isalnum ((ut8)*p) || strchr (extra, *p))) {
+			p++;
+		}
+		if (p - token >= 2 && token[0] == '0' && (token[1] == 'x' || token[1] == 'X')) {
+			const char *digit = token + 2;
+			/* Leave r2's relative 0xf.. / 0xff.. notation to its parser. */
+			if (!r_str_startswith (token, "0xf..") && !r_str_startswith (token, "0xF..") &&
+				!r_str_startswith (token, "0xff..") && !r_str_startswith (token, "0xFF..")) {
+				if (!isxdigit ((ut8)*digit)) {
+					return false;
+				}
+				while (digit < p && (isxdigit ((ut8)*digit) || *digit == '_')) {
+					digit++;
+				}
+				if (digit < p && (*digit == 'u' || *digit == 'U')) {
+					digit++;
+				}
+				if (digit != p) {
+					return false;
+				}
+			}
+		}
+		if (p == token) {
+			p++;
+		}
+	}
+	return true;
+}
+
 bool parse_math_expression(RNum *num, const char *expression, ut64 *out_value) {
 	if (!expression || R_STR_ISEMPTY (r_str_trim_head_ro (expression))) {
+		return false;
+	}
+	if (!validate_hex_literals (expression)) {
 		return false;
 	}
 	RNum local_num = {0};
