@@ -3,46 +3,6 @@
 #include "validation.h"
 #include "jsonrpc.h"
 
-/* Check if a parameter exists and is a string */
-ValidationResult validate_required_string(RJson *args, const char *param_name) {
-	const RJson *field = r_json_get (args, param_name);
-	if (!field || field->type != R_JSON_STRING) {
-		char *msg = r_str_newf ("Missing required parameter '%s' (expected string)", param_name);
-		return (ValidationResult){ false, msg };
-	}
-	return (ValidationResult){ true, NULL };
-}
-
-/* Check if a parameter exists and is numeric (integer or double) */
-ValidationResult validate_required_number(RJson *args, const char *param_name) {
-	const RJson *field = r_json_get (args, param_name);
-	if (!field || (field->type != R_JSON_INTEGER && field->type != R_JSON_DOUBLE)) {
-		char *msg = r_str_newf ("Missing required parameter '%s' (expected number)", param_name);
-		return (ValidationResult){ false, msg };
-	}
-	return (ValidationResult){ true, NULL };
-}
-
-/* Check if a parameter exists and is a boolean */
-ValidationResult validate_required_boolean(RJson *args, const char *param_name) {
-	const RJson *field = r_json_get (args, param_name);
-	if (!field || field->type != R_JSON_BOOLEAN) {
-		char *msg = r_str_newf ("Missing required parameter '%s' (expected boolean)", param_name);
-		return (ValidationResult){ false, msg };
-	}
-	return (ValidationResult){ true, NULL };
-}
-
-/* Check if a parameter exists with any valid type */
-ValidationResult validate_required_param(RJson *args, const char *param_name) {
-	const RJson *field = r_json_get (args, param_name);
-	if (!field) {
-		char *msg = r_str_newf ("Missing required parameter '%s'", param_name);
-		return (ValidationResult){ false, msg };
-	}
-	return (ValidationResult){ true, NULL };
-}
-
 static const char *json_type_name(RJsonType type) {
 	switch (type) {
 	case R_JSON_NULL:

@@ -15,13 +15,4 @@ typedef struct {
 bool parse_math_expression(RNum *num, const char *expression, ut64 *out_value);
 ValidationResult validate_arguments(RJson *args, const char *schema_json, RNum *num);
 
-/* Helper: Check if a required string parameter exists and is a string */
-ValidationResult validate_required_string(RJson *args, const char *param_name);
-
-/* Helper: Check if a required numeric parameter exists and is numeric */
-ValidationResult validate_required_number(RJson *args, const char *param_name);
-
-/* Helper: Check if a required boolean parameter exists and is a boolean */
-ValidationResult validate_required_boolean(RJson *args, const char *param_name);
-
 #endif

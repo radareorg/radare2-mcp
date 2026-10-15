@@ -8,13 +8,6 @@
 #include "utils.inc.c"
 #include "jsonrpc.h"
 
-typedef char *(*ToolFunc)(ServerState *ss, RJson *tool_args);
-
-typedef struct {
-	const char *name;
-	ToolFunc func;
-} ToolEntry;
-
 extern ToolSpec tool_specs[];
 
 // Parameter validation helpers
