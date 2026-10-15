@@ -168,80 +168,28 @@ static bool json_matches_schema_type(RNum *num, const RJson *field, const char *
 	return true;
 }
 
-/* Parse JSON Schema to extract required properties */
-static RList *parse_required_properties(const char *schema_json) {
-	if (!schema_json || !*schema_json) {
-		return NULL;
-	}
-
-	/* We need a non-modifiable copy for parsing */
-	char *schema_copy = strdup (schema_json);
-	if (!schema_copy) {
-		return NULL;
-	}
-
-	RJson *schema = r_json_parse (schema_copy);
-	if (!schema || schema->type != R_JSON_OBJECT) {
-		r_json_free (schema);
-		free (schema_copy);
-		return NULL;
-	}
-
-	RList *required = r_list_newf (free);
-	const RJson *required_json = r_json_get (schema, "required");
-	if (required_json && required_json->type == R_JSON_ARRAY) {
-		const RJson *item = required_json->children.first;
-		while (item) {
-			if (item->type == R_JSON_STRING && item->str_value) {
-				r_list_append (required, strdup (item->str_value));
-			}
-			item = item->next;
-		}
-	}
-
-	r_json_free (schema);
-	free (schema_copy);
-	return required;
-}
-
 /* Validate arguments against JSON Schema */
 ValidationResult validate_arguments(RJson *args, const char *schema_json, RNum *num) {
-	if (!schema_json || !*schema_json) {
+	if (R_STR_ISEMPTY (schema_json)) {
 		/* No schema defined - allow all arguments */
 		return (ValidationResult){ true, NULL };
 	}
 
-	/* Parse the schema once so we can validate required fields and types */
-	char *schema_copy = strdup (schema_json);
-	if (!schema_copy) {
-		return (ValidationResult){ true, NULL };
-	}
-	RJson *schema = r_json_parse (schema_copy);
+	RJson *schema = r_json_parsedup (schema_json);
 	if (!schema || schema->type != R_JSON_OBJECT) {
 		r_json_free (schema);
-		free (schema_copy);
 		return (ValidationResult){ true, NULL };
 	}
 
-	/* Parse schema to get required properties */
-	RList *required = parse_required_properties (schema_json);
-	if (!required) {
-		r_json_free (schema);
-		free (schema_copy);
-		return (ValidationResult){ true, NULL };
-	}
-
-	/* Check each required parameter exists */
-	RListIter *it;
-	const char *param;
-	r_list_foreach (required, it, param) {
-		const RJson *field = r_json_get (args, param);
-		if (!field) {
-			char *msg = r_str_newf ("Missing required parameter '%s'", param);
-			r_list_free (required);
-			r_json_free (schema);
-			free (schema_copy);
-			return (ValidationResult){ false, msg };
+	const RJson *required = r_json_get (schema, "required");
+	if (required && required->type == R_JSON_ARRAY) {
+		const RJson *item;
+		for (item = required->children.first; item; item = item->next) {
+			if (item->type == R_JSON_STRING && item->str_value && !r_json_get (args, item->str_value)) {
+				char *msg = r_str_newf ("Missing required parameter '%s'", item->str_value);
+				r_json_free (schema);
+				return (ValidationResult){ false, msg };
+			}
 		}
 	}
 
@@ -256,17 +204,13 @@ ValidationResult validate_arguments(RJson *args, const char *schema_json, RNum *
 					field->key,
 					expected_type,
 					json_type_name (field->type));
-				r_list_free (required);
 				r_json_free (schema);
-				free (schema_copy);
 				return (ValidationResult){ false, msg };
 			}
 			field = field->next;
 		}
 	}
 
-	r_list_free (required);
 	r_json_free (schema);
-	free (schema_copy);
 	return (ValidationResult){ true, NULL };
 }
