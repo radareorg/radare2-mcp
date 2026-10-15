@@ -273,11 +273,22 @@ char *r2mcp_cmd(ServerState *ss, const char *cmd) {
 	if (changed) {
 		r2mcp_log (ss, "command injection prevented");
 	}
-	r2mcp_log_reset (ss);
+	/* Only a native JSON2 request has a callback that owns its log envelope. */
+	bool json_command = false;
+	if (*filteredCommand == '{') {
+		RJson *request = r_json_parsedup (filteredCommand);
+		const RJson *command = request && request->type == R_JSON_OBJECT? r_json_get (request, "cmd"): NULL;
+		json_command = command && command->type == R_JSON_STRING;
+		r_json_free (request);
+	}
 	R_CRITICAL_ENTER (core);
+	r2mcp_log_reset (ss);
+	const bool previous_json_command_logs = ss->json_command_logs;
+	ss->json_command_logs = json_command;
 	char *res = r_core_cmd_str (core, filteredCommand);
-	R_CRITICAL_LEAVE (core);
+	ss->json_command_logs = previous_json_command_logs;
 	char *err = r2mcp_log_drain (ss);
+	R_CRITICAL_LEAVE (core);
 	free (filteredCommand);
 	if (!res) {
 		res = strdup ("Error: command returned NULL");

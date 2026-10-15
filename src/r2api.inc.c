@@ -35,14 +35,18 @@ static bool logcb(void *user, int type, const char *origin, const char *msg) {
 	if (type > R_LOG_LEVEL_WARN) {
 		return false;
 	}
-	if (!msg || R_STR_ISEMPTY (origin)) {
+	ServerState *ss = (ServerState *)user;
+	if (!msg || (R_STR_ISEMPTY (origin) && !ss->json_command_logs)) {
 		return true;
 	}
-	ServerState *ss = (ServerState *)user;
 	if (ss->sb) {
 		const char *typestr = r_log_level_tostring (type);
 		// R_LOG_INFO ("[%s] from=%s message=%s\n", typestr, origin, msg);
 		fprintf (stderr, "[%s] %s\n", typestr, msg);
+		if (ss->json_command_logs) {
+			/* Let the native JSON2 callback retain the structured diagnostic. */
+			return false;
+		}
 		r_strbuf_appendf (ss->sb, "[%s] %s\n", typestr, msg);
 		// r_strbuf_appendf (ss->sb, "[%s] from=%s message=%s\n", typestr, origin, msg);
 	}

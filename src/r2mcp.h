@@ -112,6 +112,8 @@ typedef struct {
 	/* Optional path to append debug logs when set via -l */
 	char *logfile;
 	bool log_callback_added;
+	/* Native JSON2 owns structured logs during this command scope. */
+	bool json_command_logs;
 	/* Optional custom prompts directory path */
 	char *prompts_dir;
 	/* When true, load prompts (false when -N flag is used) */
