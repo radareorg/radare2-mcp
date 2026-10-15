@@ -710,10 +710,7 @@ static char *tool_set_comment(ServerState *ss, RJson *tool_args) {
 		return jsonrpc_error_missing_param ("address and message");
 	}
 
-	char *cmd_cc = r_str_newf ("'@0x%"PFMT64x"'CC %s", address, message);
-	char *tmpres_cc = r2mcp_cmd (ss, cmd_cc);
-	free (tmpres_cc);
-	free (cmd_cc);
+	free (r2mcp_cmdf (ss, "'@0x%"PFMT64x"'CC %s", address, message));
 	return jsonrpc_tooltext_response ("ok");
 }
 
@@ -724,10 +721,7 @@ static char *tool_set_function_prototype(ServerState *ss, RJson *tool_args) {
 		!validate_required_string_param (tool_args, "prototype", &prototype)) {
 		return jsonrpc_error_missing_param ("address and prototype");
 	}
-	char *cmd_afs = r_str_newf ("'@0x%"PFMT64x"'afs %s", address, prototype);
-	char *tmpres_afs = r2mcp_cmd (ss, cmd_afs);
-	free (tmpres_afs);
-	free (cmd_afs);
+	free (r2mcp_cmdf (ss, "'@0x%"PFMT64x"'afs %s", address, prototype));
 	return jsonrpc_tooltext_response ("ok");
 }
 
@@ -736,10 +730,7 @@ static char *tool_get_function_prototype(ServerState *ss, RJson *tool_args) {
 	if (!validate_address_param (ss, tool_args, "address", &address)) {
 		return jsonrpc_error_numeric_param ("address");
 	}
-	char *s = r_str_newf ("'@0x%"PFMT64x"'afs", address);
-	char *res = r2mcp_cmd (ss, s);
-	free (s);
-	return tool_cmd_response (res);
+	return tool_cmd_response (r2mcp_cmdf (ss, "'@0x%"PFMT64x"'afs", address));
 }
 
 static char *tool_list_strings(ServerState *ss, RJson *tool_args) {
