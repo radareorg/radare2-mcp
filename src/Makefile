@@ -35,6 +35,9 @@ INC += curl.inc.c
 BIN_OBJS := $(BIN_SRC:.c=.o)
 PLUGIN_OBJS := $(PLUGIN_SRC:.c=.pic.o)
 
+$(BIN_OBJS) $(PLUGIN_OBJS): r2mcp.h
+r2mcp.o r2mcp.pic.o: $(INC)
+
 # Detect OS-specific settings
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Darwin)

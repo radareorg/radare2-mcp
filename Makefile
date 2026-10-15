@@ -9,7 +9,7 @@ test:
 	bash test.sh
 	bash test2.sh
 	@if command -v python3 >/dev/null 2>&1; then \
-		python3 test-http.py && python3 test-json-numbers.py; \
+		python3 test-http.py && python3 test-json-numbers.py && python3 test-json-logs.py; \
 	else \
 		echo "skip Python tests (python3 not found)"; \
 	fi
