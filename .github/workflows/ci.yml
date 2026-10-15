@@ -167,7 +167,7 @@ jobs:
 
       - name: Install radare2
         id: r2
-        uses: radareorg/github-actions@4ae27a8b29a049ac0fd5119f6eda37ecfc64ead8
+        uses: radareorg/github-actions@4ae27a8b29a049ac0fd5119f6eda37ecfc64ead8 # v3
         with:
           version: ${{ env.R2V }}
 
