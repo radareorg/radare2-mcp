@@ -122,7 +122,12 @@ static inline void pj_append_rjson_value(PJ *pj, const RJson *json) {
 		pj_b (pj, json->num.u_value);
 		break;
 	case R_JSON_INTEGER:
-		pj_n (pj, json->num.s_value);
+		/* RJson keeps the parsed sign in dbl_value; serialize the exact integer. */
+		if (json->num.dbl_value < 0) {
+			pj_N (pj, json->num.s_value);
+		} else {
+			pj_n (pj, json->num.u_value);
+		}
 		break;
 	case R_JSON_DOUBLE:
 		pj_d (pj, json->num.dbl_value);
