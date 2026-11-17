@@ -77,30 +77,6 @@ static inline void r2mcp_log(ServerState *ss, const char *x) {
 	}
 }
 
-static char *r2_cmd_filter(const char *cmd, bool *changed) {
-	char *res = r_str_trim_dup (cmd);
-	char fchars[] = "|>`";
-	*changed = false;
-	if (*res == '!') {
-		*changed = true;
-		*res = 0;
-	} else {
-		char *ch = strstr (res, "$(");
-		if (ch) {
-			*changed = true;
-			*ch = 0;
-		}
-		for (ch = fchars; *ch; ch++) {
-			char *p = strchr (res, *ch);
-			if (p) {
-				*changed = true;
-				*p = 0;
-			}
-		}
-	}
-	return res;
-}
-
 #include "curl.inc.c"
 
 static char *r2cmd_over_http(ServerState *ss, const char *cmd) {

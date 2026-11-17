@@ -1168,7 +1168,15 @@ static char *tool_list_sessions(ServerState *ss, RJson *tool_args) {
 		// In HTTP mode, we can't run r2agent locally, return empty result
 		res = strdup ("[]");
 	} else {
+		// trusted fixed command, the default sandbox grain does not allow exec
+		bool was_sandboxed = r_sandbox_enable (false);
+		if (was_sandboxed) {
+			r_sandbox_disable (true);
+		}
 		res = r_sys_cmd_str ("r2agent -Lj 2>/dev/null", NULL, NULL);
+		if (was_sandboxed) {
+			r_sandbox_disable (false);
+		}
 		if (R_STR_ISEMPTY (res)) {
 			free (res);
 			res = strdup ("[]");

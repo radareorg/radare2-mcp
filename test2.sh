@@ -766,15 +766,15 @@ run_http_sandbox_grain_regression() {
 
 	"$BIN" -t -l "$normal_log" >/dev/null
 	"$BIN" -u "http://127.0.0.1:1/cmd/" -t -l "$http_log" >/dev/null
-	"$BIN" -u "http://127.0.0.1:1/cmd/" -g "exec,socket" -t -l "$override_log" >/dev/null
+	"$BIN" -u "http://127.0.0.1:1/cmd/" -g "socket,disk" -t -l "$override_log" >/dev/null
 
-	grep -q "sandbox grain: exec,socket" "$normal_log" || {
-		fail "sandbox grain: normal mode should default to exec,socket"
+	grep -q "sandbox grain: socket$" "$normal_log" || {
+		fail "sandbox grain: normal mode should default to socket"
 	}
-	grep -q "sandbox grain: exec,network" "$http_log" || {
-		fail "sandbox grain: HTTP mode should default to exec,network"
+	grep -q "sandbox grain: network$" "$http_log" || {
+		fail "sandbox grain: HTTP mode should default to network"
 	}
-	grep -q "sandbox grain: exec,socket" "$override_log" || {
+	grep -q "sandbox grain: socket,disk" "$override_log" || {
 		fail "sandbox grain: explicit -g should override the HTTP mode default"
 	}
 }
@@ -972,23 +972,31 @@ run_command_json_pagination_regression() {
 	}
 }
 
-run_command_filter_regression() {
-	local req="$TMPDIR/filter.req"
-	local resp="$TMPDIR/filter.resp"
-	local payload='x$(f __R2MCP_INJECTED__=entry0)'
+run_command_shell_regression() {
+	local req="$TMPDIR/shell.req"
+	local resp="$TMPDIR/shell.resp"
+	local pwn="$TMPDIR/shell-pwned"
+	local cmd
 	: > "$req"
 
 	append_request "$req" 1 initialize '{"capabilities":{},"clientInfo":{"name":"testsuite","version":"1"}}'
 	append_notification "$req" notifications/initialized '{}'
 	append_tool_call "$req" 2 open_file "$(jq -cn --arg file "$TEST_FILE" '{file_path:$file}')"
-	append_tool_call "$req" 3 run_command "$(jq -cn --arg command "$payload" '{command:$command}')"
-	append_tool_call "$req" 4 list_symbols "$(jq -cn --arg marker "$INJECT_MARKER" '{filter:$marker}')"
+	# the default sandbox grain must deny exec and disk writes, r2 enforces it for every command
+	local id=3
+	for cmd in "!touch $pwn.1" "?e hi;!!touch $pwn.2" "(m;!!touch $pwn.3);.(m)" ".!touch $pwn.4" "?e hi|touch $pwn.5" "?e hi > $pwn.6"; do
+		append_tool_call "$req" "$id" run_command "$(jq -cn --arg command "$cmd" '{command:$command}')"
+		id=$((id + 1))
+	done
+	append_tool_call "$req" "$id" run_command '{"command":"e cfg.sandbox.grain"}'
 	run_session "$req" "$resp" -r
 
-	printf '%s\n' "$(response_by_id "$resp" 3)" | jq -e '.result.content[0].text | type == "string"' >/dev/null 2>&1 || {
-		fail "command filter regression: expected run_command to return text, got $(response_by_id "$resp" 3)"
+	for id in 1 2 3 4 5 6; do
+		[ ! -e "$pwn.$id" ] || fail "run_command sandbox escape $id created $pwn.$id"
+	done
+	printf '%s\n' "$(response_by_id "$resp" 9)" | jq -e '.result.content[0].text | startswith("socket")' >/dev/null 2>&1 || {
+		fail "default sandbox grain must be socket, got $(response_by_id "$resp" 9)"
 	}
-	assert_marker_absent "$(response_by_id "$resp" 4)" "$INJECT_MARKER" "command filter regression"
 }
 
 run_script_sandbox_regression() {
@@ -1170,7 +1178,7 @@ run_startup_command_regression
 run_sql_plugin_missing_regression
 run_command_smoke_regression
 run_command_json_pagination_regression
-run_command_filter_regression
+run_command_shell_regression
 run_script_sandbox_regression
 run_use_decompiler_regression
 

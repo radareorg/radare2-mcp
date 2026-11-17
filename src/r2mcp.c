@@ -81,7 +81,8 @@ const char *r2mcp_effective_sandbox_grain(const ServerState *ss) {
 	if (ss && R_STR_ISNOTEMPTY (ss->sandbox_grain)) {
 		return ss->sandbox_grain;
 	}
-	return (ss && ss->http_mode)? "exec,network": "exec,socket";
+	// grain lists the permissions allowed inside the sandbox; never grant exec by default
+	return (ss && ss->http_mode)? "network": "socket";
 }
 
 static bool r2mcp_http_bearer_authorized(const ServerState *ss, RSocketHTTPRequest *rs) {
@@ -268,15 +269,10 @@ char *r2mcp_cmd(ServerState *ss, const char *cmd) {
 	if (!core || !ss->rstate->file_opened) {
 		return strdup ("Cannot run commands without calling the `open_file` tool first");
 	}
-	bool changed = false;
-	char *filteredCommand = r2_cmd_filter (cmd, &changed);
-	if (changed) {
-		r2mcp_log (ss, "command injection prevented");
-	}
 	/* Only a native JSON2 request has a callback that owns its log envelope. */
 	bool json_command = false;
-	if (*filteredCommand == '{') {
-		RJson *request = r_json_parsedup (filteredCommand);
+	if (*cmd == '{') {
+		RJson *request = r_json_parsedup (cmd);
 		const RJson *command = request && request->type == R_JSON_OBJECT? r_json_get (request, "cmd"): NULL;
 		json_command = command && command->type == R_JSON_STRING;
 		r_json_free (request);
@@ -285,11 +281,10 @@ char *r2mcp_cmd(ServerState *ss, const char *cmd) {
 	r2mcp_log_reset (ss);
 	const bool previous_json_command_logs = ss->json_command_logs;
 	ss->json_command_logs = json_command;
-	char *res = r_core_cmd_str (core, filteredCommand);
+	char *res = r_core_cmd_str (core, cmd);
 	ss->json_command_logs = previous_json_command_logs;
 	char *err = r2mcp_log_drain (ss);
 	R_CRITICAL_LEAVE (core);
-	free (filteredCommand);
 	if (!res) {
 		res = strdup ("Error: command returned NULL");
 	}
