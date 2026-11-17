@@ -53,10 +53,10 @@ void r2mcp_help(void) {
 		" -d [pdc]   select a different decompiler (pdc by default)\n"
 		" -E [tool]  exclude the specified tool (repeatable)\n"
 		" -e [tool]  enable only the specified tool (repeatable)\n"
-		" -g [grain] sandbox grain mask (disk,files,exec,socket,network,environ,all,none)\n"
+		" -g [grain] permissions allowed in the sandbox (r2 -e 'cfg.sandbox.grain=?')\n"
 		" -h         show this help\n"
 #ifndef __wasi__
-		" -H [addr:]port start an HTTP MCP server (default address: 127.0.0.1)\n"
+		" -H [H:]P   start an HTTP MCP server on given Port (default Host: 127.0.0.1)\n"
 #endif
 		" -i         ignore analysis level specified in analyze calls\n"
 		" -l [file]  append debug logs to this file\n"
@@ -389,9 +389,16 @@ int r2mcp_main(int argc, const char **argv) {
 	ss.rstate = &ss.default_rstate;
 	/* Enable logging */
 	r2mcp_log_pub (&ss, "r2mcp starting");
-	sandbox_grain_msg = r_str_newf ("sandbox grain: %s", r2mcp_effective_sandbox_grain (&ss));
+	const char *grain = r2mcp_effective_sandbox_grain (&ss);
+	sandbox_grain_msg = r_str_newf ("sandbox grain: %s", grain);
 	r2mcp_log_pub (&ss, sandbox_grain_msg);
 	free (sandbox_grain_msg);
+	int grain_mask = 0;
+	if (!strcmp (grain, "all")) {
+		R_LOG_WARN ("Sandbox disabled by -g all");
+	} else if (r_sandbox_grain_parse (grain, &grain_mask) && (grain_mask & R_SANDBOX_GRAIN_EXEC)) {
+		R_LOG_WARN ("Sandbox grain allows running shell commands");
+	}
 	if (list_tools) {
 		tools_print_table (&ss);
 		return 0;

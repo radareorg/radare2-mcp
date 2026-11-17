@@ -63,7 +63,7 @@ static void r2mcp_config_init(RCore *core) {
 	r2mcp_cfg_set_b (core, "r2mcp.prompts", true, "load r2mcp prompts");
 	r2mcp_cfg_set_s (core, "r2mcp.prompts.dir", "", "colon-separated prompt directories");
 	r2mcp_cfg_set_s (core, "r2mcp.sandbox", "", "restrict open_file to this sandbox directory");
-	r2mcp_cfg_set_s (core, "r2mcp.sandbox.grain", "", "radare2 sandbox grain mask (disk,files,exec,socket,network,environ,all,none)");
+	r2mcp_cfg_set_s (core, "r2mcp.sandbox.grain", "", "permissions allowed in the radare2 sandbox (r2 -e 'cfg.sandbox.grain=?')\n");
 	node = r2mcp_cfg_set_s (core, "r2mcp.content", "text", "tool response content mode");
 	r_config_node_add_option (node, "text");
 	r_config_node_add_option (node, "json");
