@@ -391,7 +391,12 @@ void tools_print_mode_help(void) {
 }
 
 void tools_print_table(const ServerState *ss) {
+	/* The options argument was added during radare2 6.1.5 development. */
+#if R2_VERSION_NUMBER >= 60105
 	RTable *table = r_table_new ("tools", NULL);
+#else
+	RTable *table = r_table_new ("tools");
+#endif
 	if (!table) {
 		R_LOG_ERROR ("Failed to allocate table");
 		return;
