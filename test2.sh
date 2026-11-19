@@ -1105,10 +1105,12 @@ run_function_details_regression() {
 	append_tool_call "$req" 4 show_function_details '{"address":"sym.r2mcp_cmdf"}'
 	append_tool_call "$req" 5 show_function_details '{}'
 	append_tool_call "$req" 6 show_function_details '{"address":"0xgg"}'
+	append_tool_call "$req" 7 show_function_details '{"address":"0x1"}'
 	run_session "$req" "$resp" -r -C both
 	response_by_id "$resp" 4 | jq -e '.result | (.content[0].text | contains("r2mcp_cmdf")) and (.structuredContent.functions[0].name | endswith(".r2mcp_cmdf"))' >/dev/null || fail 'function details: explicit address must select the function in text and structured output'
 	response_by_id "$resp" 5 | jq -e '.result.structuredContent.functions[0].name | endswith(".r2mcp_cmd")' >/dev/null || fail 'function details: omitted address must use unchanged seek'
 	assert_error_contains_param "$(response_by_id "$resp" 6)" "address" "show_function_details:invalid-address"
+	response_by_id "$resp" 7 | jq -e '.result.structuredContent.functions == []' >/dev/null || fail 'function details: missing function must return an empty array'
 }
 
 need_cmd jq
