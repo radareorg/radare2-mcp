@@ -239,7 +239,7 @@ static char *tool_cmd_response_paginated(ServerState *ss, char *res, RJson *tool
 }
 
 // Mode-aware variant of tool_cmd_response, frees both inputs
-R_UNUSED static char *tool_mode_response(ServerState *ss, char *text, char *structured_json) {
+static char *tool_mode_response(ServerState *ss, char *text, char *structured_json) {
 	char *response = jsonrpc_tool_response (text, structured_json, ss->content_mode);
 	free (text);
 	free (structured_json);
@@ -663,9 +663,42 @@ static char *tool_show_info(ServerState *ss, RJson *tool_args) {
 	return tool_cmd_response (r2mcp_cmd (ss, ss->frida_mode? ":i": "i;iH"));
 }
 
+static char *function_info(ServerState *ss, const RJson *address, ut64 addr, const char *cmd) {
+	return address? r2mcp_cmdf (ss, "'@0x%" PFMT64x "'%s", addr, cmd): r2mcp_cmd (ss, cmd);
+}
+
 static char *tool_show_function_details(ServerState *ss, RJson *tool_args) {
-	(void)tool_args;
-	return tool_cmd_response (r2mcp_cmd (ss, "afi"));
+	const RJson *address = r_json_get (tool_args, "address");
+	ut64 addr = 0;
+	if (address && !validate_address_param (ss, tool_args, "address", &addr)) {
+		return jsonrpc_error_numeric_param ("address");
+	}
+	if (ss->content_mode == R2MCP_CONTENT_TEXT) {
+		return tool_cmd_response (function_info (ss, address, addr, "afi"));
+	}
+	char *res = function_info (ss, address, addr, "afiJ");
+	RJson *data = R_STR_ISEMPTY (res)? NULL: r_json_parse (res);
+	if (!data || data->type != R_JSON_ARRAY) {
+		r_json_free (data);
+		free (res);
+		res = function_info (ss, address, addr, "afij");
+		data = R_STR_ISEMPTY (res)? NULL: r_json_parse (res);
+	}
+	if (!data || data->type != R_JSON_ARRAY) {
+		r_json_free (data);
+		free (res);
+		return tool_cmd_response (function_info (ss, address, addr, "afi"));
+	}
+	PJ *pj = pj_new ();
+	pj_o (pj);
+	pj_k (pj, "functions");
+	pj_append_rjson_value (pj, data);
+	pj_end (pj);
+	r_json_free (data);
+	free (res);
+	char *json = pj_drain (pj);
+	char *human = ss->content_mode == R2MCP_CONTENT_BOTH? function_info (ss, address, addr, "afi"): strdup (json);
+	return tool_mode_response (ss, human, json);
 }
 
 static char *tool_get_current_address(ServerState *ss, RJson *tool_args) {
@@ -1023,7 +1056,7 @@ static char *tool_lookup_export(ServerState *ss, RJson *tool_args) {
 		return tool_cmd_response (r2mcp_cmdf (ss, "':iaE %s", name));
 	}
 	char *res = r2mcp_cmd (ss, "'iEj");
-	RJson *exports = r_json_parsedup (res);
+	RJson *exports = r_json_parse (res);
 	if (!exports || exports->type != R_JSON_ARRAY) {
 		r_json_free (exports);
 		return tool_cmd_response (res);
@@ -1603,7 +1636,7 @@ ToolSpec tool_specs[] = {
 	{ "list_exports", "Lists exported symbols from the binary or process", TOOL_SCHEMA_LIST, TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_list_exports },
 	{ "list_sections", "Displays memory sections and segments from the binary", TOOL_SCHEMA_LIST, TOOL_MODE_NORMAL | TOOL_MODE_HTTP | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_list_sections },
 	{ "list_memory_maps", "Lists memory regions of the process with addresses and permissions", TOOL_SCHEMA_LIST, TOOL_MODE_NORMAL | TOOL_MODE_HTTP | TOOL_MODE_FRIDA, tool_list_memory_maps },
-	{ "show_function_details", "Displays detailed information about the current function", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_RO, tool_show_function_details },
+	{ "show_function_details", "Shows details of the function containing the given address (default: current seek). JSON output includes named attributes when supported by radare2.", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Optional address expression (e.g. sym.main or 0x401000); omit to use current seek\"}}}", TOOL_MODE_NORMAL | TOOL_MODE_RO, tool_show_function_details },
 	{ "get_current_address", "Shows the current position and function name", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_RO, tool_get_current_address },
 	{ "show_info", "Displays information about the binary or target process", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_show_info },
 	{ "list_symbols", "Shows all symbols (functions, variables, imports) with addresses", TOOL_SCHEMA_LIST, TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_list_symbols },
