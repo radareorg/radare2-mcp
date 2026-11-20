@@ -683,21 +683,29 @@ static char *tool_show_function_details(ServerState *ss, RJson *tool_args) {
 	}
 	char *res = function_info (ss, address, addr, "afiJ");
 	RJson *data = R_STR_ISEMPTY (res)? NULL: r_json_parse (res);
-	if (!data || data->type != R_JSON_ARRAY) {
+	if (!data || (data->type != R_JSON_ARRAY && data->type != R_JSON_OBJECT && data->type != R_JSON_NULL)) {
 		r_json_free (data);
 		free (res);
 		res = function_info (ss, address, addr, "afij");
 		data = R_STR_ISEMPTY (res)? NULL: r_json_parse (res);
-	}
-	if (!data || data->type != R_JSON_ARRAY) {
-		r_json_free (data);
-		free (res);
-		return tool_cmd_response (function_info (ss, address, addr, "afi"));
+		if (!data || data->type != R_JSON_ARRAY) {
+			r_json_free (data);
+			free (res);
+			return tool_cmd_response (function_info (ss, address, addr, "afi"));
+		}
 	}
 	PJ *pj = pj_new ();
 	pj_o (pj);
 	pj_k (pj, "functions");
-	pj_append_rjson_value (pj, data);
+	if (data->type == R_JSON_ARRAY) {
+		pj_append_rjson_value (pj, data);
+	} else {
+		pj_a (pj);
+		if (data->type == R_JSON_OBJECT) {
+			pj_append_rjson_value (pj, data);
+		}
+		pj_end (pj);
+	}
 	pj_end (pj);
 	r_json_free (data);
 	free (res);
