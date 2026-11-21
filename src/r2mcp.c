@@ -157,7 +157,8 @@ static void set_nonblocking_io(bool nonblocking) {
 		flags &= ~O_NONBLOCK;
 	}
 	fcntl (STDIN_FILENO, F_SETFL, flags);
-	setvbuf (stdout, NULL, _IOLBF, 0);
+	/* stdout buffering is configured once by r2mcp_eventloop_stdio(); a second
+	 * setvbuf() on an already configured stream is undefined behaviour */
 #elif defined(R2__WINDOWS__)
 	// Windows doesn't support POSIX fcntl/O_NONBLOCK on stdin reliably.
 	// We set stdin mode to binary/text depending on requested mode and
@@ -167,7 +168,9 @@ static void set_nonblocking_io(bool nonblocking) {
 	} else {
 		_setmode (_fileno (stdin), _O_TEXT);
 	}
-	setvbuf (stdout, NULL, _IOLBF, 0);
+	/* Do not call setvbuf() here: the event loop already configured stdout and
+	 * calling it twice aborts on Windows UCRT (0xC0000409) or corrupts the
+	 * stream, which later crashes on close_file/open_file (0xC0000005) */
 #else
 	(void)nonblocking;
 #endif
