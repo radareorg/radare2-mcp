@@ -50,7 +50,7 @@ RUN
 
 NAME=Plugin rename updates existing function
 FILE=hex://90c3
-ARGS=-a x86 -b 64
+ARGS=-a x86 -b 64 -e anal.nopskip=false
 CMDS=<<EOF
 L ../src/libcore_r2mcp.`!r2 -H R2_LIBEXT`
 e r2mcp.prompts=false
