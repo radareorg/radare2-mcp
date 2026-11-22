@@ -157,17 +157,15 @@ static void set_nonblocking_io(bool nonblocking) {
 		flags &= ~O_NONBLOCK;
 	}
 	fcntl (STDIN_FILENO, F_SETFL, flags);
-	setvbuf (stdout, NULL, _IOLBF, 0);
 #elif defined(R2__WINDOWS__)
 	// Windows doesn't support POSIX fcntl/O_NONBLOCK on stdin reliably.
-	// We set stdin mode to binary/text depending on requested mode and
-	// keep line-buffered stdout. This is a best-effort no-op for nonblocking.
+	// We set stdin mode to binary/text depending on requested mode.
+	// This is a best-effort no-op for nonblocking.
 	if (nonblocking) {
 		_setmode (_fileno (stdin), _O_BINARY);
 	} else {
 		_setmode (_fileno (stdin), _O_TEXT);
 	}
-	setvbuf (stdout, NULL, _IOLBF, 0);
 #else
 	(void)nonblocking;
 #endif
