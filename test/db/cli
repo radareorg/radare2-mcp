@@ -1,0 +1,94 @@
+NAME=CLI DSL open calculate close
+FILE=-
+CMDS=<<EOF
+!exec ../src/r2mcp -nN -T 'open_file file_path="hex://90c3"; calculate expression="0x100+4"; close_file'
+EOF
+EXPECT=
+EXPECT_ERR=<<EOF
+INFO: [R2MCP] r2mcp starting
+INFO: [R2MCP] sandbox grain: socket
+INFO: Radare2 core initialized
+[DSL] open_file -> {"content":[{"type":"text","text":"File opened successfully."}]}
+[DSL] calculate -> {"content":[{"type":"text","text":"0x104"}]}
+[DSL] close_file -> {"content":[{"type":"text","text":"File closed successfully."}]}
+EOF
+RUN
+
+NAME=CLI DSL disassemble handcrafted x86
+FILE=-
+CMDS=<<EOF
+!exec ../src/r2mcp -nN -r -T 'open_file file_path="hex://90c3" arch="x86" bits="64"; run_command command="pi 2"; close_file'
+EOF
+EXPECT=
+EXPECT_ERR=<<EOF
+INFO: [R2MCP] r2mcp starting
+INFO: [R2MCP] sandbox grain: socket
+INFO: Radare2 core initialized
+[DSL] open_file -> {"content":[{"type":"text","text":"File opened successfully."}]}
+[DSL] run_command -> {"content":[{"type":"text","text":"nop\nret\n"}]}
+[DSL] close_file -> {"content":[{"type":"text","text":"File closed successfully."}]}
+EOF
+RUN
+
+NAME=CLI DSL requires open file
+FILE=-
+CMDS=<<EOF
+!exec ../src/r2mcp -nN -T 'get_current_address'
+EOF
+EXPECT=
+EXPECT_ERR=<<EOF
+INFO: [R2MCP] r2mcp starting
+INFO: [R2MCP] sandbox grain: socket
+INFO: Radare2 core initialized
+[DSL] get_current_address -> {"jsonrpc":"2.0","error":{"code":-32611,"message":"Use the open_file method before calling any other method"}}
+EOF
+RUN
+
+NAME=CLI DSL close clears current file
+FILE=-
+CMDS=<<EOF
+!exec ../src/r2mcp -nN -T 'open_file file_path="hex://90c3"; close_file; get_current_address'
+EOF
+EXPECT=
+EXPECT_ERR=<<EOF
+INFO: [R2MCP] r2mcp starting
+INFO: [R2MCP] sandbox grain: socket
+INFO: Radare2 core initialized
+[DSL] open_file -> {"content":[{"type":"text","text":"File opened successfully."}]}
+[DSL] close_file -> {"content":[{"type":"text","text":"File closed successfully."}]}
+[DSL] get_current_address -> {"jsonrpc":"2.0","error":{"code":-32611,"message":"Use the open_file method before calling any other method"}}
+EOF
+RUN
+
+NAME=CLI stdio ping notification and unknown method
+FILE=-
+CMDS=<<EOF
+!printf '%s\n' '{"jsonrpc":"2.0","method":"notifications/initialized"}' '{"jsonrpc":"2.0","id":1,"method":"ping"}' '{"jsonrpc":"2.0","id":2,"method":"unknown"}' | ../src/r2mcp -nN
+EOF
+EXPECT=<<EOF
+{"jsonrpc":"2.0","id":1,"result":{}}
+{"jsonrpc":"2.0","id":2,"error":{"code":-32601,"message":"Unknown method"}}
+EOF
+EXPECT_ERR=<<EOF
+INFO: [R2MCP] r2mcp starting
+INFO: [R2MCP] sandbox grain: socket
+INFO: Radare2 core initialized
+EOF
+RUN
+
+NAME=CLI stdio open calculate close
+FILE=-
+CMDS=<<EOF
+!printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"open_file","arguments":{"file_path":"hex://90c3"}}}' '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"calculate","arguments":{"expression":"0x100+4"}}}' '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"close_file","arguments":{}}}' | ../src/r2mcp -nN
+EOF
+EXPECT=<<EOF
+{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"File opened successfully."}]}}
+{"jsonrpc":"2.0","id":2,"result":{"content":[{"type":"text","text":"0x104"}]}}
+{"jsonrpc":"2.0","id":3,"result":{"content":[{"type":"text","text":"File closed successfully."}]}}
+EOF
+EXPECT_ERR=<<EOF
+INFO: [R2MCP] r2mcp starting
+INFO: [R2MCP] sandbox grain: socket
+INFO: Radare2 core initialized
+EOF
+RUN

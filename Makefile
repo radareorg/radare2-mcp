@@ -5,7 +5,7 @@ $(SRC_TARGETS): src/Makefile
 	$(MAKE) -C src $@
 	$(MAKE) -C svc $@
 
-test:
+test: test-r2r
 	bash test.sh
 	bash test2.sh
 	@if command -v python3 >/dev/null 2>&1; then \
@@ -13,6 +13,10 @@ test:
 	else \
 		echo "skip Python tests (python3 not found)"; \
 	fi
+
+test-r2r: src/Makefile
+	$(MAKE) -C src all
+	$(MAKE) -C test
 
 format fmt indent:
 	clang-format-radare2 src/*.c svc/*.c src/*.h
@@ -33,4 +37,4 @@ codex-plugin-install:
 codex-plugin-uninstall:
 	sh dist/scripts/uninstall-codex-plugin.sh
 
-.PHONY: $(SRC_TARGETS) help doc test codex-plugin codex-plugin-install codex-plugin-uninstall
+.PHONY: $(SRC_TARGETS) help doc test test-r2r codex-plugin codex-plugin-install codex-plugin-uninstall

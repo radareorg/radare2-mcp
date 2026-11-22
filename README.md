@@ -260,3 +260,10 @@ For Windows, just use meson and ninja like it's done in the CI:
 meson b
 ninja -C b
 ```
+
+### Tests
+
+Run `make test-r2r` to build and run the offline CLI and core plugin tests in
+[`test/db`](test/README.md). These use handcrafted `hex://` files and need
+only radare2, r2r, and a POSIX shell in addition to the build dependencies.
+`make test` also runs the existing shell and Python tests.

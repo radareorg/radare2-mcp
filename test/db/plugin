@@ -1,0 +1,101 @@
+NAME=Plugin default status
+FILE=hex://90c3
+CMDS=<<EOF
+L ../src/libcore_r2mcp.`!r2 -H R2_LIBEXT`
+e r2mcp.prompts=false
+r2mcp status
+EOF
+EXPECT=<<EOF
+http: stopped
+log: false
+approve: false
+yolo: false
+auth: disabled
+content: text
+readonly: false
+permissive: false
+run_command: false
+EOF
+EXPECT_ERR=
+RUN
+
+NAME=Plugin calculate uses existing flags
+FILE=hex://90c3
+CMDS=<<EOF
+L ../src/libcore_r2mcp.`!r2 -H R2_LIBEXT`
+e r2mcp.prompts=false
+f entry=0x100
+r2mcp calculate expression="entry+4"
+EOF
+EXPECT=<<EOF
+0x104
+EOF
+EXPECT_ERR=
+RUN
+
+NAME=Plugin reads handcrafted bytes
+FILE=hex://90c3
+CMDS=<<EOF
+L ../src/libcore_r2mcp.`!r2 -H R2_LIBEXT`
+e r2mcp.prompts=false
+r2mcp yolo on
+r2mcp run_command command="p8 2"
+EOF
+EXPECT=<<EOF
+90c3
+
+EOF
+EXPECT_ERR=
+RUN
+
+NAME=Plugin rename updates existing function
+FILE=hex://90c3
+ARGS=-a x86 -b 64
+CMDS=<<EOF
+L ../src/libcore_r2mcp.`!r2 -H R2_LIBEXT`
+e r2mcp.prompts=false
+af+ 0 entry
+afb+ 0 0 2
+r2mcp rename_function name="renamed" address="0x0"
+afn @ 0
+r2mcp calculate expression="renamed+1"
+r2mcp list_functions
+EOF
+EXPECT=<<EOF
+ok
+renamed
+0x1
+0x00000000 renamed
+EOF
+EXPECT_ERR=
+RUN
+
+NAME=Plugin comment updates live core
+FILE=hex://90c3
+CMDS=<<EOF
+L ../src/libcore_r2mcp.`!r2 -H R2_LIBEXT`
+e r2mcp.prompts=false
+r2mcp set_comment address="0x1" message="hello r2mcp"
+CC. @ 1
+EOF
+EXPECT=<<EOF
+ok
+hello r2mcp
+EOF
+EXPECT_ERR=
+RUN
+
+NAME=Plugin scans handcrafted strings
+FILE=hex://68656c6c6f00776f726c6400
+CMDS=<<EOF
+L ../src/libcore_r2mcp.`!r2 -H R2_LIBEXT`
+e r2mcp.prompts=false
+r2mcp list_all_strings
+EOF
+EXPECT=<<EOF
+hello
+world
+
+EOF
+EXPECT_ERR=
+RUN
