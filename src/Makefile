@@ -37,6 +37,7 @@ PLUGIN_OBJS := $(PLUGIN_SRC:.c=.pic.o)
 
 $(BIN_OBJS) $(PLUGIN_OBJS): r2mcp.h
 r2mcp.o r2mcp.pic.o: $(INC)
+tools.o tools.pic.o: path.inc.c utils.inc.c
 
 # Detect OS-specific settings
 UNAME_S := $(shell uname -s)

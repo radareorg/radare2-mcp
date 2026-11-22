@@ -129,13 +129,10 @@ R_IPI bool r2_open_file(ServerState *ss, const char *filepath, ut64 baddr, const
 		filepath = filepath + strlen ("file://");
 	}
 	bool is_uri = strstr (filepath, "://") != NULL;
-	// Filesystem security checks only apply to local paths, not URI schemes
-	if (!is_uri) {
-		const char *err = r2mcp_sandbox_check (ss, filepath);
-		if (err) {
-			R_LOG_ERROR ("%s", err);
-			return false;
-		}
+	const char *err = r2mcp_open_path_check (ss, filepath);
+	if (err) {
+		R_LOG_ERROR ("%s", err);
+		return false;
 	}
 
 	if (ss->http_mode) {
@@ -153,10 +150,15 @@ R_IPI bool r2_open_file(ServerState *ss, const char *filepath, ut64 baddr, const
 	}
 	RCore *core = ss->rstate->core;
 	bool was_sandboxed = r_sandbox_enable (false);
-	if (was_sandboxed) {
-		r_sandbox_disable (true);
+	if (is_uri) {
+		// Apply the policy even on the first open; URI plugins never get an exception.
+		r2state_sandbox_settings (ss, core);
+	} else {
+		if (was_sandboxed) {
+			r_sandbox_disable (true);
+		}
+		r_config_set_b (core->config, "cfg.sandbox", false);
 	}
-	r_config_set_b (core->config, "cfg.sandbox", false);
 
 	if (R_STR_ISNOTEMPTY (arch)) {
 		r_config_set (core->config, "asm.arch", arch);
@@ -168,20 +170,23 @@ R_IPI bool r2_open_file(ServerState *ss, const char *filepath, ut64 baddr, const
 		r_config_set (core->config, "asm.cpu", cpu);
 	}
 
-	ss->frida_mode = strstr (filepath, "frida://") != NULL;
-	if (!ss->frida_mode) {
+	bool frida_mode = r_str_startswith (filepath, "frida://");
+	if (!frida_mode) {
 		r_core_cmd0 (core, "e bin.relocs.apply=true");
 		r_core_cmd0 (core, "e bin.cache=true");
 	}
 
 	R_LOG_INFO ("Opening file: %s", filepath);
 	RIODesc *file = r_core_file_open (core, filepath, R_PERM_RX, 0);
-	if (!file || !core->io || !core->io->desc) {
-		R_LOG_ERROR ("Failed to open file: %s", filepath);
+	if (!is_uri) {
+		// Only the validated local open is privileged, including on failure.
+		r2state_sandbox_settings (ss, core);
 		if (was_sandboxed) {
-			r2state_sandbox_settings (ss, core);
 			r_sandbox_disable (false);
 		}
+	}
+	if (!file || !core->io || !core->io->desc) {
+		R_LOG_ERROR ("Failed to open file: %s", filepath);
 		return false;
 	}
 	(void)r_core_bin_load (core, filepath, baddr);
@@ -202,10 +207,7 @@ R_IPI bool r2_open_file(ServerState *ss, const char *filepath, ut64 baddr, const
 	ss->rstate->file_opened = true;
 	ss->rstate->current_baddr = baddr;
 	ss->rstate->analyze_level = -1;
-	r2state_sandbox_settings (ss, core);
-	if (was_sandboxed) {
-		r_sandbox_disable (false);
-	}
+	ss->frida_mode = frida_mode;
 	R_LOG_INFO ("File opened successfully: %s", filepath);
 
 	return true;

@@ -78,6 +78,21 @@ Update your MCP client configuration file (see below) to use the Docker image to
 
 ## Configuration
 
+### File paths and sandbox permissions
+
+`open_file` accepts existing regular files using absolute local paths. A
+`file://` prefix is treated as a local path and receives the same checks.
+`list_files` and `run_script` also require absolute local paths. Network shares
+and device paths are rejected; Windows paths must use a local drive.
+
+Other URI schemes run with the configured radare2 sandbox active, including
+on the first open. Use `-g` to grant the permissions their plugins need:
+`socket` permits localhost connections, `network` permits remote connections,
+and `exec` permits process operations. Frida requires both `exec` and `network`
+because it uses its own process and network APIs. `-g all` disables the
+radare2 sandbox. With `-s`, URI schemes other than local `file://` paths are
+rejected so they cannot bypass the configured directory restriction.
+
 ### HTTP Server Mode
 
 Use `-H [address:]port` to run r2mcp as an HTTP MCP server instead of using

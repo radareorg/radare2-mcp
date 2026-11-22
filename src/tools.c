@@ -1526,6 +1526,13 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 			char *localpath = filteredpath + strlen ("file://");
 			memmove (filteredpath, localpath, strlen (localpath) + 1);
 		}
+		const char *path_error = r2mcp_open_path_check (ss, filteredpath);
+		if (path_error) {
+			R_LOG_ERROR ("%s", path_error);
+			free (filteredpath);
+			result = jsonrpc_tooltext_response ("Failed to open file.");
+			goto cleanup;
+		}
 		if (ss->rstate->file_opened && ss->rstate->current_file && !strcmp (ss->rstate->current_file, filteredpath) && ss->rstate->current_baddr == baddr) {
 			int func_count = r2_function_count (ss);
 			int prev_level = ss->rstate->analyze_level;
@@ -1544,13 +1551,8 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 			goto cleanup;
 		}
 
-		bool is_uri = strstr (filteredpath, "://") != NULL;
 		bool had_file_opened = ss->rstate->file_opened;
 		char *previous_file = (had_file_opened && ss->rstate->current_file)? strdup (ss->rstate->current_file): NULL;
-		if (had_file_opened && !is_uri && r2mcp_sandbox_check (ss, filteredpath)) {
-			had_file_opened = false;
-			R_FREE (previous_file);
-		}
 		if (had_file_opened) {
 			char *close_res = tool_close_file (ss, &nil);
 			free (close_res);
