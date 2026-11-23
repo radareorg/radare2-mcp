@@ -60,6 +60,42 @@ INFO: Radare2 core initialized
 EOF
 RUN
 
+NAME=CLI DSL xrefs_from handcrafted call
+FILE=-
+CMDS=<<EOF
+!exec ../src/r2mcp -nN -r -T 'open_file file_path="hex://e801000000c3c3" arch="x86" bits="64"; run_command command="axC 6 0"; xrefs_from address="0x0"; xrefs_from address="0x5"; xrefs_from address="0xgg"; close_file'
+EOF
+EXPECT=
+EXPECT_ERR=<<EOF
+INFO: [R2MCP] r2mcp starting
+INFO: [R2MCP] sandbox grain: socket
+INFO: Radare2 core initialized
+[DSL] open_file -> {"content":[{"type":"text","text":"File opened successfully."}]}
+[DSL] run_command -> {"content":[{"type":"text","text":""}]}
+[DSL] xrefs_from -> {"content":[{"type":"text","text":"CALL 0x6 ret\n"}]}
+[DSL] xrefs_from -> {"content":[{"type":"text","text":"No references from the instruction at 0x5. Set function=true to list the references of its whole function."}]}
+[DSL] xrefs_from -> {"jsonrpc":"2.0","error":{"code":-32602,"message":"Invalid parameter 'address': expected a valid numeric expression"}}
+[DSL] close_file -> {"content":[{"type":"text","text":"File closed successfully."}]}
+EOF
+RUN
+
+NAME=CLI stdio xrefs_from json content
+FILE=-
+CMDS=<<EOF
+!printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"open_file","arguments":{"file_path":"hex://e801000000c3c3","arch":"x86","bits":"64"}}}' '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"run_command","arguments":{"command":"axC 6 0"}}}' '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"xrefs_from","arguments":{"address":"0x0"}}}' | ../src/r2mcp -nN -r -C json
+EOF
+EXPECT=<<EOF
+{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"File opened successfully."}]}}
+{"jsonrpc":"2.0","id":2,"result":{"content":[{"type":"text","text":""}]}}
+{"jsonrpc":"2.0","id":3,"result":{"content":[{"type":"text","text":"{\"xrefs\":[{\"from\":0,\"to\":6,\"type\":\"CALL\",\"perm\":\"--x\",\"opcode\":\"call 6\"}]}"}]}}
+EOF
+EXPECT_ERR=<<EOF
+INFO: [R2MCP] r2mcp starting
+INFO: [R2MCP] sandbox grain: socket
+INFO: Radare2 core initialized
+EOF
+RUN
+
 NAME=CLI stdio ping notification and unknown method
 FILE=-
 CMDS=<<EOF

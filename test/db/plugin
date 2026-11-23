@@ -85,6 +85,30 @@ EOF
 EXPECT_ERR=
 RUN
 
+NAME=Plugin xrefs_from works in read-only mode
+FILE=hex://e801000000c3c3
+ARGS=-a x86 -b 64
+CMDS=<<EOF
+L ../src/libcore_r2mcp.`!r2 -H R2_LIBEXT`
+e r2mcp.prompts=false
+e r2mcp.readonly=true
+af+ 0 entry
+afb+ 0 0 6
+axC 6 0
+r2mcp xrefs_from address="0x0"
+r2mcp xrefs_from address="0x5"
+r2mcp xrefs_from address="0x0" function="true"
+EOF
+EXPECT=<<EOF
+CALL 0x6 ret
+
+No references from the instruction at 0x5. Set function=true to list the references of its whole function.
+CALL 0x00000000 0x00000006 entry
+
+EOF
+EXPECT_ERR=
+RUN
+
 NAME=Plugin scans handcrafted strings
 FILE=hex://68656c6c6f00776f726c6400
 CMDS=<<EOF
