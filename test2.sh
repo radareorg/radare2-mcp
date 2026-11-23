@@ -646,6 +646,39 @@ run_lookup_export_regression() {
 	}
 }
 
+run_search_gadgets_regression() {
+	local req="$TMPDIR/search-gadgets.req"
+	local resp="$TMPDIR/search-gadgets.resp"
+	# pop rdi; ret; pop rsi; ret; and 32 nops, r2 skips gadgets at the end of a map
+	local file="hex://5fc35ec39090909090909090909090909090909090909090909090909090909090909090"
+	: > "$req"
+	append_request "$req" 1 initialize '{"capabilities":{},"clientInfo":{"name":"testsuite","version":"1"}}'
+	append_notification "$req" notifications/initialized '{}'
+	append_tool_call "$req" 2 open_file "$(jq -cn --arg file "$file" '{file_path:$file,arch:"x86",bits:"64"}')"
+	append_tool_call "$req" 3 search_gadgets '{}'
+	append_tool_call "$req" 4 search_gadgets '{"page_size":1}'
+	append_tool_call "$req" 5 search_gadgets '{"page_size":1,"cursor":"1"}'
+	append_tool_call "$req" 6 search_gadgets '{"query":"pop rsi; ret;","type":"ret"}'
+	append_tool_call "$req" 7 search_gadgets '{"query":"^pop r[sd]i$;^ret$","regex":true}'
+	append_tool_call "$req" 8 search_gadgets '{"query":"pop r[sd]i"}'
+	append_tool_call "$req" 9 search_gadgets '{"type":"syscall"}'
+	append_tool_call "$req" 10 search_gadgets "$(jq -cn --arg query "ret;f $INJECT_MARKER=1337" '{query:$query}')"
+	append_tool_call "$req" 11 search_gadgets "$(jq -cn --arg query "ret
+f $INJECT_MARKER=1337" '{query:$query}')"
+	append_tool_call "$req" 12 calculate "$(jq -cn --arg expression "$INJECT_MARKER" '{expression:$expression}')"
+	run_session "$req" "$resp" -C both
+	response_by_id "$resp" 3 | jq -e '.result | (.structuredContent.gadgets | map(.opcodes | map(.opcode)) == [["pop rdi", "ret"], ["pop rsi", "ret"]]) and (.pagination | not)' >/dev/null || fail 'search_gadgets: expected the two handcrafted gadgets'
+	response_by_id "$resp" 4 | jq -e '.result | (.structuredContent.gadgets | length == 1) and .pagination.nextCursor == "1"' >/dev/null || fail 'search_gadgets: first page must hold one gadget and a cursor'
+	response_by_id "$resp" 5 | jq -e '.result | (.structuredContent.gadgets | map(.opcodes[0].opcode) == ["pop rsi"]) and (.pagination | not)' >/dev/null || fail 'search_gadgets: second page must hold the last gadget'
+	response_by_id "$resp" 6 | jq -e '.result.structuredContent.gadgets | length == 1 and (.[0].opcodes | map(.opcode) | index("pop rsi"))' >/dev/null || fail 'search_gadgets: a query copied from the listing must match'
+	response_by_id "$resp" 7 | jq -e '.result.structuredContent.gadgets | length > 0' >/dev/null || fail 'search_gadgets: regex query must match'
+	response_by_id "$resp" 8 | jq -e '.result.structuredContent.gadgets == []' >/dev/null || fail 'search_gadgets: plain query must not be a regex'
+	assert_error_contains_param "$(response_by_id "$resp" 9)" "type" "search_gadgets:invalid-type"
+	response_by_id "$resp" 10 | jq -e '.result.structuredContent.gadgets == []' >/dev/null || fail 'search_gadgets: semicolon in query must be literal'
+	assert_error_contains_param "$(response_by_id "$resp" 11)" "query" "search_gadgets:newline-in-query"
+	response_by_id "$resp" 12 | jq -e '.result.content[0].text == "0x0"' >/dev/null || fail 'search_gadgets: input created injection marker'
+}
+
 run_list_filter_regressions() {
 	local req="$TMPDIR/list-filter.req"
 	local resp="$TMPDIR/list-filter.resp"
@@ -1187,6 +1220,7 @@ run_open_file_baddr_regression
 run_numeric_string_regression
 run_tool_argument_regressions
 run_lookup_export_regression
+run_search_gadgets_regression
 run_list_filter_regressions
 run_close_file_regression
 run_open_session_regression
