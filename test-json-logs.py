@@ -35,7 +35,8 @@ class JsonCommandLogTests(unittest.TestCase):
                     "name": "run_command", "arguments": {"command": command}}})
             payload = "".join(json.dumps({"jsonrpc": "2.0", **request}) + "\n"
                               for request in requests)
-            binary = Path(os.environ.get("R2MCP_TEST_BINARY", str(Path(__file__).parent / "src/r2mcp")))
+            default_binary = os.environ.get("R2MCP_BIN", str(Path(__file__).parent / "src/r2mcp"))
+            binary = Path(os.environ.get("R2MCP_TEST_BINARY", default_binary))
             result = subprocess.run(
                 [str(binary), "-n", "-N", "-r", "-C", mode], input=payload,
                 capture_output=True, text=True, timeout=30,

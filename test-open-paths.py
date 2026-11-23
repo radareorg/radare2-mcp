@@ -59,7 +59,8 @@ class OpenPathTests(unittest.TestCase):
                           for message in messages)
         default_binary = Path(__file__).parent / "src" / (
             "r2mcp.exe" if os.name == "nt" else "r2mcp")
-        binary = os.environ.get("R2MCP_TEST_BINARY", str(default_binary))
+        default_binary = os.environ.get("R2MCP_BIN", str(default_binary))
+        binary = os.environ.get("R2MCP_TEST_BINARY", default_binary)
         result = subprocess.run(
             [binary, "-n", "-N", "-r", *options], input=payload,
             capture_output=True, text=True, timeout=30)

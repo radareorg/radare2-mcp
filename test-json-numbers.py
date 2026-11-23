@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Exercise JSON number preservation through the real stdio MCP server."""
 import json
+import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -37,11 +38,11 @@ class JsonNumberTests(unittest.TestCase):
                         "command": "?e " + json.dumps(source).replace('"', r'\"'), **paging}}})
             payload = "".join(json.dumps({"jsonrpc": "2.0", **request}) + "\n"
                               for request in requests)
+            binary = os.environ.get("R2MCP_BIN", str(Path(__file__).parent / "src/r2mcp"))
             for mode in ["text", "json", "structured", "both"]:
                 with self.subTest(mode=mode):
                     result = subprocess.run(
-                        [str(Path(__file__).parent / "src/r2mcp"),
-                         "-n", "-N", "-r", "-C", mode],
+                        [binary, "-n", "-N", "-r", "-C", mode],
                         input=payload, capture_output=True, text=True, timeout=30)
                     self.assertEqual(result.returncode, 0, result.stderr)
                     replies = {reply["id"]: reply for reply in
