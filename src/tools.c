@@ -251,6 +251,45 @@ static char *tool_mode_response(ServerState *ss, char *text, char *structured_js
 	return response;
 }
 
+static char *tool_json_array_response(ServerState *ss, char *res, char *logs, RJson *tool_args,
+		const char *key, char *(*format)(const RJson *, int, int)) {
+	RJson *json = R_STR_ISEMPTY (res)? NULL: r_json_parse (res);
+	const RJson *array = json && json->type == R_JSON_OBJECT? r_json_get (json, key): json;
+	char *response = NULL;
+	if (array && array->type == R_JSON_ARRAY) {
+		int total = rjson_child_count (array);
+		int start = 0, end = total;
+		if (tool_args) {
+			const char *cursor;
+			int page_size;
+			pagination_params (ss, tool_args, &cursor, &page_size);
+			start = pagination_start_from_cursor (cursor);
+			end = R_MIN (start + page_size, total);
+		}
+		PJ *pj = pj_new ();
+		if (json == array) {
+			pj_o (pj);
+			pj_k (pj, key);
+			pj_append_rjson_array_page (pj, array, start, end);
+			pj_end (pj);
+		} else {
+			pj_append_rjson_object_with_array_page (pj, json, array, start, end);
+		}
+		const char *structured = pj_string (pj);
+		char *text = format && ss->content_mode == R2MCP_CONTENT_BOTH? format (array, start, end): NULL;
+		bool more = end < total;
+		char *next = more? r_str_newf ("%d", end): NULL;
+		response = jsonrpc_tool_response_paginated (text? text: structured, structured, ss->content_mode, more, next, logs);
+		free (next);
+		free (text);
+		pj_free (pj);
+	}
+	r_json_free (json);
+	free (res);
+	free (logs);
+	return response;
+}
+
 static inline const char *fx(ServerState *ss) {
 	return ss->frida_mode? ":": "";
 }
@@ -840,6 +879,32 @@ static char *tool_analyze(ServerState *ss, RJson *tool_args) {
 	return tool_cmd_response (r2mcp_cmd_text (text, err));
 }
 
+static char *disassembly_text(const RJson *ops, int start, int end) {
+	RStrBuf *text = r_strbuf_new ("");
+	int i;
+	const RJson *op = r_json_item (ops, start);
+	for (i = start; op && i < end; op = op->next, i++) {
+		if (op->type == R_JSON_OBJECT) {
+			const RJson *addr = r_json_get (op, "addr");
+			ut64 address = addr && addr->type == R_JSON_INTEGER? addr->num.u_value: (ut64)r_json_get_num (op, "offset");
+			const char *bytes = r_json_get_str (op, "bytes");
+			const char *disasm = r_json_get_str (op, "disasm");
+			r_strbuf_appendf (text, "0x%08"PFMT64x"  %-32s  %s\n", address, r_str_get (bytes), disasm? disasm: "invalid");
+		}
+	}
+	return r_strbuf_drain (text);
+}
+
+static char *disassemble_json(ServerState *ss, ut64 address, int count, RJson *function_args) {
+	if (!r2mcp_content_wants_json (ss->content_mode)) {
+		return NULL;
+	}
+	char *logs;
+	char *res = function_args? r2mcp_cmd_capturef (ss, &logs, "pdfj @e:scr.limit=0 @ 0x%"PFMT64x, address):
+		r2mcp_cmd_capturef (ss, &logs, "pdj %d @e:scr.limit=0 @ 0x%"PFMT64x, count, address);
+	return tool_json_array_response (ss, res, logs, function_args, "ops", disassembly_text);
+}
+
 static char *tool_disassemble(ServerState *ss, RJson *tool_args) {
 	ut64 address;
 	if (!validate_address_param (ss, tool_args, "address", &address)) {
@@ -849,7 +914,12 @@ static char *tool_disassemble(ServerState *ss, RJson *tool_args) {
 	int num_instructions = 10;
 	rjson_get_int_param (ss, tool_args, "num_instructions", &num_instructions);
 
-	return tool_cmd_response (r2mcp_cmdf (ss, "'@0x%"PFMT64x"'pd %d", address, num_instructions));
+	if (!rjson_get_bool_flag (tool_args, "bytes")) {
+		return tool_cmd_response (r2mcp_cmdf (ss, "'@0x%"PFMT64x"'pd %d", address, num_instructions));
+	}
+	char *response = disassemble_json (ss, address, num_instructions, NULL);
+	return response? response: tool_cmd_response (r2mcp_cmdf (ss,
+		"pd %d @e:asm.bytes=true,asm.nbytes=16,scr.limit=0 @ 0x%"PFMT64x, num_instructions, address));
 }
 
 // Resolve a user-supplied decompiler name to a registered `cmd.pdc` command.
@@ -903,20 +973,10 @@ static char *tool_xrefs_from(ServerState *ss, RJson *tool_args) {
 	// The output is paginated here, so scr.limit must not truncate it first
 	if (ss->content_mode != R2MCP_CONTENT_TEXT) {
 		char *res = r2mcp_cmd_capturef (ss, &logs, "%sj @e:scr.limit=0 @ 0x%"PFMT64x, cmd, address);
-		RJson *data = R_STR_ISEMPTY (res)? NULL: r_json_parse (res);
-		if (data && data->type == R_JSON_ARRAY) {
-			PJ *pj = pj_new ();
-			pj_o (pj);
-			pj_k (pj, "xrefs");
-			pj_append_rjson_value (pj, data);
-			pj_end (pj);
-			r_json_free (data);
-			free (res);
-			return tool_cmd_response_page (ss, pj_drain (pj), logs, tool_args);
+		char *response = tool_json_array_response (ss, res, logs, tool_args, "xrefs", NULL);
+		if (response) {
+			return response;
 		}
-		r_json_free (data);
-		free (res);
-		free (logs);
 	}
 	char *res = r2mcp_cmd_capturef (ss, &logs, "%s @e:scr.limit=0 @ 0x%"PFMT64x, cmd, address);
 	if (R_STR_ISEMPTY (r_str_trim_head_ro (res))) {
@@ -936,8 +996,16 @@ static char *tool_disassemble_function(ServerState *ss, RJson *tool_args) {
 	if (!validate_address_param (ss, tool_args, "address", &address)) {
 		return jsonrpc_error_numeric_param ("address");
 	}
+	bool bytes = rjson_get_bool_flag (tool_args, "bytes");
+	if (bytes) {
+		char *response = disassemble_json (ss, address, 0, tool_args);
+		if (response) {
+			return response;
+		}
+	}
 	char *logs;
-	char *res = r2mcp_cmd_capturef (ss, &logs, "'@0x%"PFMT64x"'pdf", address);
+	char *res = r2mcp_cmd_capturef (ss, &logs, "pdf @e:scr.limit=0%s @ 0x%"PFMT64x,
+		bytes? ",asm.bytes=true,asm.nbytes=16": "", address);
 	return tool_cmd_response_page (ss, res, logs, tool_args);
 }
 
@@ -1793,7 +1861,8 @@ cleanup:
 #define TOOL_SCHEMA_LIST_PROPS TOOL_SCHEMA_FILTER_COUNT_PROPS "," TOOL_SCHEMA_PAGE_PROPS
 #define TOOL_SCHEMA_LIST "{\"type\":\"object\",\"properties\":{" TOOL_SCHEMA_LIST_PROPS "}}"
 #define TOOL_SCHEMA_LIST_WITH_STRING_PARAM(name, desc) "{\"type\":\"object\",\"properties\":{\"" name "\":{\"type\":\"string\",\"description\":\"" desc "\"}," TOOL_SCHEMA_LIST_PROPS "},\"required\":[\"" name "\"]}"
-#define TOOL_SCHEMA_ADDRESS_PAGE(desc) "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"" desc ": numeric expression (e.g. sym.main + 4 or 0x401000)\"}," TOOL_SCHEMA_PAGE_PROPS "},\"required\":[\"address\"]}"
+#define TOOL_SCHEMA_ADDRESS_PAGE(desc, props) "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"" desc ": numeric expression (e.g. sym.main + 4 or 0x401000)\"}," props TOOL_SCHEMA_PAGE_PROPS "},\"required\":[\"address\"]}"
+#define TOOL_SCHEMA_BYTES_PROP "\"bytes\":{\"type\":\"boolean\",\"description\":\"Include opcode bytes and return instructions under ops in JSON content modes (default: false)\"}"
 #define TOOL_SCHEMA_COMMAND_PAGE "{\"type\":\"object\",\"properties\":{\"command\":{\"type\":\"string\",\"description\":\"The radare2 command to execute\"}," TOOL_SCHEMA_PAGE_PROPS "},\"required\":[\"command\"]}"
 #define TOOL_SCHEMA_SQL "{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\",\"description\":\"SQL statement to pass to the loaded SQL core plugin (r2xsql)\"}},\"required\":[\"query\"]}"
 #define TOOL_SCHEMA_SCRIPT_FILE_PAGE "{\"type\":\"object\",\"properties\":{\"file_path\":{\"type\":\"string\",\"description\":\"Absolute path to the radare2 script file to execute\"}," TOOL_SCHEMA_PAGE_PROPS "},\"required\":[\"file_path\"]}"
@@ -1835,10 +1904,10 @@ ToolSpec tool_specs[] = {
 	{ "analyze", "Runs binary analysis with optional depth level", "{\"type\":\"object\",\"properties\":{\"level\":{\"type\":\"number\",\"description\":\"Analysis level (0-4, higher is more thorough)\"},\"timeout_seconds\":{\"type\":\"integer\",\"description\":\"Optional maximum analysis time in seconds for this call only. Use 0 to disable the timeout.\"}},\"required\":[]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_FRIDA, tool_analyze },
 	{ "xrefs_to", "Finds all code references to the specified address", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address expression (e.g. sym.main + 4 or 0x401000)\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO, tool_xrefs_to },
 	{ "xrefs_from", "Finds all code and data references from the instruction at the specified address, or from its whole function", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address expression (e.g. sym.main + 4 or 0x401000)\"},\"function\":{\"type\":\"boolean\",\"description\":\"If true, list the references from every instruction of the function at the address instead of only the instruction at the address\"}," TOOL_SCHEMA_PAGE_PROPS "},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO, tool_xrefs_from },
-	{ "decompile_function", "Show C-like pseudocode of the function in the given address. <think>Use this to inspect the code in a function, do not run multiple times in the same offset</think>", TOOL_SCHEMA_ADDRESS_PAGE ("Address of the function to decompile"), TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO, tool_decompile_function },
+	{ "decompile_function", "Show C-like pseudocode of the function in the given address. <think>Use this to inspect the code in a function, do not run multiple times in the same offset</think>", TOOL_SCHEMA_ADDRESS_PAGE ("Address of the function to decompile", ""), TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO, tool_decompile_function },
 	{ "list_files", "Lists files in the specified path using radare2's ls -q command. Files ending with / are directories, otherwise they are files.", TOOL_SCHEMA_LIST_WITH_STRING_PARAM ("path", "Path to list files from"), TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO, tool_list_files },
-	{ "disassemble_function", "Shows assembly listing of the function at the specified address", TOOL_SCHEMA_ADDRESS_PAGE ("Address of the function to disassemble"), TOOL_MODE_NORMAL | TOOL_MODE_RO, tool_disassemble_function },
-	{ "disassemble", "Disassembles a specific number of instructions from an address <think>Use this tool to inspect a portion of memory as code without depending on function analysis boundaries. Use this tool when functions are large and you are only interested on few instructions</think>", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address expression (e.g. sym.main + 4 or 0x401000)\"},\"num_instructions\":{\"type\":\"integer\",\"description\":\"Number of instructions to disassemble (default: 10)\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_disassemble },
+	{ "disassemble_function", "Shows assembly listing of the function at the specified address", TOOL_SCHEMA_ADDRESS_PAGE ("Address of the function to disassemble", TOOL_SCHEMA_BYTES_PROP ","), TOOL_MODE_NORMAL | TOOL_MODE_RO, tool_disassemble_function },
+	{ "disassemble", "Disassembles a specific number of instructions from an address <think>Use this tool to inspect a portion of memory as code without depending on function analysis boundaries. Use this tool when functions are large and you are only interested on few instructions</think>", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address expression (e.g. sym.main + 4 or 0x401000)\"},\"num_instructions\":{\"type\":\"integer\",\"description\":\"Number of instructions to disassemble (default: 10)\"}," TOOL_SCHEMA_BYTES_PROP "},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_disassemble },
 	{ "calculate", "Evaluate a math expression using core->num (r_num_math). Usecases: do proper 64-bit math, resolve addresses for flag names/symbols, and avoid hallucinated results.", "{\"type\":\"object\",\"properties\":{\"expression\":{\"type\":\"string\",\"description\":\"Math expression to evaluate (eg. 0x100 + sym.flag - 4)\"}},\"required\":[\"expression\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_calculate },
 	{ "get_pid", "Get the process ID of the target process", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_FRIDA, tool_get_pid },
 	{ "list_threads", "List all threads in the target process with their IDs and state", TOOL_SCHEMA_LIST, TOOL_MODE_NORMAL | TOOL_MODE_FRIDA, tool_list_threads },

@@ -128,6 +128,8 @@ def run_remote_argument_regressions():
         ("search", {"query": "42", "type": "value"}, "':/v4 0x2a"),
         ("search", {"query": "-1", "type": "value", "value_size": "1<<2"}, "':/v4 0xffffffffffffffff"),
         ("dump_registers", {"thread_id": "2*3"}, ":dr 6"),
+        ("disassemble", {"address": "0x10", "num_instructions": 2}, "'@0x10'pd 2"),
+        ("disassemble", {"address": "1<<4", "num_instructions": "1+1", "bytes": True}, "pd 2 @e:asm.bytes=true,asm.nbytes=16,scr.limit=0 @ 0x10"),
         ("list_files", {"path": path}, "'ls -q " + path),
         ("list_methods", {"classname": literal}, "':ic " + literal),
     ]
@@ -151,6 +153,8 @@ def run_remote_argument_regressions():
         ("search", {"type": "value", "query": "__R2MCP_MISSING_SYMBOL__"}, "query"),
         ("search", {"type": "value", "query": "1/0"}, "query"),
         ("search", {"type": "value", "query": "0", "value_size": 3}, "value_size"),
+        ("disassemble", {"address": "12junk", "bytes": True}, "address"),
+        ("disassemble", {"address": "0", "bytes": "true;f injected=1"}, "bytes"),
     ]
     # Math parsers may reject a suffix or stop at it. Neither may forward it.
     boundaries = [
@@ -158,6 +162,7 @@ def run_remote_argument_regressions():
         ("xrefs_from", {"address": "0;f __R2MCP_INJECTED__=1337"}, "axf @e:scr.limit=0 @ 0x0"),
         ("hexdump", {"address": "0", "size": "16;f injected=1"}, "'@0x0'px 16"),
         ("search", {"query": "0;f injected=1", "type": "value"}, "':/v4 0x0"),
+        ("disassemble", {"address": "0;f injected=1", "num_instructions": "2;f injected=1", "bytes": True}, "pd 2 @e:asm.bytes=true,asm.nbytes=16,scr.limit=0 @ 0x0"),
     ]
     requests = [
         {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"capabilities": {}, "clientInfo": {"name": "test-remote", "version": "1"}}}
