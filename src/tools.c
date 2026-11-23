@@ -714,6 +714,138 @@ static char *tool_show_function_details(ServerState *ss, RJson *tool_args) {
 	return tool_mode_response (ss, human, json);
 }
 
+// Read an unsigned JSON number such as an address, UT64_MAX when it is missing.
+static ut64 rjson_get_ut64(const RJson *json, const char *key) {
+	const RJson *field = r_json_get (json, key);
+	return (field && field->type == R_JSON_INTEGER)? field->num.u_value: UT64_MAX;
+}
+
+static void function_graph_text_successors(RStrBuf *sb, const RJson *block) {
+	const RJson *switchop = r_json_get (block, "switchop");
+	const RJson *cases = switchop? r_json_get (switchop, "cases"): NULL;
+	const RJson *item, *seen;
+	const char *sep = " switch=";
+	ut64 jump = rjson_get_ut64 (block, "jump");
+	ut64 fail = rjson_get_ut64 (block, "fail");
+	if (jump != UT64_MAX) {
+		r_strbuf_appendf (sb, " jump=0x%"PFMT64x, jump);
+	}
+	if (fail != UT64_MAX) {
+		r_strbuf_appendf (sb, " fail=0x%"PFMT64x, fail);
+	}
+	if (!cases || cases->type != R_JSON_ARRAY) {
+		return;
+	}
+	// Many cases usually share a few targets, list every target once
+	for (item = cases->children.first; item; item = item->next) {
+		jump = rjson_get_ut64 (item, "jump");
+		for (seen = cases->children.first; seen != item; seen = seen->next) {
+			if (rjson_get_ut64 (seen, "jump") == jump) {
+				break;
+			}
+		}
+		if (seen == item && jump != UT64_MAX) {
+			r_strbuf_appendf (sb, "%s0x%"PFMT64x, sep, jump);
+			sep = ",";
+		}
+	}
+	jump = rjson_get_ut64 (switchop, "defval");
+	if (jump != UT64_MAX) {
+		r_strbuf_appendf (sb, " default=0x%"PFMT64x, jump);
+	}
+}
+
+// One line per basic block, optionally followed by its instructions.
+static char *function_graph_text(const RJson *fcn, const RJson *blocks, bool instructions) {
+	RStrBuf *sb = r_strbuf_new ("");
+	const RJson *block, *ops, *op;
+	const char *name = r_json_get_str (fcn, "name");
+	r_strbuf_appendf (sb, "%s 0x%"PFMT64x": %d blocks, %"PFMT64u" instructions, %"PFMT64u" bytes\n",
+		name? name: "function", rjson_get_ut64 (fcn, "addr"), rjson_child_count (blocks),
+		rjson_get_ut64 (fcn, "ninstr"), rjson_get_ut64 (fcn, "size"));
+	for (block = blocks->children.first; block; block = block->next) {
+		ops = r_json_get (block, "ops");
+		r_strbuf_appendf (sb, "0x%"PFMT64x" size=%"PFMT64u" ninstr=%d", rjson_get_ut64 (block, "addr"),
+			rjson_get_ut64 (block, "size"), rjson_child_count (ops));
+		function_graph_text_successors (sb, block);
+		r_strbuf_append (sb, "\n");
+		if (!instructions || !ops) {
+			continue;
+		}
+		for (op = ops->children.first; op; op = op->next) {
+			const char *disasm = r_json_get_str (op, "disasm");
+			// the pagination trims the lines, so indentation cannot tell them apart
+			r_strbuf_appendf (sb, "| 0x%"PFMT64x" %s\n", rjson_get_ut64 (op, "addr"), disasm? disasm: "");
+		}
+	}
+	return r_strbuf_drain (sb);
+}
+
+// The agfj function object, with the instructions of every block replaced by
+// their count unless they are requested.
+static char *function_graph_json(const RJson *fcn, const RJson *blocks, bool instructions) {
+	PJ *pj = pj_new ();
+	const RJson *field, *block, *item;
+	pj_o (pj);
+	for (field = fcn->children.first; field; field = field->next) {
+		pj_k (pj, field->key);
+		if (field != blocks || instructions) {
+			pj_append_rjson_value (pj, field);
+			continue;
+		}
+		pj_a (pj);
+		for (block = blocks->children.first; block; block = block->next) {
+			if (block->type != R_JSON_OBJECT) {
+				pj_append_rjson_value (pj, block);
+				continue;
+			}
+			pj_o (pj);
+			for (item = block->children.first; item; item = item->next) {
+				if (!strcmp (item->key, "ops")) {
+					pj_ki (pj, "ninstr", rjson_child_count (item));
+				} else {
+					pj_k (pj, item->key);
+					pj_append_rjson_value (pj, item);
+				}
+			}
+			pj_end (pj);
+		}
+		pj_end (pj);
+	}
+	pj_end (pj);
+	return pj_drain (pj);
+}
+
+static char *tool_show_function_graph(ServerState *ss, RJson *tool_args) {
+	ut64 address;
+	if (!validate_address_param (ss, tool_args, "address", &address)) {
+		return jsonrpc_error_numeric_param ("address");
+	}
+	bool instructions = rjson_get_bool_flag (tool_args, "instructions");
+	bool text = ss->content_mode == R2MCP_CONTENT_TEXT;
+	// agfj carries every instruction: get it complete (no scr.limit), then
+	// reduce it to the blocks here and let the pagination bound the response
+	char *res = r2mcp_cmdf (ss, "agfj @e:scr.limit=0 @ 0x%"PFMT64x, address);
+	RJson *graph = R_STR_ISEMPTY (res)? NULL: r_json_parse (res);
+	if (!graph && R_STR_ISNOTEMPTY (r_str_trim_head_ro (res))) {
+		// not JSON, most likely an error message
+		return tool_cmd_response (res);
+	}
+	const RJson *fcn = (graph && graph->type == R_JSON_ARRAY)? graph->children.first: NULL;
+	const RJson *blocks = (fcn && fcn->type == R_JSON_OBJECT)? r_json_get (fcn, "blocks"): NULL;
+	char *out;
+	if (blocks && blocks->type == R_JSON_ARRAY) {
+		out = text? function_graph_text (fcn, blocks, instructions): function_graph_json (fcn, blocks, instructions);
+	} else if (text) {
+		out = r_str_newf ("No function found at 0x%"PFMT64x". Run analyze first or use an address from list_functions.", address);
+	} else {
+		out = strdup ("{\"blocks\":[]}");
+	}
+	r_json_free (graph);
+	free (res);
+	return tool_cmd_response_paginated (ss, out, tool_args);
+}
+
 static char *tool_get_current_address(ServerState *ss, RJson *tool_args) {
 	(void)tool_args;
 	return tool_cmd_response (r2mcp_cmd (ss, "s;fd"));
@@ -1652,6 +1784,7 @@ ToolSpec tool_specs[] = {
 	{ "list_sections", "Displays memory sections and segments from the binary", TOOL_SCHEMA_LIST, TOOL_MODE_NORMAL | TOOL_MODE_HTTP | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_list_sections },
 	{ "list_memory_maps", "Lists memory regions of the process with addresses and permissions", TOOL_SCHEMA_LIST, TOOL_MODE_NORMAL | TOOL_MODE_HTTP | TOOL_MODE_FRIDA, tool_list_memory_maps },
 	{ "show_function_details", "Shows details of the function containing the given address (default: current seek). JSON output includes named attributes when supported by radare2.", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Optional address expression (e.g. sym.main or 0x401000); omit to use current seek\"}}}", TOOL_MODE_NORMAL | TOOL_MODE_RO, tool_show_function_details },
+	{ "show_function_graph", "Shows the control flow graph of the function at the specified address: its basic blocks with their size and jump, fail and switch successors", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the function: numeric expression (e.g. sym.main + 4 or 0x401000)\"},\"instructions\":{\"type\":\"boolean\",\"description\":\"If true, include the instructions of every basic block (default: false)\"}," TOOL_SCHEMA_PAGE_PROPS "},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | TOOL_MODE_RO, tool_show_function_graph },
 	{ "get_current_address", "Shows the current position and function name", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_RO, tool_get_current_address },
 	{ "show_info", "Displays information about the binary or target process", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_show_info },
 	{ "list_symbols", "Shows all symbols (functions, variables, imports) with addresses", TOOL_SCHEMA_LIST, TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_list_symbols },
