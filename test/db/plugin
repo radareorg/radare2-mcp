@@ -48,6 +48,50 @@ EOF
 EXPECT_ERR=
 RUN
 
+NAME=Plugin disassemble with opcode bytes in read-only mode
+FILE=hex://48b8887766554433221190c3
+ARGS=-a x86 -b 64
+CMDS=<<EOF
+L ../src/libcore_r2mcp.`!r2 -H R2_LIBEXT`
+e r2mcp.prompts=false
+e r2mcp.readonly=true
+e asm.bytes=false
+e asm.lines=false
+e asm.lines.fcn=false
+af+ 0 entry
+afb+ 0 0 12
+r2mcp disassemble address="0x0" num_instructions="2"
+r2mcp disassemble address="0x0" num_instructions="2" bytes="true"
+r2mcp disassemble_function address="0x0"
+r2mcp disassemble_function address="0x0" bytes="true"
+e asm.bytes
+e asm.nbytes
+EOF
+EXPECT=<<EOF
+12: entry ();
+0x00000000      movabs rax, 0x1122334455667788
+0x0000000a      nop
+
+12: entry ();
+0x00000000      48b88877665544332211               movabs rax, 0x1122334455667788
+0x0000000a      90                                 nop
+
+12: entry ();
+0x00000000      movabs rax, 0x1122334455667788
+0x0000000a      nop
+0x0000000b      ret
+
+12: entry ();
+0x00000000      48b88877665544332211               movabs rax, 0x1122334455667788
+0x0000000a      90                                 nop
+0x0000000b      c3                                 ret
+
+false
+6
+EOF
+EXPECT_ERR=
+RUN
+
 NAME=Plugin rename updates existing function
 FILE=hex://90c3
 ARGS=-a x86 -b 64 -e anal.nopskip=false

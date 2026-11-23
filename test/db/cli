@@ -30,6 +30,25 @@ INFO: Radare2 core initialized
 EOF
 RUN
 
+NAME=CLI DSL disassemble with opcode bytes
+FILE=-
+CMDS=<<EOF
+!exec ../src/r2mcp -nN -T 'open_file file_path="hex://48b8887766554433221190c3" arch="x86" bits="64"; disassemble address="0x0" num_instructions="3"; disassemble address="0x0" num_instructions="3" bytes="true"; disassemble address="0xa" num_instructions="1" bytes="false"; disassemble address="0xgg" bytes="true"; close_file'
+EOF
+EXPECT=
+EXPECT_ERR=<<EOF
+INFO: [R2MCP] r2mcp starting
+INFO: [R2MCP] sandbox grain: socket
+INFO: Radare2 core initialized
+[DSL] open_file -> {"content":[{"type":"text","text":"File opened successfully."}]}
+[DSL] disassemble -> {"content":[{"type":"text","text":"0x00000000      movabs rax, 0x1122334455667788\n0x0000000a      nop\n0x0000000b      ret\n"}]}
+[DSL] disassemble -> {"content":[{"type":"text","text":"0x00000000      48b88877665544332211               movabs rax, 0x1122334455667788\n0x0000000a      90                                 nop\n0x0000000b      c3                                 ret\n"}]}
+[DSL] disassemble -> {"content":[{"type":"text","text":"0x0000000a      nop\n"}]}
+[DSL] disassemble -> {"jsonrpc":"2.0","error":{"code":-32602,"message":"Invalid parameter 'address': expected a valid numeric expression"}}
+[DSL] close_file -> {"content":[{"type":"text","text":"File closed successfully."}]}
+EOF
+RUN
+
 NAME=CLI DSL requires open file
 FILE=-
 CMDS=<<EOF

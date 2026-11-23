@@ -943,6 +943,28 @@ run_command_smoke_regression() {
 	}
 }
 
+run_disassemble_bytes_regression() {
+	local req="$TMPDIR/disassemble-bytes.req"
+	local resp="$TMPDIR/disassemble-bytes.resp"
+	: > "$req"
+	append_request "$req" 1 initialize '{"capabilities":{},"clientInfo":{"name":"testsuite","version":"1"}}'
+	append_notification "$req" notifications/initialized '{}'
+	# movabs rax, 0x1122334455667788; nop; ret
+	append_tool_call "$req" 2 open_file '{"file_path":"hex://48b8887766554433221190c3","arch":"x86","bits":"64"}'
+	append_tool_call "$req" 3 run_command '{"command":"af+ 0 entry;afb+ 0 0 12"}'
+	append_tool_call "$req" 4 disassemble '{"address":"0x0","num_instructions":2}'
+	append_tool_call "$req" 5 disassemble '{"address":"0x0","num_instructions":2,"bytes":true}'
+	append_tool_call "$req" 6 disassemble_function '{"address":"0x0","bytes":true,"page_size":2}'
+	append_tool_call "$req" 7 disassemble_function '{"address":"0x0","bytes":true,"page_size":2,"cursor":"2"}'
+	append_tool_call "$req" 8 run_command '{"command":"e asm.bytes"}'
+	run_session "$req" "$resp" -r -C both
+	response_by_id "$resp" 4 | jq -e '.result | .structuredContent == null and (.content[0].text | contains("48b8") | not)' >/dev/null || fail 'disassemble: output must not change without bytes'
+	response_by_id "$resp" 5 | jq -e '.result | (.content[0].text | contains("48b88877665544332211")) and (.structuredContent.ops | map(.bytes) == ["48b88877665544332211", "90"])' >/dev/null || fail 'disassemble bytes: long instructions must keep all their bytes in text and structured output'
+	response_by_id "$resp" 6 | jq -e '.result | (.structuredContent.ops | map(.bytes) == ["48b88877665544332211", "90"]) and .pagination.nextCursor == "2"' >/dev/null || fail 'disassemble_function bytes: first page must hold two instructions'
+	response_by_id "$resp" 7 | jq -e '.result.structuredContent.ops | map(.bytes) == ["c3"]' >/dev/null || fail 'disassemble_function bytes: second page must hold the last instruction'
+	response_by_id "$resp" 8 | jq -e '.result.content[0].text == "false\n"' >/dev/null || fail 'disassemble bytes: asm.bytes must be restored'
+}
+
 run_command_json_pagination_regression() {
 	local req="$TMPDIR/runcmd_json_page.req"
 	local resp="$TMPDIR/runcmd_json_page.resp"
@@ -1196,6 +1218,7 @@ run_sandbox_regressions
 run_startup_command_regression
 run_sql_plugin_missing_regression
 run_command_smoke_regression
+run_disassemble_bytes_regression
 run_command_json_pagination_regression
 run_command_shell_regression
 run_script_sandbox_regression
