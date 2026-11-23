@@ -1094,6 +1094,31 @@ run_use_decompiler_regression() {
 	}
 }
 
+run_xrefs_from_regression() {
+	local req="$TMPDIR/xrefs-from.req"
+	local resp="$TMPDIR/xrefs-from.resp"
+	: > "$req"
+	append_request "$req" 1 initialize '{"capabilities":{},"clientInfo":{"name":"testsuite","version":"1"}}'
+	append_notification "$req" notifications/initialized '{}'
+	# call 6; ret; ret
+	append_tool_call "$req" 2 open_file '{"file_path":"hex://e801000000c3c3","arch":"x86","bits":"64"}'
+	append_tool_call "$req" 3 run_command '{"command":"af+ 0 entry;afb+ 0 0 6;axC 6 0;axd 6 5"}'
+	append_tool_call "$req" 4 xrefs_from '{"address":"0x0"}'
+	append_tool_call "$req" 5 xrefs_from '{"address":"0x1"}'
+	append_tool_call "$req" 6 xrefs_from '{"address":"0x3","function":true}'
+	append_tool_call "$req" 7 xrefs_from '{"address":"0x3","function":true,"page_size":1,"cursor":"1"}'
+	append_tool_call "$req" 8 xrefs_from '{"address":"0xgg"}'
+	append_tool_call "$req" 9 xrefs_from "$(jq -cn --arg address "0;f $INJECT_MARKER=1337" '{address:$address}')"
+	append_tool_call "$req" 10 calculate "$(jq -cn --arg expression "$INJECT_MARKER" '{expression:$expression}')"
+	run_session "$req" "$resp" -r -C both
+	response_by_id "$resp" 4 | jq -e '.result.structuredContent.xrefs | length == 1 and .[0].type == "CALL" and .[0].from == 0 and .[0].to == 6' >/dev/null || fail 'xrefs_from: expected the call reference of the instruction'
+	response_by_id "$resp" 5 | jq -e '.result.structuredContent.xrefs == []' >/dev/null || fail 'xrefs_from: an instruction without references must return an empty array'
+	response_by_id "$resp" 6 | jq -e '.result.structuredContent.xrefs | map(.type) == ["CALL", "DATA"]' >/dev/null || fail 'xrefs_from: function=true must list the references of the whole function'
+	response_by_id "$resp" 7 | jq -e '.result | (.structuredContent.xrefs | map(.type) == ["DATA"]) and (.pagination | not)' >/dev/null || fail 'xrefs_from: second page must hold the last reference'
+	assert_error_contains_param "$(response_by_id "$resp" 8)" "address" "xrefs_from:invalid-address"
+	response_by_id "$resp" 10 | jq -e '.result.content[0].text == "0x0"' >/dev/null || fail 'xrefs_from: input created injection marker'
+}
+
 run_function_details_regression() {
 	local req="$TMPDIR/function-details.req"
 	local resp="$TMPDIR/function-details.resp"
@@ -1199,6 +1224,7 @@ run_command_smoke_regression
 run_command_json_pagination_regression
 run_command_shell_regression
 run_script_sandbox_regression
+run_xrefs_from_regression
 run_use_decompiler_regression
 run_function_details_regression
 

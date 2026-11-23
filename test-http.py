@@ -110,6 +110,8 @@ def run_remote_argument_regressions():
         ("lookup_address", {"address": "0"}, "':fd 0x0"),
         ("lookup_address", {"address": "-1"}, "':fd 0xffffffffffffffff"),
         ("lookup_symbol", {"address": "0xffffffffffffffff"}, "'@0xffffffffffffffff':is."),
+        ("xrefs_from", {"address": "0x10"}, "axf @e:scr.limit=0 @ 0x10"),
+        ("xrefs_from", {"address": "1<<4", "function": True}, "axff @e:scr.limit=0 @ 0x10"),
         ("lookup_export", {"name": literal}, "':iaE " + literal),
         ("alloc_memory", {"string": literal}, "':dmas " + literal),
         ("alloc_memory", {"size": "0x10"}, ":dma 16"),
@@ -134,6 +136,8 @@ def run_remote_argument_regressions():
         ("lookup_address", {"address": "0x10000000000000000"}, "address"),
         ("lookup_symbol", {"address": ""}, "address"),
         ("lookup_symbol", {"address": 0}, "address"),
+        ("xrefs_from", {"address": "12junk"}, "address"),
+        ("xrefs_from", {"address": "0", "function": "yes;f injected=1"}, "function"),
         ("alloc_memory", {"size": 2147483648}, "size"),
         ("alloc_memory", {"size": 0}, "size"),
         ("alloc_memory", {"string": 1}, "string"),
@@ -148,6 +152,7 @@ def run_remote_argument_regressions():
     # Math parsers may reject a suffix or stop at it. Neither may forward it.
     boundaries = [
         ("hexdump", {"address": "0'f __R2MCP_INJECTED__=1337;'"}, "'@0x0'px"),
+        ("xrefs_from", {"address": "0;f __R2MCP_INJECTED__=1337"}, "axf @e:scr.limit=0 @ 0x0"),
         ("hexdump", {"address": "0", "size": "16;f injected=1"}, "'@0x0'px 16"),
         ("search", {"query": "0;f injected=1", "type": "value"}, "':/v4 0x0"),
     ]
