@@ -70,6 +70,42 @@ EOF
 EXPECT_ERR=
 RUN
 
+NAME=Plugin show_function_graph works in read-only mode
+FILE=hex://85ff7401c390c3
+ARGS=-a x86 -b 64
+CMDS=<<EOF
+L ../src/libcore_r2mcp.`!r2 -H R2_LIBEXT`
+e r2mcp.prompts=false
+e r2mcp.readonly=true
+af+ 0 entry
+afb+ 0 0 4 5 4
+afb+ 0 4 1
+afb+ 0 5 2
+r2mcp show_function_graph address="0x4"
+r2mcp show_function_graph address="0x0" instructions="true"
+r2mcp show_function_graph address="0x100"
+EOF
+EXPECT=<<EOF
+entry 0x0: 3 blocks, 5 instructions, 7 bytes
+0x0 size=4 ninstr=2 jump=0x5 fail=0x4
+0x4 size=1 ninstr=1
+0x5 size=2 ninstr=2
+
+entry 0x0: 3 blocks, 5 instructions, 7 bytes
+0x0 size=4 ninstr=2 jump=0x5 fail=0x4
+| 0x0 test edi, edi
+| 0x2 je 5
+0x4 size=1 ninstr=1
+| 0x4 ret
+0x5 size=2 ninstr=2
+| 0x5 nop
+| 0x6 ret
+
+No function found at 0x100. Run analyze first or use an address from list_functions.
+EOF
+EXPECT_ERR=
+RUN
+
 NAME=Plugin comment updates live core
 FILE=hex://90c3
 CMDS=<<EOF
