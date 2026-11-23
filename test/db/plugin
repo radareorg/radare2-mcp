@@ -94,6 +94,25 @@ EOF
 EXPECT_ERR=
 RUN
 
+NAME=Plugin show_function_graph pages whole blocks in read-only mode
+FILE=hex://85ff7401c390c3
+ARGS=-a x86 -b 64
+CMDS=<<EOF
+L ../src/libcore_r2mcp.`!r2 -H R2_LIBEXT`
+e r2mcp.prompts=false
+e r2mcp.readonly=true
+af+ 0 entry
+afb+ 0 0 4 5 4
+afb+ 0 4 1
+afb+ 0 5 2
+r2mcp show_function_graph address="0x0" page_size="1"
+EOF
+EXPECT=<<EOF
+{"blocks":[{"addr":0,"size":4,"jump":5,"fail":4,"opaddr":0,"inputs":0,"outputs":2,"ninstr":2,"instrs":[0,2],"traced":0}]}
+EOF
+EXPECT_ERR=
+RUN
+
 NAME=Plugin comment updates live core
 FILE=hex://90c3
 CMDS=<<EOF

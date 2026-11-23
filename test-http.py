@@ -91,6 +91,8 @@ def run_remote_argument_regressions():
             command = self.rfile.read(int(self.headers["Content-Length"])).decode()
             commands.append(command)
             body = b"file frida://test" if command == "i~file" else b"captured"
+            if command == "afbj @ 0x1":
+                body = b'[{"addr":0,"switch_op":{"cases":[{"value":1,"jump":0},{"value":2,"jump":0}]}}]'
             self.send_response(200)
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
@@ -197,6 +199,22 @@ def run_remote_argument_regressions():
             error = responses.get(request_id, {}).get("error", {})
             if error.get("code") != -32602 or parameter not in error.get("message", ""):
                 fail("remote %s accepted invalid %s: %r" % (tool, parameter, responses.get(request_id)))
+        graph_requests = [
+            {"jsonrpc": "2.0", "id": addr, "method": "tools/call", "params": {
+                "name": "show_function_graph", "arguments": {"address": str(addr)},
+            }} for addr in (0, 1)
+        ]
+        graph_process = subprocess.run(
+            [BIN, "-p", "-C", "both", "-u", "http://127.0.0.1:%d/" % backend.server_port],
+            input="\n\n".join(map(json.dumps, graph_requests)) + "\n\n",
+            text=True, capture_output=True, check=True, timeout=60,
+        )
+        graphs = [json.loads(line).get("result", {}) for line in graph_process.stdout.splitlines() if line.startswith("{")]
+        if len(graphs) != 2 or graphs[0].get("structuredContent") != {"blocks": []}:
+            fail("malformed remote function graph must return an empty blocks array")
+        switch_cases = graphs[1]["structuredContent"]["blocks"][0]["switch_op"]["cases"]
+        if switch_cases != [{"value": 1, "jump": 0}, {"value": 2, "jump": 0}]:
+            fail("remote function graph must keep native switch cases: %r" % switch_cases)
         print("HTTP remote tool argument regressions passed")
     finally:
         backend.shutdown()

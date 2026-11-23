@@ -251,9 +251,8 @@ static char *tool_mode_response(ServerState *ss, char *text, char *structured_js
 	return response;
 }
 
-static char *tool_json_array_response(ServerState *ss, char *res, char *logs, RJson *tool_args,
+static char *tool_json_array_page(ServerState *ss, const RJson *json, const char *logs, RJson *tool_args,
 		const char *key, char *(*format)(const RJson *, int, int)) {
-	RJson *json = R_STR_ISEMPTY (res)? NULL: r_json_parse (res);
 	const RJson *array = json && json->type == R_JSON_OBJECT? r_json_get (json, key): json;
 	char *response = NULL;
 	if (array && array->type == R_JSON_ARRAY) {
@@ -284,6 +283,13 @@ static char *tool_json_array_response(ServerState *ss, char *res, char *logs, RJ
 		free (text);
 		pj_free (pj);
 	}
+	return response;
+}
+
+static char *tool_json_array_response(ServerState *ss, char *res, char *logs, RJson *tool_args,
+		const char *key, char *(*format)(const RJson *, int, int)) {
+	RJson *json = R_STR_ISEMPTY (res)? NULL: r_json_parse (res);
+	char *response = tool_json_array_page (ss, json, logs, tool_args, key, format);
 	r_json_free (json);
 	free (res);
 	free (logs);
@@ -758,6 +764,27 @@ static char *tool_show_function_details(ServerState *ss, RJson *tool_args) {
 	char *json = pj_drain (pj);
 	char *human = ss->content_mode == R2MCP_CONTENT_BOTH? function_info_text (ss, address, addr): strdup (json);
 	return tool_mode_response (ss, human, json);
+}
+
+static char *tool_show_function_graph(ServerState *ss, RJson *tool_args) {
+	ut64 address;
+	if (!validate_address_param (ss, tool_args, "address", &address)) {
+		return jsonrpc_error_numeric_param ("address");
+	}
+	bool instructions = rjson_get_bool_flag (tool_args, "instructions");
+	char *logs;
+	char *res = r2mcp_cmd_capturef (ss, &logs, "%s @ 0x%"PFMT64x, instructions? "agfj": "afbj", address);
+	RJson *graph = R_STR_ISEMPTY (res)? NULL: r_json_parse (res);
+	const RJson *json = instructions && graph && graph->type == R_JSON_ARRAY? r_json_item (graph, 0): graph;
+	char *response = tool_json_array_page (ss, json, logs, tool_args, "blocks", NULL);
+	if (!response) {
+		const char *empty = "{\"blocks\":[]}";
+		response = jsonrpc_tool_response_paginated (empty, empty, ss->content_mode, false, NULL, logs);
+	}
+	r_json_free (graph);
+	free (res);
+	free (logs);
+	return response;
 }
 
 static char *tool_get_current_address(ServerState *ss, RJson *tool_args) {
@@ -1856,12 +1883,14 @@ cleanup:
 	free (parsed_buf);
 	return result;
 }
-#define TOOL_SCHEMA_PAGE_PROPS "\"cursor\":{\"type\":\"string\",\"description\":\"Cursor for pagination (line number to start from)\"},\"page_size\":{\"type\":\"integer\",\"description\":\"Number of lines per page (default: 1000, max: 10000)\"}"
+#define TOOL_SCHEMA_PAGINATION(unit) "\"cursor\":{\"type\":\"string\",\"description\":\"Cursor for pagination (" unit " number to start from)\"},\"page_size\":{\"type\":\"integer\",\"description\":\"Number of " unit "s per page (default: 1000, max: 10000)\"}"
+#define TOOL_SCHEMA_PAGE_PROPS TOOL_SCHEMA_PAGINATION ("line")
 #define TOOL_SCHEMA_FILTER_COUNT_PROPS "\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"},\"count\":{\"type\":\"boolean\",\"description\":\"If true, return only the number of matching results instead of the full list\"}"
 #define TOOL_SCHEMA_LIST_PROPS TOOL_SCHEMA_FILTER_COUNT_PROPS "," TOOL_SCHEMA_PAGE_PROPS
 #define TOOL_SCHEMA_LIST "{\"type\":\"object\",\"properties\":{" TOOL_SCHEMA_LIST_PROPS "}}"
 #define TOOL_SCHEMA_LIST_WITH_STRING_PARAM(name, desc) "{\"type\":\"object\",\"properties\":{\"" name "\":{\"type\":\"string\",\"description\":\"" desc "\"}," TOOL_SCHEMA_LIST_PROPS "},\"required\":[\"" name "\"]}"
-#define TOOL_SCHEMA_ADDRESS_PAGE(desc, props) "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"" desc ": numeric expression (e.g. sym.main + 4 or 0x401000)\"}," props TOOL_SCHEMA_PAGE_PROPS "},\"required\":[\"address\"]}"
+#define TOOL_SCHEMA_ADDRESS(desc, props) "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"" desc ": numeric expression (e.g. sym.main + 4 or 0x401000)\"}," props "},\"required\":[\"address\"]}"
+#define TOOL_SCHEMA_ADDRESS_PAGE(desc, props) TOOL_SCHEMA_ADDRESS (desc, props TOOL_SCHEMA_PAGE_PROPS)
 #define TOOL_SCHEMA_BYTES_PROP "\"bytes\":{\"type\":\"boolean\",\"description\":\"Include opcode bytes and return instructions under ops in JSON content modes (default: false)\"}"
 #define TOOL_SCHEMA_COMMAND_PAGE "{\"type\":\"object\",\"properties\":{\"command\":{\"type\":\"string\",\"description\":\"The radare2 command to execute\"}," TOOL_SCHEMA_PAGE_PROPS "},\"required\":[\"command\"]}"
 #define TOOL_SCHEMA_SQL "{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\",\"description\":\"SQL statement to pass to the loaded SQL core plugin (r2xsql)\"}},\"required\":[\"query\"]}"
@@ -1886,6 +1915,7 @@ ToolSpec tool_specs[] = {
 	{ "list_sections", "Displays memory sections and segments from the binary", TOOL_SCHEMA_LIST, TOOL_MODE_NORMAL | TOOL_MODE_HTTP | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_list_sections },
 	{ "list_memory_maps", "Lists memory regions of the process with addresses and permissions", TOOL_SCHEMA_LIST, TOOL_MODE_NORMAL | TOOL_MODE_HTTP | TOOL_MODE_FRIDA, tool_list_memory_maps },
 	{ "show_function_details", "Shows details of the function containing the given address (default: current seek). JSON output includes named attributes when supported by radare2.", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Optional address expression (e.g. sym.main or 0x401000); omit to use current seek\"}}}", TOOL_MODE_NORMAL | TOOL_MODE_RO, tool_show_function_details },
+	{ "show_function_graph", "Shows the basic blocks and successors of the function containing the given address", TOOL_SCHEMA_ADDRESS ("Address within the function", "\"instructions\":{\"type\":\"boolean\",\"description\":\"Include the instructions in each basic block (default: false)\"}," TOOL_SCHEMA_PAGINATION ("basic block")), TOOL_MODE_NORMAL | TOOL_MODE_RO, tool_show_function_graph },
 	{ "get_current_address", "Shows the current position and function name", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_RO, tool_get_current_address },
 	{ "show_info", "Displays information about the binary or target process", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_show_info },
 	{ "list_symbols", "Shows all symbols (functions, variables, imports) with addresses", TOOL_SCHEMA_LIST, TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_list_symbols },

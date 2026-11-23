@@ -1284,6 +1284,30 @@ run_function_details_regression() {
 	response_by_id "$resp" 7 | jq -e '.result.structuredContent.functions == []' >/dev/null || fail 'function details: missing function must return an empty array'
 }
 
+run_function_graph_regression() {
+	local req="$TMPDIR/function-graph.req"
+	local resp="$TMPDIR/function-graph.resp"
+	: > "$req"
+	append_request "$req" 1 initialize '{"capabilities":{},"clientInfo":{"name":"testsuite","version":"1"}}'
+	append_notification "$req" notifications/initialized '{}'
+	append_tool_call "$req" 2 open_file '{"file_path":"hex://85ff7401c390c3","arch":"x86","bits":"64"}'
+	append_tool_call "$req" 3 run_command '{"command":"af+ 0 entry;afb+ 0 0 4 5 4;afb+ 0 4 1;afb+ 0 5 2"}'
+	append_tool_call "$req" 4 show_function_graph '{"address":"0x5"}'
+	append_tool_call "$req" 5 show_function_graph '{"address":"0x0","instructions":true,"page_size":1}'
+	append_tool_call "$req" 6 show_function_graph '{"address":"0x0","instructions":true,"page_size":1,"cursor":"2"}'
+	append_tool_call "$req" 7 show_function_graph '{"address":"0x100"}'
+	append_tool_call "$req" 8 show_function_graph '{"address":"0xgg"}'
+	append_tool_call "$req" 9 show_function_graph "$(jq -cn --arg address "0;f $INJECT_MARKER=1337" '{address:$address}')"
+	append_tool_call "$req" 10 calculate "$(jq -cn --arg expression "$INJECT_MARKER" '{expression:$expression}')"
+	run_session "$req" "$resp" -r -C both
+	response_by_id "$resp" 4 | jq -e '.result.structuredContent | all(.blocks[]; has("ops") | not) and (.blocks | map(.ninstr) == [2, 1, 2]) and .blocks[0].jump == 5 and .blocks[0].fail == 4' >/dev/null || fail 'function graph: expected three native blocks with their successors and no disassembly'
+	response_by_id "$resp" 5 | jq -e '.result | .pagination.nextCursor == "1" and .structuredContent.name == "entry" and (.structuredContent.blocks | map(.ops | length) == [2]) and ((.content[0].text | fromjson) == .structuredContent)' >/dev/null || fail 'function graph: first page must hold the complete first block in both formats'
+	response_by_id "$resp" 6 | jq -e '.result | (.structuredContent.blocks | map(.addr) == [5]) and (.structuredContent.blocks[0].ops | length == 2) and (.pagination | not)' >/dev/null || fail 'function graph: last page must hold the complete last block'
+	response_by_id "$resp" 7 | jq -e '.result.structuredContent.blocks == []' >/dev/null || fail 'function graph: missing function must return an empty array'
+	assert_error_contains_param "$(response_by_id "$resp" 8)" "address" "show_function_graph:invalid-address"
+	response_by_id "$resp" 10 | jq -e '.result.content[0].text == "0x0"' >/dev/null || fail 'function graph: invalid address changed state'
+}
+
 need_cmd jq
 need_cmd mktemp
 need_cmd curl
@@ -1376,6 +1400,7 @@ run_command_shell_regression
 run_script_sandbox_regression
 run_xrefs_from_regression
 run_use_decompiler_regression
+run_function_graph_regression
 run_function_details_regression
 
 echo "== OK =="
