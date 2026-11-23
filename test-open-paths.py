@@ -90,7 +90,8 @@ class OpenPathTests(unittest.TestCase):
         self.assertEqual(self.text(replies[6]), "File closed successfully.")
 
     def test_http_open_obeys_grain_on_first_and_subsequent_opens(self):
-        for grain in ["none", "socket", "network", "all"]:
+        denied_grains = ["none", "disk", "files", "exec", "environ"]
+        for grain in denied_grains + ["socket", "network", "all"]:
             with self.subTest(grain=grain), http_fixture() as (url, requests):
                 replies, _ = self.exchange([
                     ("open_file", {"file_path": url}),
@@ -99,11 +100,24 @@ class OpenPathTests(unittest.TestCase):
                 ], "-g", grain)
                 self.assertIn("File opened successfully.", self.text(replies[1]))
                 for index in [0, 2]:
-                    if grain == "none":
+                    if grain in denied_grains:
                         self.assertEqual(self.text(replies[index]), "Failed to open file.")
                     else:
                         self.assertIn("File opened successfully.", self.text(replies[index]))
-                self.assertEqual(len(requests), 0 if grain == "none" else 2)
+                self.assertEqual(len(requests), 0 if grain in denied_grains else 2)
+
+    def test_https_open_requires_permissions(self):
+        with http_fixture() as (url, requests):
+            url = url.replace("http://", "https://", 1)
+            replies, _ = self.exchange([
+                ("open_file", {"file_path": url}),
+                ("open_file", {"file_path": str(self.fixture)}),
+                ("open_file", {"file_path": url}),
+            ], "-g", "none")
+            for index in [0, 2]:
+                self.assertEqual(self.text(replies[index]), "Failed to open file.")
+            self.assertIn("File opened successfully.", self.text(replies[1]))
+            self.assertEqual(requests, [])
 
     def test_filesystem_sandbox_rejects_uri_wrappers_without_closing_file(self):
         sandbox = self.directory / "sandbox"

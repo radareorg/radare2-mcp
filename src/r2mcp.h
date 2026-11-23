@@ -5,6 +5,10 @@
 #include <r_util/r_strbuf.h>
 #include "readbuffer.h"
 
+#if R2_VERSION_NUMBER < 60206
+#error radare2 6.2.6 or newer is required
+#endif
+
 /* Version fallback if not provided by build */
 #ifndef R2MCP_VERSION
 #define R2MCP_VERSION "1.9.0"
