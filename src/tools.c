@@ -895,6 +895,44 @@ static char *tool_xrefs_to(ServerState *ss, RJson *tool_args) {
 	return tool_cmd_response (r2mcp_cmdf (ss, "'@0x%"PFMT64x"'axt", address));
 }
 
+static char *tool_xrefs_from(ServerState *ss, RJson *tool_args) {
+	ut64 address;
+	if (!validate_address_param (ss, tool_args, "address", &address)) {
+		return jsonrpc_error_numeric_param ("address");
+	}
+	// axf covers the instruction at the address, axff its whole function
+	bool whole_function = rjson_get_bool_flag (tool_args, "function");
+	const char *cmd = whole_function? "axff": "axf";
+	// The output is paginated here, so scr.limit must not truncate it first
+	if (ss->content_mode != R2MCP_CONTENT_TEXT) {
+		char *res = r2mcp_cmdf (ss, "%sj @e:scr.limit=0 @ 0x%"PFMT64x, cmd, address);
+		RJson *data = R_STR_ISEMPTY (res)? NULL: r_json_parse (res);
+		if (data && data->type == R_JSON_ARRAY) {
+			PJ *pj = pj_new ();
+			pj_o (pj);
+			pj_k (pj, "xrefs");
+			pj_append_rjson_value (pj, data);
+			pj_end (pj);
+			r_json_free (data);
+			free (res);
+			return tool_cmd_response_paginated (ss, pj_drain (pj), tool_args);
+		}
+		r_json_free (data);
+		free (res);
+	}
+	char *res = r2mcp_cmdf (ss, "%s @e:scr.limit=0 @ 0x%"PFMT64x, cmd, address);
+	if (R_STR_ISEMPTY (r_str_trim_head_ro (res))) {
+		free (res);
+		if (whole_function) {
+			res = r_str_newf ("No references from the function at 0x%"PFMT64x, address);
+		} else {
+			res = r_str_newf ("No references from the instruction at 0x%"PFMT64x". Set function=true to list the references of its whole function.", address);
+		}
+		return tool_cmd_response (res);
+	}
+	return tool_cmd_response_paginated (ss, res, tool_args);
+}
+
 static char *tool_disassemble_function(ServerState *ss, RJson *tool_args) {
 	ut64 address;
 	if (!validate_address_param (ss, tool_args, "address", &address)) {
@@ -1669,6 +1707,7 @@ ToolSpec tool_specs[] = {
 	{ "list_all_strings", "Scans the entire binary for strings with optional regex filter", TOOL_SCHEMA_LIST, TOOL_MODE_NORMAL | TOOL_MODE_RO, tool_list_all_strings },
 	{ "analyze", "Runs binary analysis with optional depth level", "{\"type\":\"object\",\"properties\":{\"level\":{\"type\":\"number\",\"description\":\"Analysis level (0-4, higher is more thorough)\"},\"timeout_seconds\":{\"type\":\"integer\",\"description\":\"Optional maximum analysis time in seconds for this call only. Use 0 to disable the timeout.\"}},\"required\":[]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_FRIDA, tool_analyze },
 	{ "xrefs_to", "Finds all code references to the specified address", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address expression (e.g. sym.main + 4 or 0x401000)\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO, tool_xrefs_to },
+	{ "xrefs_from", "Finds all code and data references from the instruction at the specified address, or from its whole function", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address expression (e.g. sym.main + 4 or 0x401000)\"},\"function\":{\"type\":\"boolean\",\"description\":\"If true, list the references from every instruction of the function at the address instead of only the instruction at the address\"}," TOOL_SCHEMA_PAGE_PROPS "},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO, tool_xrefs_from },
 	{ "decompile_function", "Show C-like pseudocode of the function in the given address. <think>Use this to inspect the code in a function, do not run multiple times in the same offset</think>", TOOL_SCHEMA_ADDRESS_PAGE ("Address of the function to decompile"), TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO, tool_decompile_function },
 	{ "list_files", "Lists files in the specified path using radare2's ls -q command. Files ending with / are directories, otherwise they are files.", TOOL_SCHEMA_LIST_WITH_STRING_PARAM ("path", "Path to list files from"), TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO, tool_list_files },
 	{ "disassemble_function", "Shows assembly listing of the function at the specified address", TOOL_SCHEMA_ADDRESS_PAGE ("Address of the function to disassemble"), TOOL_MODE_NORMAL | TOOL_MODE_RO, tool_disassemble_function },
