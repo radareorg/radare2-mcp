@@ -853,7 +853,31 @@ static char *tool_disassemble(ServerState *ss, RJson *tool_args) {
 	int num_instructions = 10;
 	rjson_get_int_param (ss, tool_args, "num_instructions", &num_instructions);
 
-	return tool_cmd_response (r2mcp_cmdf (ss, "'@0x%"PFMT64x"'pd %d", address, num_instructions));
+	if (!rjson_get_bool_flag (tool_args, "bytes")) {
+		return tool_cmd_response (r2mcp_cmdf (ss, "'@0x%"PFMT64x"'pd %d", address, num_instructions));
+	}
+	char *json = NULL;
+	if (ss->content_mode != R2MCP_CONTENT_TEXT) {
+		char *res = r2mcp_cmdf (ss, "pdj %d @e:scr.limit=0 @ 0x%"PFMT64x, num_instructions, address);
+		RJson *ops = R_STR_ISEMPTY (res)? NULL: r_json_parse (res);
+		if (ops && ops->type == R_JSON_ARRAY) {
+			PJ *pj = pj_new ();
+			pj_o (pj);
+			pj_k (pj, "ops");
+			pj_append_rjson_value (pj, ops);
+			pj_end (pj);
+			json = pj_drain (pj);
+		}
+		r_json_free (ops);
+		free (res);
+	}
+	if (json && ss->content_mode != R2MCP_CONTENT_BOTH) {
+		return tool_mode_response (ss, strdup (json), json);
+	}
+	// asm.bytes is disabled for the session, enable it for this command only
+	// and widen asm.nbytes, which would cut the bytes of long instructions
+	char *text = r2mcp_cmdf (ss, "pd %d @e:asm.bytes=true,asm.nbytes=16 @ 0x%"PFMT64x, num_instructions, address);
+	return json? tool_mode_response (ss, text, json): tool_cmd_response (text);
 }
 
 // Resolve a user-supplied decompiler name to a registered `cmd.pdc` command.
@@ -900,7 +924,14 @@ static char *tool_disassemble_function(ServerState *ss, RJson *tool_args) {
 	if (!validate_address_param (ss, tool_args, "address", &address)) {
 		return jsonrpc_error_numeric_param ("address");
 	}
-	return tool_cmd_response_paginated (ss, r2mcp_cmdf (ss, "'@0x%"PFMT64x"'pdf", address), tool_args);
+	if (!rjson_get_bool_flag (tool_args, "bytes")) {
+		return tool_cmd_response_paginated (ss, r2mcp_cmdf (ss, "'@0x%"PFMT64x"'pdf", address), tool_args);
+	}
+	// The instructions are paginated here, so scr.limit must not truncate them first
+	if (ss->content_mode != R2MCP_CONTENT_TEXT) {
+		return tool_cmd_response_paginated (ss, r2mcp_cmdf (ss, "pdfj @e:scr.limit=0 @ 0x%"PFMT64x, address), tool_args);
+	}
+	return tool_cmd_response_paginated (ss, r2mcp_cmdf (ss, "pdf @e:asm.bytes=true,asm.nbytes=16,scr.limit=0 @ 0x%"PFMT64x, address), tool_args);
 }
 
 static char *tool_rename_flag(ServerState *ss, RJson *tool_args) {
@@ -1629,6 +1660,7 @@ cleanup:
 #define TOOL_SCHEMA_LIST "{\"type\":\"object\",\"properties\":{" TOOL_SCHEMA_LIST_PROPS "}}"
 #define TOOL_SCHEMA_LIST_WITH_STRING_PARAM(name, desc) "{\"type\":\"object\",\"properties\":{\"" name "\":{\"type\":\"string\",\"description\":\"" desc "\"}," TOOL_SCHEMA_LIST_PROPS "},\"required\":[\"" name "\"]}"
 #define TOOL_SCHEMA_ADDRESS_PAGE(desc) "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"" desc ": numeric expression (e.g. sym.main + 4 or 0x401000)\"}," TOOL_SCHEMA_PAGE_PROPS "},\"required\":[\"address\"]}"
+#define TOOL_SCHEMA_BYTES_PROP "\"bytes\":{\"type\":\"boolean\",\"description\":\"If true, include the opcode bytes of every instruction; JSON content modes then return the instructions as radare2 JSON (default: false)\"}"
 #define TOOL_SCHEMA_COMMAND_PAGE "{\"type\":\"object\",\"properties\":{\"command\":{\"type\":\"string\",\"description\":\"The radare2 command to execute\"}," TOOL_SCHEMA_PAGE_PROPS "},\"required\":[\"command\"]}"
 #define TOOL_SCHEMA_SQL "{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\",\"description\":\"SQL statement to pass to the loaded SQL core plugin (r2xsql)\"}},\"required\":[\"query\"]}"
 #define TOOL_SCHEMA_SCRIPT_FILE_PAGE "{\"type\":\"object\",\"properties\":{\"file_path\":{\"type\":\"string\",\"description\":\"Absolute path to the radare2 script file to execute\"}," TOOL_SCHEMA_PAGE_PROPS "},\"required\":[\"file_path\"]}"
@@ -1671,8 +1703,8 @@ ToolSpec tool_specs[] = {
 	{ "xrefs_to", "Finds all code references to the specified address", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address expression (e.g. sym.main + 4 or 0x401000)\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO, tool_xrefs_to },
 	{ "decompile_function", "Show C-like pseudocode of the function in the given address. <think>Use this to inspect the code in a function, do not run multiple times in the same offset</think>", TOOL_SCHEMA_ADDRESS_PAGE ("Address of the function to decompile"), TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO, tool_decompile_function },
 	{ "list_files", "Lists files in the specified path using radare2's ls -q command. Files ending with / are directories, otherwise they are files.", TOOL_SCHEMA_LIST_WITH_STRING_PARAM ("path", "Path to list files from"), TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO, tool_list_files },
-	{ "disassemble_function", "Shows assembly listing of the function at the specified address", TOOL_SCHEMA_ADDRESS_PAGE ("Address of the function to disassemble"), TOOL_MODE_NORMAL | TOOL_MODE_RO, tool_disassemble_function },
-	{ "disassemble", "Disassembles a specific number of instructions from an address <think>Use this tool to inspect a portion of memory as code without depending on function analysis boundaries. Use this tool when functions are large and you are only interested on few instructions</think>", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address expression (e.g. sym.main + 4 or 0x401000)\"},\"num_instructions\":{\"type\":\"integer\",\"description\":\"Number of instructions to disassemble (default: 10)\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_disassemble },
+	{ "disassemble_function", "Shows assembly listing of the function at the specified address", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address of the function to disassemble: numeric expression (e.g. sym.main + 4 or 0x401000)\"}," TOOL_SCHEMA_BYTES_PROP "," TOOL_SCHEMA_PAGE_PROPS "},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | TOOL_MODE_RO, tool_disassemble_function },
+	{ "disassemble", "Disassembles a specific number of instructions from an address <think>Use this tool to inspect a portion of memory as code without depending on function analysis boundaries. Use this tool when functions are large and you are only interested on few instructions</think>", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address expression (e.g. sym.main + 4 or 0x401000)\"},\"num_instructions\":{\"type\":\"integer\",\"description\":\"Number of instructions to disassemble (default: 10)\"}," TOOL_SCHEMA_BYTES_PROP "},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_disassemble },
 	{ "calculate", "Evaluate a math expression using core->num (r_num_math). Usecases: do proper 64-bit math, resolve addresses for flag names/symbols, and avoid hallucinated results.", "{\"type\":\"object\",\"properties\":{\"expression\":{\"type\":\"string\",\"description\":\"Math expression to evaluate (eg. 0x100 + sym.flag - 4)\"}},\"required\":[\"expression\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_calculate },
 	{ "get_pid", "Get the process ID of the target process", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_FRIDA, tool_get_pid },
 	{ "list_threads", "List all threads in the target process with their IDs and state", TOOL_SCHEMA_LIST, TOOL_MODE_NORMAL | TOOL_MODE_FRIDA, tool_list_threads },
