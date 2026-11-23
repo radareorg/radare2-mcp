@@ -87,6 +87,15 @@ Update your MCP client configuration file (see below) to use the Docker image to
 `list_files` and `run_script` also require absolute local paths. Network shares
 and device paths are rejected; Windows paths must use a local drive.
 
+Explicit `open_file` targets may include hidden files, hidden directories,
+and `.` path components. They use the same validated local-file exception as
+other binary targets, including with `-g none`. With `-s`, the resolved path
+must still remain inside the allowed directory.
+
+Commands and scripts retain radare2's native sandbox checks. The `hidden`
+grain permits hidden path components where filesystem permissions and r2's
+path policy allow access; it does not grant general filesystem access.
+
 Other URI schemes run with the configured radare2 sandbox active, including
 on the first open. Use `-g` to grant the permissions their plugins need:
 `socket` permits localhost connections, `network` permits remote connections,

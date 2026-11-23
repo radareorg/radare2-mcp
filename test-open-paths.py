@@ -45,7 +45,7 @@ class OpenPathTests(unittest.TestCase):
         self.fixture = self.directory / "fixture.bin"
         self.fixture.write_bytes(bytes(range(64)))
 
-    def exchange(self, calls, *options):
+    def exchange(self, calls, *options, cwd=None):
         messages = [
             {"id": 1, "method": "initialize", "params": {
                 "protocolVersion": "2024-11-05", "capabilities": {},
@@ -57,12 +57,12 @@ class OpenPathTests(unittest.TestCase):
                 "name": name, "arguments": arguments}})
         payload = "".join(json.dumps({"jsonrpc": "2.0", **message}) + "\n"
                           for message in messages)
-        default_binary = Path(__file__).parent / "src" / (
+        default_binary = Path(__file__).resolve().parent / "src" / (
             "r2mcp.exe" if os.name == "nt" else "r2mcp")
-        binary = os.environ.get("R2MCP_TEST_BINARY", str(default_binary))
+        binary = Path(os.environ.get("R2MCP_TEST_BINARY", default_binary)).resolve()
         result = subprocess.run(
             [binary, "-n", "-N", "-r", *options], input=payload,
-            capture_output=True, text=True, timeout=30)
+            capture_output=True, text=True, timeout=30, cwd=cwd)
         self.assertEqual(result.returncode, 0, result.stderr)
         replies = list(map(json.loads, result.stdout.splitlines()))
         self.assertEqual([reply["id"] for reply in replies],
@@ -105,6 +105,86 @@ class OpenPathTests(unittest.TestCase):
                     else:
                         self.assertIn("File opened successfully.", self.text(replies[index]))
                 self.assertEqual(len(requests), 0 if grain in denied_grains else 2)
+
+    def test_hidden_local_targets_and_dot_components(self):
+        hidden_dir = self.directory / ".build"
+        hidden_dir.mkdir()
+        hidden = hidden_dir / ".firmware.bin"
+        hidden.write_bytes(bytes(range(64)))
+        paths = [str(hidden), "file://" + str(hidden),
+                 str(self.directory) + "/./.build/.firmware.bin",
+                 str(self.directory) + "/./fixture.bin"]
+        calls = []
+        for path in paths:
+            calls.extend([("open_file", {"file_path": path}), ("close_file", {})])
+        for options in [(), ("-g", "none")]:
+            with self.subTest(options=options):
+                replies, _ = self.exchange(calls, *options)
+                for index in range(0, len(replies), 2):
+                    self.assertEqual(self.text(replies[index]), "File opened successfully.")
+                    self.assertEqual(self.text(replies[index + 1]), "File closed successfully.")
+
+    def test_hidden_directory_and_script_paths(self):
+        hidden_dir = self.directory / ".build"
+        hidden_dir.mkdir()
+        script = hidden_dir / "commands.r2"
+        script.write_text("?e R2MCP_HIDDEN_SCRIPT\n")
+        replies, _ = self.exchange([
+            ("open_file", {"file_path": str(self.fixture)}),
+            ("list_files", {"path": str(hidden_dir)}),
+            ("run_script", {"file_path": str(script)}),
+        ], "-g", "all", "-s", str(self.directory))
+        self.assertIn("File opened successfully.", self.text(replies[0]))
+        self.assertIn("commands.r2", self.text(replies[1]))
+        self.assertIn("R2MCP_HIDDEN_SCRIPT", self.text(replies[2]))
+
+    def test_hidden_paths_cannot_escape_filesystem_sandbox(self):
+        sandbox = self.directory / "sandbox"
+        sandbox.mkdir()
+        inside = sandbox / ".inside.bin"
+        inside.write_bytes(bytes(range(64)))
+        outside_dir = self.directory / ".outside"
+        outside_dir.mkdir()
+        outside = outside_dir / "fixture.bin"
+        outside.write_bytes(bytes(range(64)))
+        script = outside_dir / "commands.r2"
+        script.write_text("?e R2MCP_OUTSIDE_SCRIPT\n")
+        denied = [str(outside), "file://" + str(outside),
+                  str(sandbox) + "/../.outside/fixture.bin"]
+        if os.name != "nt":
+            alias = sandbox / "escape.bin"
+            alias.symlink_to(outside)
+            denied.append(str(alias))
+        calls = [("open_file", {"file_path": str(inside)})]
+        calls.extend(("open_file", {"file_path": path}) for path in denied)
+        calls.extend([
+            ("list_files", {"path": str(outside_dir)}),
+            ("run_script", {"file_path": str(script)}),
+            ("show_info", {}),
+        ])
+        replies, _ = self.exchange(calls, "-g", "all", "-s", str(sandbox))
+        self.assertEqual(self.text(replies[0]), "File opened successfully.")
+        for reply in replies[1:1 + len(denied)]:
+            self.assertEqual(self.text(reply), "Failed to open file.")
+        for reply in replies[-3:-1]:
+            self.assertIn("outside of the sandbox", reply["error"]["message"])
+        self.assertIn(str(inside), self.text(replies[-1]))
+
+    def test_native_hidden_grain_controls_command_file_reads(self):
+        hidden_dir = self.directory / ".build"
+        hidden_dir.mkdir()
+        (hidden_dir / "data.md").write_text("R2MCP_HIDDEN_POLICY\n")
+        (self.directory / "visible.md").write_text("R2MCP_VISIBLE_POLICY\n")
+        for grain in ["disk,files", "disk,files,hidden"]:
+            with self.subTest(grain=grain):
+                replies, _ = self.exchange([
+                    ("open_file", {"file_path": str(self.fixture)}),
+                    ("run_command", {"command": "cat -m visible.md"}),
+                    ("run_command", {"command": "cat -m .build/data.md"}),
+                ], "-g", grain, cwd=self.directory)
+                self.assertIn("R2MCP_VISIBLE_POLICY", self.text(replies[1]))
+                self.assertEqual("R2MCP_HIDDEN_POLICY" in self.text(replies[2]),
+                                 grain == "disk,files,hidden")
 
     def test_https_open_requires_permissions(self):
         with http_fixture() as (url, requests):
