@@ -18,6 +18,7 @@ import os
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -99,7 +100,9 @@ def run_remote_argument_regressions():
             pass
 
     literal = "C++'name;f __R2MCP_INJECTED__=1337\nsecond#part|>`$(x)"
-    path = "/tmp/literal;quote'line\nbreak"
+    # Windows only accepts absolute paths on a local drive.
+    tmpdir = tempfile.gettempdir().replace("\\", "/") if os.name == "nt" else "/tmp"
+    path = tmpdir + "/literal;quote'line\nbreak"
     cases = [
         ("hexdump", {"address": "0", "size": "0x10"}, "'@0x0'px 16"),
         ("hexdump", {"address": "0"}, "'@0x0'px"),
