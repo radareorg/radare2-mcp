@@ -338,14 +338,7 @@ static void tool_modes_string(int modes, char *buf, size_t len) {
 }
 
 char *tools_build_catalog_json(const ServerState *ss, const char *cursor, int page_size) {
-	int start_index = 0;
-	if (cursor) {
-		start_index = atoi (cursor);
-		if (start_index < 0) {
-			start_index = 0;
-		}
-	}
-
+	int start_index = pagination_start_from_cursor (cursor);
 	int end_index = start_index + page_size;
 	int idx = 0;
 	ToolMode mode = current_mode (ss);
@@ -1029,6 +1022,11 @@ static char *tool_search(ServerState *ss, RJson *tool_args) {
 	if (R_STR_ISEMPTY (type)) {
 		type = "string";
 	}
+	// r_core_cmd_str runs any command line holding a > without capturing its
+	// output, so the search would come back empty
+	if (strcmp (type, "value") && strchr (query, '>')) {
+		return jsonrpc_error_response (-32602, "Invalid parameter 'query': '>' is not allowed, write it as \\x3e in a string search", NULL, NULL);
+	}
 	if (!strcmp (type, "hex")) {
 		return tool_cmd_response (r2mcp_cmdf (ss, "'%s/x %s", fx (ss), query));
 	}
@@ -1052,108 +1050,120 @@ static char *tool_search(ServerState *ss, RJson *tool_args) {
 	return tool_cmd_response (r2mcp_cmdf (ss, "'%s/ %s", fx (ss), query));
 }
 
-/* Gadgets span several instructions, so their pages are smaller than the
- * line based ones (R2MCP_DEFAULT_PAGE_SIZE, R2MCP_MAX_PAGE_SIZE). */
-#define R2MCP_GADGETS_PAGE_SIZE 100
-#define R2MCP_GADGETS_MAX_PAGE_SIZE 1000
-
 // Gadgets are listed as "pop rdi; ret;" but r2 filters them with "pop rdi;ret".
-static char *gadget_filter(const char *query) {
+// Returns NULL when regex is set and one of the instructions does not compile.
+static char *gadget_filter(const char *query, bool regex) {
 	RStrBuf *sb = r_strbuf_new ("");
 	RList *parts = r_str_split_duplist (query, ";", true);
 	RListIter *it;
 	const char *part;
+	bool valid = true;
 	r_list_foreach (parts, it, part) {
-		if (R_STR_ISNOTEMPTY (part)) {
-			r_strbuf_appendf (sb, "%s%s", r_strbuf_is_empty (sb)? " ": ";", part);
+		if (R_STR_ISEMPTY (part)) {
+			continue;
 		}
+		if (regex) {
+			// r2 compiles each instruction with these flags, once per candidate
+			RRegex *rx = r_regex_new (part, "e");
+			if (!rx) {
+				valid = false;
+				break;
+			}
+			r_regex_free (rx);
+		}
+		r_strbuf_appendf (sb, "%s%s", r_strbuf_is_empty (sb)? " ": ";", part);
 	}
 	r_list_free (parts);
+	if (!valid) {
+		r_strbuf_free (sb);
+		return NULL;
+	}
 	return r_strbuf_drain (sb);
+}
+
+static const char *gadget_kind_from_string(const char *type) {
+	if (R_STR_ISEMPTY (type) || !strcmp (type, "any")) {
+		return "";
+	}
+	if (!strcmp (type, "ret")) {
+		return "R";
+	}
+	if (!strcmp (type, "call")) {
+		return "C";
+	}
+	if (!strcmp (type, "jmp")) {
+		return "J";
+	}
+	return NULL;
 }
 
 static char *tool_search_gadgets(ServerState *ss, RJson *tool_args) {
 	const char *query = r_json_get_str (tool_args, "query");
-	const char *type = r_json_get_str (tool_args, "type");
-	const char *kind = "";
-	const char *p;
-	if (R_STR_ISNOTEMPTY (type) && strcmp (type, "any")) {
-		if (!strcmp (type, "ret")) {
-			kind = "R";
-		} else if (!strcmp (type, "call")) {
-			kind = "C";
-		} else if (!strcmp (type, "jmp")) {
-			kind = "J";
-		} else {
-			return jsonrpc_error_response (-32602, "Invalid parameter 'type': expected any, ret, call, or jmp", NULL, NULL);
-		}
+	const char *kind = gadget_kind_from_string (r_json_get_str (tool_args, "type"));
+	if (!kind) {
+		return jsonrpc_error_response (-32602, "Invalid parameter 'type': expected any, ret, call, or jmp", NULL, NULL);
 	}
-	// The query ends the command line, do not let anything else follow it
-	for (p = query; p && *p; p++) {
-		if (iscntrl ((ut8)*p)) {
-			return jsonrpc_error_response (-32602, "Invalid parameter 'query': control characters are not allowed", NULL, NULL);
-		}
+	if (!query) {
+		query = "";
 	}
-	RCore *core = ss->rstate->core;
-	if (ss->http_mode || !core) {
+	// The query ends the command line, see the comment on the command below
+	if (!r_str_is_printable (query) || strchr (query, '>')) {
+		return jsonrpc_error_response (-32602, "Invalid parameter 'query': control characters and '>' are not allowed", NULL, NULL);
+	}
+	if (ss->http_mode) {
 		return jsonrpc_error_response (-32603, "search_gadgets is not supported in HTTP mode", NULL, NULL);
 	}
-	const char *cursor = r_json_get_str (tool_args, "cursor");
-	int start = pagination_start_from_cursor (cursor);
-	int page_size = 0;
-	rjson_get_int_param (ss, tool_args, "page_size", &page_size);
-	if (page_size <= 0) {
-		page_size = R2MCP_GADGETS_PAGE_SIZE;
+	const bool regex = rjson_get_bool_flag (tool_args, "regex");
+	char *filter = gadget_filter (query, regex);
+	if (!filter) {
+		return jsonrpc_error_response (-32602, "Invalid parameter 'query': not a valid regular expression", NULL, NULL);
 	}
-	if (page_size > R2MCP_GADGETS_MAX_PAGE_SIZE) {
-		page_size = R2MCP_GADGETS_MAX_PAGE_SIZE;
-	}
-	bool json = ss->content_mode != R2MCP_CONTENT_TEXT;
-	const char *regex = rjson_get_bool_flag (tool_args, "regex")? "/": "";
-	char *filter = gadget_filter (query? query: "");
+	const char *cursor;
+	int page_size;
+	pagination_params (ss, tool_args, &cursor, &page_size);
+	const bool json = ss->content_mode != R2MCP_CONTENT_TEXT;
+	RCore *core = ss->rstate->core;
 	// Search the executable maps only and stop one hit after the requested
 	// page: this bounds the time and the output, so scr.limit is not needed
 	RConfigHold *hold = r_config_hold_new (core->config);
 	r_config_hold (hold, "search.in", "search.maxhits", "scr.limit", NULL);
 	r_config_set (core->config, "search.in", "io.maps.x");
-	r_config_set_i (core->config, "search.maxhits", (ut64)start + page_size + 1);
+	r_config_set_i (core->config, "search.maxhits", (ut64)pagination_start_from_cursor (cursor) + page_size + 1);
 	r_config_set_i (core->config, "scr.limit", 0);
-	char *res = r2mcp_cmdf (ss, "'/g%s%s%s%s", kind, regex, json? "j": "q", filter);
+	// The query is safe to append because r2 runs a line that starts with '
+	// verbatim: it is not split on ; and backticks, $(), ~, | and # are not
+	// interpreted. That does not cover newlines, which end the line, nor >,
+	// which r_core_cmd_str looks for before anything else: both are rejected
+	// above. If r2 changes how it handles ' this has to be reviewed.
+	char *res = r2mcp_cmdf (ss, "'/g%s%s%s%s", kind, regex? "/": "", json? "j": "q", filter);
 	r_config_hold_restore (hold);
 	r_config_hold_free (hold);
 	free (filter);
-
-	bool has_more = false;
-	char *next_cursor = NULL;
-	char *page = NULL;
-	if (json) {
-		RJson *gadgets = R_STR_ISEMPTY (res)? NULL: r_json_parse (res);
-		if (!gadgets || gadgets->type != R_JSON_ARRAY) {
-			// not JSON, most likely an error message
-			r_json_free (gadgets);
-			return tool_cmd_response (res);
+	r_str_trim (res);
+	if (!json) {
+		if (R_STR_ISEMPTY (res)) {
+			free (res);
+			return jsonrpc_tooltext_response ("No gadgets found.");
 		}
-		PJ *pj = pj_new ();
-		pj_o (pj);
-		pj_k (pj, "gadgets");
-		pj_append_rjson_array_page (pj, gadgets, start, start + page_size);
-		pj_end (pj);
-		pagination_set_result (start + page_size, rjson_child_count (gadgets), &has_more, &next_cursor);
-		r_json_free (gadgets);
-		page = pj_drain (pj);
-	} else {
-		r_str_trim (res);
-		page = paginate_text_by_lines (res, cursor, page_size, &has_more, &next_cursor);
-		if (R_STR_ISEMPTY (page)) {
-			free (page);
-			page = strdup (start > 0? "No more gadgets.": "No gadgets found.");
-		}
+		return tool_cmd_response_paginated (ss, res, tool_args);
 	}
+	// r2mcp_cmd appends the log messages of the command, keep only the JSON
+	char *log = strstr (res, "<log>\n");
+	if (log) {
+		*log = 0;
+		r_str_trim (res);
+	}
+	if (*res != '[') {
+		// not the array /gj prints, most likely an error message
+		char *message = r_str_newf ("search_gadgets failed: %s", R_STR_ISEMPTY (res)? "no output": res);
+		char *response = jsonrpc_error_response (-32603, message, NULL, NULL);
+		free (message);
+		free (res);
+		return response;
+	}
+	char *gadgets = r_str_newf ("{\"gadgets\":%s}", res);
 	free (res);
-	char *response = jsonrpc_tool_response_paginated (page, json? page: NULL, ss->content_mode, has_more, next_cursor);
-	free (page);
-	free (next_cursor);
-	return response;
+	return tool_cmd_response_paginated (ss, gadgets, tool_args);
 }
 
 static char *tool_lookup_address(ServerState *ss, RJson *tool_args) {
@@ -1787,7 +1797,7 @@ ToolSpec tool_specs[] = {
 	{ "alloc_memory", "Allocate memory in the target process heap. Provide either size (bytes) or string to allocate", "{\"type\":\"object\",\"properties\":{\"size\":{\"type\":\"integer\",\"description\":\"Number of bytes to allocate (numeric expressions are accepted as strings)\"},\"string\":{\"type\":\"string\",\"description\":\"String to allocate in target heap (returns its address)\"}}}", TOOL_MODE_FRIDA, tool_alloc_memory },
 	{ "change_memory_protection", "Change memory protection (rwx) at the given address and size", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address expression (e.g. sym.main + 4 or 0x401000)\"},\"size\":{\"type\":\"integer\",\"description\":\"Size in bytes of the region (numeric expressions are accepted as strings)\"},\"protection\":{\"type\":\"string\",\"description\":\"New protection string (e.g. rwx, r-x, rw-)\"}},\"required\":[\"address\",\"size\",\"protection\"]}", TOOL_MODE_FRIDA, tool_change_memory_protection },
 	{ "search", "Search for strings, hex patterns, wide strings, or numeric values", "{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\",\"description\":\"The search query (string, hex bytes, or numeric expression for value search)\"},\"type\":{\"type\":\"string\",\"description\":\"Search type: string (default), hex, wide, or value\"},\"value_size\":{\"type\":\"integer\",\"description\":\"For value search: byte width 1, 2, 4 (default), or 8\"}},\"required\":[\"query\"]}", TOOL_MODE_NORMAL | TOOL_MODE_FRIDA, tool_search },
-	{ "search_gadgets", "Search the executable maps for ROP, JOP and COP gadgets (radare2 /g, formerly /R)", "{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\",\"description\":\"Optional filter on the instructions of the gadget; several instructions are separated with ; and matched in that order (e.g. pop rdi;ret)\"},\"type\":{\"type\":\"string\",\"description\":\"Last instruction of the gadget: any (default), ret, call, or jmp\"},\"regex\":{\"type\":\"boolean\",\"description\":\"If true, the query is a regular expression\"},\"cursor\":{\"type\":\"string\",\"description\":\"Cursor for pagination (index of the first gadget to return)\"},\"page_size\":{\"type\":\"integer\",\"description\":\"Number of gadgets per page (default: 100, max: 1000)\"}}}", TOOL_MODE_NORMAL | TOOL_MODE_RO, tool_search_gadgets },
+	{ "search_gadgets", "Search the executable maps for ROP, JOP and COP gadgets (radare2 /g, formerly /R)", "{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\",\"description\":\"Optional filter on the instructions of the gadget; several instructions are separated with ; and matched in that order (e.g. pop rdi;ret)\"},\"type\":{\"type\":\"string\",\"description\":\"Last instruction of the gadget: any (default), ret, call, or jmp\"},\"regex\":{\"type\":\"boolean\",\"description\":\"If true, each instruction of the query is a regular expression\"}," TOOL_SCHEMA_PAGE_PROPS "}}", TOOL_MODE_NORMAL | TOOL_MODE_RO, tool_search_gadgets },
 	{ "lookup_address", "Describe what is at a given address (flag name, symbol, module)", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address expression (e.g. sym.main + 4 or 0x401000)\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_lookup_address },
 	{ "lookup_export", "Resolve an export name to its implementation address", "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"Export name to look up\"}},\"required\":[\"name\"]}", TOOL_MODE_NORMAL | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_lookup_export },
 	{ "lookup_symbol", "Resolve an address to its symbol name", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address expression (e.g. sym.main + 4 or 0x401000)\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_lookup_symbol },
