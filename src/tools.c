@@ -1023,8 +1023,9 @@ static char *tool_search(ServerState *ss, RJson *tool_args) {
 		type = "string";
 	}
 	// r_core_cmd_str runs any command line holding a > without capturing its
-	// output, so the search would come back empty
-	if (strcmp (type, "value") && strchr (query, '>')) {
+	// output, so the search would come back empty. In HTTP mode the command
+	// is forwarded as is and the remote r2 decides.
+	if (!ss->http_mode && strcmp (type, "value") && strchr (query, '>')) {
 		return jsonrpc_error_response (-32602, "Invalid parameter 'query': '>' is not allowed, write it as \\x3e in a string search", NULL, NULL);
 	}
 	if (!strcmp (type, "hex")) {
