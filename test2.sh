@@ -666,6 +666,12 @@ run_search_gadgets_regression() {
 	append_tool_call "$req" 11 search_gadgets "$(jq -cn --arg query "ret
 f $INJECT_MARKER=1337" '{query:$query}')"
 	append_tool_call "$req" 12 calculate "$(jq -cn --arg expression "$INJECT_MARKER" '{expression:$expression}')"
+	append_tool_call "$req" 13 search_gadgets '{"query":"[","regex":true}'
+	append_tool_call "$req" 14 search_gadgets '{"query":"^pop;[","regex":true}'
+	append_tool_call "$req" 15 search_gadgets '{"query":"["}'
+	append_tool_call "$req" 16 search_gadgets '{"cursor":"2147483647"}'
+	append_tool_call "$req" 17 search_gadgets '{"cursor":"99999999999999999999","page_size":1}'
+	append_tool_call "$req" 18 search_gadgets '{"cursor":"-1","page_size":1}'
 	run_session "$req" "$resp" -C both
 	response_by_id "$resp" 3 | jq -e '.result | (.structuredContent.gadgets | map(.opcodes | map(.opcode)) == [["pop rdi", "ret"], ["pop rsi", "ret"]]) and (.pagination | not)' >/dev/null || fail 'search_gadgets: expected the two handcrafted gadgets'
 	response_by_id "$resp" 4 | jq -e '.result | (.structuredContent.gadgets | length == 1) and .pagination.nextCursor == "1"' >/dev/null || fail 'search_gadgets: first page must hold one gadget and a cursor'
@@ -677,6 +683,43 @@ f $INJECT_MARKER=1337" '{query:$query}')"
 	response_by_id "$resp" 10 | jq -e '.result.structuredContent.gadgets == []' >/dev/null || fail 'search_gadgets: semicolon in query must be literal'
 	assert_error_contains_param "$(response_by_id "$resp" 11)" "query" "search_gadgets:newline-in-query"
 	response_by_id "$resp" 12 | jq -e '.result.content[0].text == "0x0"' >/dev/null || fail 'search_gadgets: input created injection marker'
+	assert_error_contains_param "$(response_by_id "$resp" 13)" "query" "search_gadgets:invalid-regex"
+	assert_error_contains_param "$(response_by_id "$resp" 14)" "query" "search_gadgets:invalid-regex-instruction"
+	response_by_id "$resp" 15 | jq -e '.result.structuredContent.gadgets == []' >/dev/null || fail 'search_gadgets: plain query must not be compiled as a regex'
+	local id
+	for id in 16 17; do
+		response_by_id "$resp" "$id" | jq -e '.result | .structuredContent.gadgets == [] and (.pagination | not)' >/dev/null || fail "search_gadgets: a cursor past the end must return an empty last page (#$id)"
+	done
+	response_by_id "$resp" 18 | jq -e '.result | (.structuredContent.gadgets | length == 1) and .pagination.nextCursor == "1"' >/dev/null || fail 'search_gadgets: a negative cursor must start from the first gadget'
+}
+
+# r_core_cmd_str runs a command line holding a > without capturing its output,
+# which would print it between the JSON-RPC messages
+run_search_redirect_regression() {
+	local req="$TMPDIR/search-redirect.req"
+	local resp="$TMPDIR/search-redirect.resp"
+	local out="$TMPDIR/search-redirect.out"
+	local file="hex://5fc35ec39090909090909090909090909090909090909090909090909090909090909090"
+	: > "$req"
+	append_request "$req" 1 initialize '{"capabilities":{},"clientInfo":{"name":"testsuite","version":"1"}}'
+	append_notification "$req" notifications/initialized '{}'
+	append_tool_call "$req" 2 open_file "$(jq -cn --arg file "$file" '{file_path:$file,arch:"x86",bits:"64"}')"
+	append_tool_call "$req" 3 search_gadgets "$(jq -cn --arg query "x > $out" '{query:$query}')"
+	append_tool_call "$req" 4 search_gadgets "$(jq -cn --arg query "x > $out" '{query:$query,regex:true}')"
+	append_tool_call "$req" 5 search "$(jq -cn --arg query "_ > $out" '{query:$query}')"
+	append_tool_call "$req" 6 search "$(jq -cn --arg query "_ > $out" '{query:$query,type:"wide"}')"
+	append_tool_call "$req" 7 search "$(jq -cn --arg query "5f > $out" '{query:$query,type:"hex"}')"
+	append_tool_call "$req" 8 search '{"query":"\\x5f\\xc3"}'
+	run_session "$req" "$resp" -C json
+	local id
+	for id in 3 4 5 6 7; do
+		assert_error_contains_param "$(response_by_id "$resp" "$id")" "query" "search:redirect-in-query:#$id"
+	done
+	response_by_id "$resp" 8 | jq -e '.result.content[0].text | test("hit[0-9]+_[0-9]+")' >/dev/null || fail 'search: an escaped query must still match'
+	[ ! -e "$out" ] || fail 'search: > in a query wrote a file'
+	if env ASAN_OPTIONS=detect_leaks=0 LSAN_OPTIONS=detect_leaks=0 "$BIN" -C json < "$req" | grep -v '^{' | grep -q .; then
+		fail 'search: > in a query printed outside the JSON-RPC messages'
+	fi
 }
 
 run_list_filter_regressions() {
@@ -1221,6 +1264,7 @@ run_numeric_string_regression
 run_tool_argument_regressions
 run_lookup_export_regression
 run_search_gadgets_regression
+run_search_redirect_regression
 run_list_filter_regressions
 run_close_file_regression
 run_open_session_regression

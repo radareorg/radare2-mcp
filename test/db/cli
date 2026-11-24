@@ -96,7 +96,7 @@ RUN
 NAME=CLI DSL search_gadgets handcrafted
 FILE=-
 CMDS=<<EOF
-!exec ../src/r2mcp -nN -T 'open_file file_path="hex://5fc35ec39090909090909090909090909090909090909090909090909090909090909090" arch="x86" bits="64"; search_gadgets; search_gadgets query="pop rsi"; search_gadgets type="ret" page_size="1"; search_gadgets query="xor"; search_gadgets type="bogus"; close_file'
+!exec ../src/r2mcp -nN -T 'open_file file_path="hex://5fc35ec39090909090909090909090909090909090909090909090909090909090909090" arch="x86" bits="64"; search_gadgets; search_gadgets query="pop rsi"; search_gadgets type="ret" page_size="1"; search_gadgets query="xor"; search_gadgets type="bogus"; search_gadgets query="[" regex="true"; search_gadgets query="x > y"; search query="x > y"; close_file'
 EOF
 EXPECT=
 EXPECT_ERR=<<EOF
@@ -109,6 +109,9 @@ INFO: Radare2 core initialized
 [DSL] search_gadgets -> {"content":[{"type":"text","text":"0x00000000: pop rdi; ret;"}],"pagination":{"hasMore":true,"nextCursor":"1"}}
 [DSL] search_gadgets -> {"content":[{"type":"text","text":"No gadgets found."}]}
 [DSL] search_gadgets -> {"jsonrpc":"2.0","error":{"code":-32602,"message":"Invalid parameter 'type': expected any, ret, call, or jmp"}}
+[DSL] search_gadgets -> {"jsonrpc":"2.0","error":{"code":-32602,"message":"Invalid parameter 'query': not a valid regular expression"}}
+[DSL] search_gadgets -> {"jsonrpc":"2.0","error":{"code":-32602,"message":"Invalid parameter 'query': control characters and '>' are not allowed"}}
+[DSL] search -> {"jsonrpc":"2.0","error":{"code":-32602,"message":"Invalid parameter 'query': '>' is not allowed, write it as \\x3e in a string search"}}
 [DSL] close_file -> {"content":[{"type":"text","text":"File closed successfully."}]}
 EOF
 RUN
