@@ -1052,10 +1052,18 @@ static char *tool_search(ServerState *ss, RJson *tool_args) {
 }
 
 // Gadgets are listed as "pop rdi; ret;" but r2 filters them with "pop rdi;ret".
+// /g replaces ,, with ; before splitting the instructions. Validate and pass
+// the same normalized string, or a regex like [,,] would bypass validation.
 // Returns NULL when regex is set and one of the instructions does not compile.
-static char *gadget_filter(const char *query, bool regex) {
+static char *gadget_filter (const char *query, bool regex) {
 	RStrBuf *sb = r_strbuf_new ("");
-	RList *parts = r_str_split_duplist (query, ";", true);
+#if defined(_MSC_VER)
+	char *normalized = _strdup (query);
+#else
+	char *normalized = r_str_new (query);
+#endif
+	normalized = r_str_replace (normalized, ",,", ";", true);
+	RList *parts = r_str_split_duplist (normalized, ";", true);
 	RListIter *it;
 	const char *part;
 	bool valid = true;
@@ -1075,6 +1083,7 @@ static char *gadget_filter(const char *query, bool regex) {
 		r_strbuf_appendf (sb, "%s%s", r_strbuf_is_empty (sb)? " ": ";", part);
 	}
 	r_list_free (parts);
+	free (normalized);
 	if (!valid) {
 		r_strbuf_free (sb);
 		return NULL;
@@ -1124,13 +1133,24 @@ static char *tool_search_gadgets(ServerState *ss, RJson *tool_args) {
 	pagination_params (ss, tool_args, &cursor, &page_size);
 	const bool json = ss->content_mode != R2MCP_CONTENT_TEXT;
 	RCore *core = ss->rstate->core;
-	// Search the executable maps only and stop one hit after the requested
-	// page: this bounds the time and the output, so scr.limit is not needed
+	// /g without a type replays gadget_sdb whenever the namespace exists,
+	// ignoring the query and emitting non-array JSON. Do not read or clear the
+	// user's cache; explicit ret/call/jmp searches take the uncached path.
+	if (!*kind && sdb_ns (core->sdb, "gadget_sdb", false)) {
+		free (filter);
+		return jsonrpc_error_response (-32603, "search_gadgets cannot search with an existing gadget_sdb cache; use a new session or specify type=ret, call, or jmp", NULL, NULL);
+	}
+	// Search executable maps and stop after one more emitted hit than the
+	// requested page. This bounds output, not scan time: /g still decodes maps
+	// before finding gadgets, and each page scans again.
 	RConfigHold *hold = r_config_hold_new (core->config);
-	r_config_hold (hold, "search.in", "search.maxhits", "scr.limit", NULL);
+	r_config_hold (hold, "search.in", "search.maxhits", "scr.limit", "gadget.sdb", NULL);
 	r_config_set (core->config, "search.in", "io.maps.x");
 	r_config_set_i (core->config, "search.maxhits", (ut64)pagination_start_from_cursor (cursor) + page_size + 1);
 	r_config_set_i (core->config, "scr.limit", 0);
+	// Prevent /g from creating the cache while the tool is paginating, even
+	// when the user has gadget.sdb enabled; restore the setting afterwards.
+	r_config_set_b (core->config, "gadget.sdb", false);
 	// The query is safe to append because r2 runs a line that starts with '
 	// verbatim: it is not split on ; and backticks, $(), ~, | and # are not
 	// interpreted. That does not cover newlines, which end the line, nor >,
