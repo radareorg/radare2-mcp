@@ -15,6 +15,7 @@ static void r2state_settings(RCore *core) {
 	r_config_set_b (core->config, "scr.prompt", false);
 	r_config_set_b (core->config, "scr.echo", false);
 	r_config_set_b (core->config, "scr.flush", true);
+	r_config_set_b (core->config, "scr.last", false);
 	r_config_set_b (core->config, "scr.null", false);
 	r_config_set_b (core->config, "scr.pipecolor", false);
 	r_config_set_b (core->config, "scr.utf8", false);
