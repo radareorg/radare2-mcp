@@ -1057,11 +1057,7 @@ static char *tool_search(ServerState *ss, RJson *tool_args) {
 // Returns NULL when regex is set and one of the instructions does not compile.
 static char *gadget_filter (const char *query, bool regex) {
 	RStrBuf *sb = r_strbuf_new ("");
-#if defined(_MSC_VER)
-	char *normalized = _strdup (query);
-#else
 	char *normalized = r_str_new (query);
-#endif
 	normalized = r_str_replace (normalized, ",,", ";", true);
 	RList *parts = r_str_split_duplist (normalized, ";", true);
 	RListIter *it;
@@ -1091,18 +1087,18 @@ static char *gadget_filter (const char *query, bool regex) {
 	return r_strbuf_drain (sb);
 }
 
-static const char *gadget_kind_from_string(const char *type) {
-	if (R_STR_ISEMPTY (type) || !strcmp (type, "any")) {
+static const char *gadget_kind_from_string (const char *type) {
+	static const struct { const char *name; const char *flag; } kinds[] = {
+		{ "any", "" }, { "ret", "R" }, { "call", "C" }, { "jmp", "J" },
+	};
+	size_t i;
+	if (R_STR_ISEMPTY (type)) {
 		return "";
 	}
-	if (!strcmp (type, "ret")) {
-		return "R";
-	}
-	if (!strcmp (type, "call")) {
-		return "C";
-	}
-	if (!strcmp (type, "jmp")) {
-		return "J";
+	for (i = 0; i < R_ARRAY_SIZE (kinds); i++) {
+		if (!strcmp (type, kinds[i].name)) {
+			return kinds[i].flag;
+		}
 	}
 	return NULL;
 }
@@ -1133,29 +1129,19 @@ static char *tool_search_gadgets(ServerState *ss, RJson *tool_args) {
 	pagination_params (ss, tool_args, &cursor, &page_size);
 	const bool json = ss->content_mode != R2MCP_CONTENT_TEXT;
 	RCore *core = ss->rstate->core;
-	// /g without a type replays gadget_sdb whenever the namespace exists,
-	// ignoring the query and emitting non-array JSON. Do not read or clear the
-	// user's cache; explicit ret/call/jmp searches take the uncached path.
+	// Bare /g replays the user's gadget cache; explicit type searches do not.
 	if (!*kind && sdb_ns (core->sdb, "gadget_sdb", false)) {
 		free (filter);
 		return jsonrpc_error_response (-32603, "search_gadgets cannot search with an existing gadget_sdb cache; use a new session or specify type=ret, call, or jmp", NULL, NULL);
 	}
-	// Search executable maps and stop after one more emitted hit than the
-	// requested page. This bounds output, not scan time: /g still decodes maps
-	// before finding gadgets, and each page scans again.
+	// Search executable maps; /g decodes the map again on every page.
 	RConfigHold *hold = r_config_hold_new (core->config);
 	r_config_hold (hold, "search.in", "search.maxhits", "scr.limit", "gadget.sdb", NULL);
 	r_config_set (core->config, "search.in", "io.maps.x");
 	r_config_set_i (core->config, "search.maxhits", (ut64)pagination_start_from_cursor (cursor) + page_size + 1);
 	r_config_set_i (core->config, "scr.limit", 0);
-	// Prevent /g from creating the cache while the tool is paginating, even
-	// when the user has gadget.sdb enabled; restore the setting afterwards.
 	r_config_set_b (core->config, "gadget.sdb", false);
-	// The query is safe to append because r2 runs a line that starts with '
-	// verbatim: it is not split on ; and backticks, $(), ~, | and # are not
-	// interpreted. That does not cover newlines, which end the line, nor >,
-	// which r_core_cmd_str looks for before anything else: both are rejected
-	// above. If r2 changes how it handles ' this has to be reviewed.
+	// ' runs the line verbatim; newlines and '>' are rejected above.
 	char *res = r2mcp_cmdf (ss, "'/g%s%s%s%s", kind, regex? "/": "", json? "j": "q", filter);
 	r_config_hold_restore (hold);
 	r_config_hold_free (hold);
