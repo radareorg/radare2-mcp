@@ -14,7 +14,7 @@ SANDBOX_ERROR = "Sandbox: system call disabled"
 
 
 class JsonCommandLogTests(unittest.TestCase):
-    def exchange(self, commands, mode="both"):
+    def exchange(self, commands, mode="both", **arguments):
         with tempfile.TemporaryDirectory(prefix="r2mcp-json-logs-") as directory:
             fixture = Path(directory) / "fixture.bin"
             fixture.write_bytes(bytes(64))
@@ -32,7 +32,7 @@ class JsonCommandLogTests(unittest.TestCase):
                 if command == "denied_import":
                     command = json.dumps({"cmd": "to " + str(header), "json": False})
                 requests.append({"id": index, "method": "tools/call", "params": {
-                    "name": "run_command", "arguments": {"command": command}}})
+                    "name": "run_command", "arguments": {"command": command, **arguments}}})
             payload = "".join(json.dumps({"jsonrpc": "2.0", **request}) + "\n"
                               for request in requests)
             default_binary = os.environ.get("R2MCP_BIN", str(Path(__file__).parent / "src/r2mcp"))
@@ -87,6 +87,31 @@ class JsonCommandLogTests(unittest.TestCase):
         self.assertEqual(text.count("<log>"), 1, text)
         self.assertEqual(text.count("</log>"), 1, text)
         self.assertEqual(stderr.count(WARNING), 1, stderr)
+
+    def test_plain_logs_do_not_count_as_results(self):
+        command = "?e alpha;?e beta"
+        results, stderr = self.exchange([command, WARNING_COMMAND + ";" + command], page_size=2, cursor="1")
+        clean, result = results
+        self.assertEqual(result["structuredContent"], clean["structuredContent"])
+        self.assertEqual(result.get("pagination"), clean.get("pagination"))
+        text = result["content"][0]["text"]
+        self.assertTrue(text.startswith("beta\n<log>\n"), text)
+        self.assertEqual(text.count(WARNING), 1, text)
+        self.assertEqual(stderr.count(WARNING), 1, stderr)
+
+    def test_json_output_and_diagnostics_use_separate_blocks(self):
+        for mode in ["json", "structured", "both"]:
+            with self.subTest(mode=mode):
+                results, stderr = self.exchange([WARNING_COMMAND + ";ij"], mode)
+                result = results[0]
+                data, logs = result["content"]
+                info = json.loads(data["text"])
+                self.assertEqual(info["core"]["size"], 64)
+                self.assertNotIn("<log>", data["text"])
+                self.assertEqual(logs["text"].count(WARNING), 1)
+                self.assertEqual(stderr.count(WARNING), 1, stderr)
+                if mode != "json":
+                    self.assertEqual(result["structuredContent"], info)
 
     def test_plain_command_logs_are_unchanged_after_json2(self):
         structured = json.dumps({"cmd": WARNING_COMMAND, "json": False})

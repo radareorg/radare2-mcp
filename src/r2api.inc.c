@@ -91,31 +91,34 @@ static char *r2cmd_over_http(ServerState *ss, const char *cmd) {
 	return res;
 }
 
-/* printf-like wrapper for r2mcp_cmd to avoid boilerplate */
-char *r2mcp_cmdf(ServerState *ss, const char *fmt, ...) {
+static char *r2mcp_cmdv(ServerState *ss, char **logs, const char *fmt, va_list ap) {
+	if (logs) {
+		*logs = NULL;
+	}
 	if (!fmt) {
-		return r2mcp_cmd (ss, "");
+		return r2mcp_cmd_capture (ss, "", logs);
 	}
-	va_list ap;
-	va_start (ap, fmt);
-	va_list ap2;
-	va_copy (ap2, ap);
-	int n = vsnprintf (NULL, 0, fmt, ap2);
-	va_end (ap2);
-	if (n < 0) {
-		va_end (ap);
-		return NULL;
-	}
-	char *cmd = (char *)malloc ((size_t)n + 1);
-	if (!cmd) {
-		va_end (ap);
-		return NULL;
-	}
-	vsnprintf (cmd, (size_t)n + 1, fmt, ap);
-	va_end (ap);
-	char *res = r2mcp_cmd (ss, cmd);
+	char *cmd = r_str_newvf (fmt, ap);
+	char *res = cmd? r2mcp_cmd_capture (ss, cmd, logs): NULL;
 	free (cmd);
 	return res;
+}
+
+char *r2mcp_cmd_capturef(ServerState *ss, char **logs, const char *fmt, ...) {
+	va_list ap;
+	va_start (ap, fmt);
+	char *res = r2mcp_cmdv (ss, logs, fmt, ap);
+	va_end (ap);
+	return res;
+}
+
+char *r2mcp_cmdf(ServerState *ss, const char *fmt, ...) {
+	va_list ap;
+	va_start (ap, fmt);
+	char *logs;
+	char *res = r2mcp_cmdv (ss, &logs, fmt, ap);
+	va_end (ap);
+	return r2mcp_cmd_text (res, logs);
 }
 
 R_IPI bool r2_open_file(ServerState *ss, const char *filepath, ut64 baddr, const char *arch, int bits, const char *cpu) {
@@ -263,7 +266,7 @@ R_IPI int r2_function_count(ServerState *ss) {
 	if (!ss || ss->http_mode) {
 		return 0;
 	}
-	char *cnt = r2mcp_cmd (ss, "aflc");
+	char *cnt = r2mcp_cmd_capture (ss, "aflc", NULL);
 	int n = (cnt && R_STR_ISNOTEMPTY (cnt))? atoi (cnt): 0;
 	free (cnt);
 	return n;

@@ -111,13 +111,13 @@ static bool rjson_get_bool_flag(RJson *args, const char *param_name) {
 }
 
 static char *tool_cmd_response(char *res);
-static char *tool_cmd_response_paginated(ServerState *ss, char *res, RJson *tool_args);
+static char *tool_cmd_response_page(ServerState *ss, char *res, char *logs, RJson *tool_args);
 static char *filter_lines_by_regex(const char *input, const char *pattern);
 
 // Count results of a r2 listing command using r2's native grep facility.
 // Filtered counts are done locally because r2's `~` syntax is not a regex.
 static int r2_grep_count(ServerState *ss, const char *cmd) {
-	char *res = r2mcp_cmdf (ss, "%s~?", cmd);
+	char *res = r2mcp_cmd_capturef (ss, NULL, "%s~?", cmd);
 	int n = R_STR_ISEMPTY (res)? 0: atoi (r_str_trim_head_ro (res));
 	free (res);
 	if (n < 0) {
@@ -161,19 +161,21 @@ static char *filter_list_result(char *res, RJson *tool_args) {
 	return res;
 }
 
-static char *list_text_response(ServerState *ss, char *res, RJson *tool_args) {
+static char *list_text_response(ServerState *ss, char *res, char *logs, RJson *tool_args) {
 	res = filter_list_result (res, tool_args);
 	if (tool_args && rjson_get_bool_flag (tool_args, "count")) {
 		int n = list_line_count (res);
 		free (res);
+		free (logs);
 		return count_response (n);
 	}
 	const char *filter = tool_args? r_json_get_str (tool_args, "filter"): NULL;
 	if (R_STR_ISNOTEMPTY (filter) && R_STR_ISEMPTY (res)) {
 		free (res);
+		free (logs);
 		return jsonrpc_tooltext_response ("No results matched the given filter.");
 	}
-	return tool_cmd_response_paginated (ss, res, tool_args);
+	return tool_cmd_response_page (ss, res, logs, tool_args);
 }
 
 // Shared implementation for list_* tools that share the simple pattern
@@ -189,8 +191,9 @@ static char *list_cmd_response(ServerState *ss, RJson *tool_args, const char *cm
 			return count_response (n);
 		}
 	}
-	char *res = r2mcp_cmd (ss, cmd);
-	return list_text_response (ss, res, tool_args);
+	char *logs;
+	char *res = r2mcp_cmd_capture (ss, cmd, &logs);
+	return list_text_response (ss, res, logs, tool_args);
 }
 
 static char *tool_cmd_response(char *res) {
@@ -199,7 +202,7 @@ static char *tool_cmd_response(char *res) {
 	return response;
 }
 
-static char *tool_cmd_response_paginated(ServerState *ss, char *res, RJson *tool_args) {
+static char *tool_cmd_response_page(ServerState *ss, char *res, char *logs, RJson *tool_args) {
 	const char *cursor;
 	int page_size;
 	bool has_more = false;
@@ -220,7 +223,8 @@ static char *tool_cmd_response_paginated(ServerState *ss, char *res, RJson *tool
 			if (!paginated) {
 				paginated = strdup ("");
 			}
-			response = jsonrpc_tool_response_paginated (paginated, paginated, mode, has_more, next_cursor);
+			response = jsonrpc_tool_response_paginated (paginated, paginated, mode, has_more, next_cursor, logs);
+			free (logs);
 			free (paginated);
 			free (next_cursor);
 			return response;
@@ -232,7 +236,8 @@ static char *tool_cmd_response_paginated(ServerState *ss, char *res, RJson *tool
 	if (!paginated) {
 		paginated = strdup ("");
 	}
-	response = jsonrpc_tool_response_paginated (paginated, NULL, mode, has_more, next_cursor);
+	response = jsonrpc_tool_response_paginated (paginated, NULL, mode, has_more, next_cursor, logs);
+	free (logs);
 	free (paginated);
 	free (next_cursor);
 	return response;
@@ -499,17 +504,17 @@ static char *tool_list_functions(ServerState *ss, RJson *tool_args) {
 	// Fast path for an unfiltered count. Filtered counts must use the same regex
 	// path as filtered lists so their results cannot disagree.
 	if (count_only && !only_named && R_STR_ISEMPTY (filter)) {
-		char *cnt = r2mcp_cmd (ss, "aflc");
+		char *cnt = r2mcp_cmd_capture (ss, "aflc", NULL);
 		int n = R_STR_ISEMPTY (cnt)? 0: atoi (r_str_trim_head_ro (cnt));
 		free (cnt);
 		if (n == 0) {
 			// nothing yet, try implicit analysis once
-			free (r2mcp_cmd (ss, "aaa"));
+			free (r2mcp_cmd_capture (ss, "aaa", NULL));
 			int implicit_level = ss->ignore_analysis_level ? 0 : 2;
 			if (implicit_level > ss->rstate->analyze_level) {
 				ss->rstate->analyze_level = implicit_level;
 			}
-			cnt = r2mcp_cmd (ss, "aflc");
+			cnt = r2mcp_cmd_capture (ss, "aflc", NULL);
 			n = R_STR_ISEMPTY (cnt)? 0: atoi (r_str_trim_head_ro (cnt));
 			free (cnt);
 		}
@@ -525,24 +530,27 @@ static char *tool_list_functions(ServerState *ss, RJson *tool_args) {
 	rjson_get_int_param (ss, tool_args, "start", &start);
 	rjson_get_int_param (ss, tool_args, "max_length", &max_length);
 
-	char *res = r2mcp_cmd (ss, "afl,addr/cols/name");
+	char *logs;
+	char *res = r2mcp_cmd_capture (ss, "afl,addr/cols/name", &logs);
 	r_str_trim (res);
 	if (R_STR_ISEMPTY (res)) {
 		free (res);
-		free (r2mcp_cmd (ss, "aaa"));
+		free (r2mcp_cmd_capture (ss, "aaa", NULL));
 		int implicit_level = ss->ignore_analysis_level ? 0 : 2;
 		if (implicit_level > ss->rstate->analyze_level) {
 			ss->rstate->analyze_level = implicit_level;
 		}
-		res = r2mcp_cmd (ss, "afl,addr/cols/name");
+		free (logs);
+		res = r2mcp_cmd_capture (ss, "afl,addr/cols/name", &logs);
 		r_str_trim (res);
 		if (R_STR_ISEMPTY (res)) {
 			free (res);
 			if (count_only) {
+				free (logs);
 				return count_response (0);
 			}
 			char *err = strdup ("No functions found after running analysis (aaa). The binary may have no recognizable code, try analyze with a higher level (3 or 4) or inspect entrypoints/imports.");
-			return tool_cmd_response (err);
+			return tool_cmd_response (r2mcp_cmd_text (err, logs));
 		}
 	}
 	// Apply filtering if only_named is true
@@ -563,6 +571,7 @@ static char *tool_list_functions(ServerState *ss, RJson *tool_args) {
 	if (R_STR_ISEMPTY (res)) {
 		free (res);
 		if (count_only) {
+			free (logs);
 			return count_response (0);
 		}
 		const char *msg;
@@ -571,7 +580,8 @@ static char *tool_list_functions(ServerState *ss, RJson *tool_args) {
 		} else {
 			msg = "No functions found. Run analyze first.";
 		}
-		return tool_cmd_response (strdup (msg));
+		free (logs);
+		return jsonrpc_tooltext_response (msg);
 	}
 	if (count_only) {
 		int header_lines = R_STR_ISNOTEMPTY (filter)? 0: 2;
@@ -580,6 +590,7 @@ static char *tool_list_functions(ServerState *ss, RJson *tool_args) {
 			n = 0;
 		}
 		free (res);
+		free (logs);
 		return count_response (n);
 	}
 	// Regex filtering removes the table headers, so only skip them when the
@@ -594,7 +605,7 @@ static char *tool_list_functions(ServerState *ss, RJson *tool_args) {
 	char *paginated = paginate_text_by_lines (res, cursor_buf, page_size, &has_more, &next_cursor);
 	free (res);
 	free (next_cursor);
-	return tool_cmd_response (paginated);
+	return tool_cmd_response (r2mcp_cmd_text (paginated, logs));
 }
 
 static char *tool_list_files(ServerState *ss, RJson *tool_args) {
@@ -611,9 +622,10 @@ static char *tool_list_files(ServerState *ss, RJson *tool_args) {
 	// 'ls quotes the path so r2 grep modifiers can't be appended; we filter
 	// and count locally instead.
 	char *cmd = r_str_newf ("'ls -q %s", path);
-	char *res = r2mcp_cmd (ss, cmd);
+	char *logs;
+	char *res = r2mcp_cmd_capture (ss, cmd, &logs);
 	free (cmd);
-	return list_text_response (ss, res, tool_args);
+	return list_text_response (ss, res, logs, tool_args);
 }
 
 static char *tool_list_classes(ServerState *ss, RJson *tool_args) {
@@ -627,8 +639,9 @@ static char *tool_list_methods(ServerState *ss, RJson *tool_args) {
 	}
 	// The quote/colon prefixes quote the rest of the line, so r2 grep modifiers
 	// can't be appended. Count and filter locally.
-	char *res = r2mcp_cmdf (ss, "'%sic %s", fx (ss), classname);
-	return list_text_response (ss, res, tool_args);
+	char *logs;
+	char *res = r2mcp_cmd_capturef (ss, &logs, "'%sic %s", fx (ss), classname);
+	return list_text_response (ss, res, logs, tool_args);
 }
 
 static char *tool_list_decompilers(ServerState *ss, RJson *tool_args) {
@@ -661,8 +674,14 @@ static char *tool_show_info(ServerState *ss, RJson *tool_args) {
 	return tool_cmd_response (r2mcp_cmd (ss, ss->frida_mode? ":i": "i;iH"));
 }
 
-static char *function_info(ServerState *ss, const RJson *address, ut64 addr, const char *cmd) {
-	return address? r2mcp_cmdf (ss, "'@0x%" PFMT64x "'%s", addr, cmd): r2mcp_cmd (ss, cmd);
+static char *function_info(ServerState *ss, const RJson *address, ut64 addr, const char *cmd, char **logs) {
+	return address? r2mcp_cmd_capturef (ss, logs, "'@0x%" PFMT64x "'%s", addr, cmd): r2mcp_cmd_capture (ss, cmd, logs);
+}
+
+static char *function_info_text(ServerState *ss, const RJson *address, ut64 addr) {
+	char *logs;
+	char *res = function_info (ss, address, addr, "afi", &logs);
+	return r2mcp_cmd_text (res, logs);
 }
 
 static char *tool_show_function_details(ServerState *ss, RJson *tool_args) {
@@ -672,19 +691,19 @@ static char *tool_show_function_details(ServerState *ss, RJson *tool_args) {
 		return jsonrpc_error_numeric_param ("address");
 	}
 	if (ss->content_mode == R2MCP_CONTENT_TEXT) {
-		return tool_cmd_response (function_info (ss, address, addr, "afi"));
+		return tool_cmd_response (function_info_text (ss, address, addr));
 	}
-	char *res = function_info (ss, address, addr, "afiJ");
+	char *res = function_info (ss, address, addr, "afiJ", NULL);
 	RJson *data = R_STR_ISEMPTY (res)? NULL: r_json_parse (res);
 	if (!data || (data->type != R_JSON_ARRAY && data->type != R_JSON_OBJECT && data->type != R_JSON_NULL)) {
 		r_json_free (data);
 		free (res);
-		res = function_info (ss, address, addr, "afij");
+		res = function_info (ss, address, addr, "afij", NULL);
 		data = R_STR_ISEMPTY (res)? NULL: r_json_parse (res);
 		if (!data || data->type != R_JSON_ARRAY) {
 			r_json_free (data);
 			free (res);
-			return tool_cmd_response (function_info (ss, address, addr, "afi"));
+			return tool_cmd_response (function_info_text (ss, address, addr));
 		}
 	}
 	PJ *pj = pj_new ();
@@ -703,7 +722,7 @@ static char *tool_show_function_details(ServerState *ss, RJson *tool_args) {
 	r_json_free (data);
 	free (res);
 	char *json = pj_drain (pj);
-	char *human = ss->content_mode == R2MCP_CONTENT_BOTH? function_info (ss, address, addr, "afi"): strdup (json);
+	char *human = ss->content_mode == R2MCP_CONTENT_BOTH? function_info_text (ss, address, addr): strdup (json);
 	return tool_mode_response (ss, human, json);
 }
 
@@ -810,31 +829,20 @@ static char *tool_analyze(ServerState *ss, RJson *tool_args) {
 		return response;
 	}
 	char *err = r2_analyze (ss, level, timeout_seconds);
-	char *cmd_result = r2mcp_cmd (ss, "aflc");
-	char *errstr;
-	if (R_STR_ISNOTEMPTY (err)) {
-		errstr = r_str_newf ("\n\n<log>\n%s\n</log>\n", err);
-	} else {
-		errstr = strdup ("");
-	}
+	char *cmd_result = r2mcp_cmd_capture (ss, "aflc", NULL);
 	bool timed_out = timeout_json && R_STR_ISNOTEMPTY (err) && r_str_casestr (err, "timeout");
 	char *text;
 	if (timed_out) {
-		text = r_str_newf ("Analysis stopped after %d second%s at level %d.\nFound %d functions so far.%s",
+		text = r_str_newf ("Analysis stopped after %d second%s at level %d.\nFound %d functions so far.",
 			timeout_seconds,
 			timeout_seconds == 1? "": "s",
 			level,
-			atoi (cmd_result),
-			errstr);
+			atoi (cmd_result));
 	} else {
-		text = r_str_newf ("Analysis completed with level %d.\nFound %d functions.%s", level, atoi (cmd_result), errstr);
+		text = r_str_newf ("Analysis completed with level %d.\nFound %d functions.", level, atoi (cmd_result));
 	}
-	char *response = jsonrpc_tooltext_response (text);
-	free (err);
-	free (errstr);
 	free (cmd_result);
-	free (text);
-	return response;
+	return tool_cmd_response (r2mcp_cmd_text (text, err));
 }
 
 static char *tool_disassemble(ServerState *ss, RJson *tool_args) {
@@ -871,7 +879,7 @@ static char *tool_use_decompiler(ServerState *ss, RJson *tool_args) {
 	if (!validate_required_string_param (tool_args, "name", &name) || R_STR_ISEMPTY (name)) {
 		return jsonrpc_error_missing_param ("name");
 	}
-	char *available = r2mcp_cmd (ss, "e cmd.pdc=?");
+	char *available = r2mcp_cmd_capture (ss, "e cmd.pdc=?", NULL);
 	const char *cmd = decompiler_command (name, available);
 	if (cmd) {
 		free (r2mcp_cmdf (ss, "-e cmd.pdc=%s", cmd));
@@ -896,9 +904,10 @@ static char *tool_xrefs_from(ServerState *ss, RJson *tool_args) {
 	// axf covers the instruction at the address, axff its whole function
 	bool whole_function = rjson_get_bool_flag (tool_args, "function");
 	const char *cmd = whole_function? "axff": "axf";
+	char *logs;
 	// The output is paginated here, so scr.limit must not truncate it first
 	if (ss->content_mode != R2MCP_CONTENT_TEXT) {
-		char *res = r2mcp_cmdf (ss, "%sj @e:scr.limit=0 @ 0x%"PFMT64x, cmd, address);
+		char *res = r2mcp_cmd_capturef (ss, &logs, "%sj @e:scr.limit=0 @ 0x%"PFMT64x, cmd, address);
 		RJson *data = R_STR_ISEMPTY (res)? NULL: r_json_parse (res);
 		if (data && data->type == R_JSON_ARRAY) {
 			PJ *pj = pj_new ();
@@ -908,12 +917,13 @@ static char *tool_xrefs_from(ServerState *ss, RJson *tool_args) {
 			pj_end (pj);
 			r_json_free (data);
 			free (res);
-			return tool_cmd_response_paginated (ss, pj_drain (pj), tool_args);
+			return tool_cmd_response_page (ss, pj_drain (pj), logs, tool_args);
 		}
 		r_json_free (data);
 		free (res);
+		free (logs);
 	}
-	char *res = r2mcp_cmdf (ss, "%s @e:scr.limit=0 @ 0x%"PFMT64x, cmd, address);
+	char *res = r2mcp_cmd_capturef (ss, &logs, "%s @e:scr.limit=0 @ 0x%"PFMT64x, cmd, address);
 	if (R_STR_ISEMPTY (r_str_trim_head_ro (res))) {
 		free (res);
 		if (whole_function) {
@@ -921,9 +931,9 @@ static char *tool_xrefs_from(ServerState *ss, RJson *tool_args) {
 		} else {
 			res = r_str_newf ("No references from the instruction at 0x%"PFMT64x". Set function=true to list the references of its whole function.", address);
 		}
-		return tool_cmd_response (res);
+		return tool_cmd_response (r2mcp_cmd_text (res, logs));
 	}
-	return tool_cmd_response_paginated (ss, res, tool_args);
+	return tool_cmd_response_page (ss, res, logs, tool_args);
 }
 
 static char *tool_disassemble_function(ServerState *ss, RJson *tool_args) {
@@ -931,7 +941,9 @@ static char *tool_disassemble_function(ServerState *ss, RJson *tool_args) {
 	if (!validate_address_param (ss, tool_args, "address", &address)) {
 		return jsonrpc_error_numeric_param ("address");
 	}
-	return tool_cmd_response_paginated (ss, r2mcp_cmdf (ss, "'@0x%"PFMT64x"'pdf", address), tool_args);
+	char *logs;
+	char *res = r2mcp_cmd_capturef (ss, &logs, "'@0x%"PFMT64x"'pdf", address);
+	return tool_cmd_response_page (ss, res, logs, tool_args);
 }
 
 static char *tool_rename_flag(ServerState *ss, RJson *tool_args) {
@@ -968,8 +980,9 @@ static char *tool_decompile_function(ServerState *ss, RJson *tool_args) {
 	}
 	// Keep execution delegated to `pdc`: radare2's dispatcher routes it through
 	// cmd.pdc and applies asm.addr.relto / asm.addr.base semantics around it.
-	return tool_cmd_response_paginated (ss,
-		r2mcp_cmdf (ss, "'@0x%"PFMT64x"'pdc", address), tool_args);
+	char *logs;
+	char *res = r2mcp_cmd_capturef (ss, &logs, "'@0x%"PFMT64x"'pdc", address);
+	return tool_cmd_response_page (ss, res, logs, tool_args);
 }
 
 static char *tool_get_pid(ServerState *ss, RJson *tool_args) {
@@ -1180,23 +1193,18 @@ static char *tool_search_gadgets(ServerState *ss, RJson *tool_args) {
 	r_config_set_i (core->config, "scr.limit", 0);
 	r_config_set_b (core->config, "gadget.sdb", false);
 	// ' runs the line verbatim; newlines and '>' are rejected above.
-	char *res = r2mcp_cmdf (ss, "'/g%s%s%s%s", kind, regex? "/": "", json? "j": "q", filter);
+	char *logs;
+	char *res = r2mcp_cmd_capturef (ss, json? NULL: &logs, "'/g%s%s%s%s", kind, regex? "/": "", json? "j": "q", filter);
 	r_config_hold_restore (hold);
 	r_config_hold_free (hold);
 	free (filter);
 	r_str_trim (res);
 	if (!json) {
-		if (R_STR_ISEMPTY (res)) {
+		if (R_STR_ISEMPTY (res) && !logs) {
 			free (res);
 			return jsonrpc_tooltext_response ("No gadgets found.");
 		}
-		return tool_cmd_response_paginated (ss, res, tool_args);
-	}
-	// r2mcp_cmd appends the log messages of the command, keep only the JSON
-	char *log = strstr (res, "<log>\n");
-	if (log) {
-		*log = 0;
-		r_str_trim (res);
+		return tool_cmd_response_page (ss, res, logs, tool_args);
 	}
 	if (*res != '[') {
 		// not the array /gj prints, most likely an error message
@@ -1208,7 +1216,7 @@ static char *tool_search_gadgets(ServerState *ss, RJson *tool_args) {
 	}
 	char *gadgets = r_str_newf ("{\"gadgets\":%s}", res);
 	free (res);
-	return tool_cmd_response_paginated (ss, gadgets, tool_args);
+	return tool_cmd_response_page (ss, gadgets, NULL, tool_args);
 }
 
 static char *tool_lookup_address(ServerState *ss, RJson *tool_args) {
@@ -1227,11 +1235,12 @@ static char *tool_lookup_export(ServerState *ss, RJson *tool_args) {
 	if (ss->frida_mode) {
 		return tool_cmd_response (r2mcp_cmdf (ss, "':iaE %s", name));
 	}
-	char *res = r2mcp_cmd (ss, "'iEj");
+	char *logs;
+	char *res = r2mcp_cmd_capture (ss, "'iEj", &logs);
 	RJson *exports = r_json_parse (res);
 	if (!exports || exports->type != R_JSON_ARRAY) {
 		r_json_free (exports);
-		return tool_cmd_response (res);
+		return tool_cmd_response (r2mcp_cmd_text (res, logs));
 	}
 	free (res);
 	char *address = NULL;
@@ -1247,9 +1256,7 @@ static char *tool_lookup_export(ServerState *ss, RJson *tool_args) {
 		}
 	}
 	r_json_free (exports);
-	char *response = jsonrpc_tooltext_response (address? address: "Export not found");
-	free (address);
-	return response;
+	return tool_cmd_response (r2mcp_cmd_text (address? address: strdup ("Export not found"), logs));
 }
 
 static char *tool_lookup_symbol(ServerState *ss, RJson *tool_args) {
@@ -1265,7 +1272,9 @@ static char *tool_run_command(ServerState *ss, RJson *tool_args) {
 	if (!validate_required_string_param (tool_args, "command", &command)) {
 		return jsonrpc_error_missing_param ("command");
 	}
-	return tool_cmd_response_paginated (ss, r2mcp_cmd (ss, command), tool_args);
+	char *logs;
+	char *res = r2mcp_cmd_capture (ss, command, &logs);
+	return tool_cmd_response_page (ss, res, logs, tool_args);
 }
 
 static char *tool_sql(ServerState *ss, RJson *tool_args) {
@@ -1358,7 +1367,9 @@ static char *tool_run_script(ServerState *ss, RJson *tool_args) {
 	if (!r_sandbox_check (R_SANDBOX_GRAIN_FILES | R_SANDBOX_GRAIN_DISK)) {
 		return jsonrpc_error_response (-32603, "Sandbox forbids reading script files", NULL, NULL);
 	}
-	return tool_cmd_response_paginated (ss, r2mcp_cmd_file (ss, file_path), tool_args);
+	char *logs;
+	char *res = r2mcp_cmd_file (ss, file_path, &logs);
+	return tool_cmd_response_page (ss, res, logs, tool_args);
 }
 
 static char *tool_list_sessions(ServerState *ss, RJson *tool_args) {

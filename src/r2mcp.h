@@ -166,7 +166,11 @@ void r2mcp_state_fini(ServerState *ss);
 bool r2mcp_rstate_init(RadareState *rs);
 void r2mcp_rstate_fini(RadareState *rs);
 char *r2mcp_cmd(ServerState *ss, const char *cmd);
-char *r2mcp_cmd_file(ServerState *ss, const char *file);
+// Capture returns owned output and optionally owned diagnostics; native JSON2 owns its own logs.
+char *r2mcp_cmd_capture(ServerState *ss, const char *cmd, char **logs);
+char *r2mcp_cmd_capturef(ServerState *ss, char **logs, const char *fmt, ...);
+char *r2mcp_cmd_text(char *res, char *logs); // consumes both strings
+char *r2mcp_cmd_file(ServerState *ss, const char *file, char **logs);
 char *r2mcp_cmdf(ServerState *ss, const char *fmt, ...);
 void r2mcp_log_pub(ServerState *ss, const char *msg);
 const char *r2mcp_effective_sandbox_grain(const ServerState *ss);
