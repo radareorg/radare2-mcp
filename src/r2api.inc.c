@@ -19,7 +19,7 @@ static void r2state_settings(RCore *core) {
 	r_config_set_b (core->config, "scr.null", false);
 	r_config_set_b (core->config, "scr.pipecolor", false);
 	r_config_set_b (core->config, "scr.utf8", false);
-	r_config_set_i (core->config, "scr.limit", 16768);
+	r_config_set_i (core->config, "scr.limit", 0);
 }
 
 static void r2state_sandbox_settings(ServerState *ss, RCore *core) {
