@@ -3,18 +3,7 @@
 #include "jsonrpc.h"
 
 char *jsonrpc_tooltext_response(const char *text) {
-	R_RETURN_VAL_IF_FAIL (text, NULL);
-	PJ *pj = pj_new ();
-	pj_o (pj);
-	pj_k (pj, "content");
-	pj_a (pj);
-	pj_o (pj);
-	pj_ks (pj, "type", "text");
-	pj_ks (pj, "text", text);
-	pj_end (pj);
-	pj_end (pj);
-	pj_end (pj);
-	return pj_drain (pj);
+	return jsonrpc_tool_response_paginated (text, NULL, R2MCP_CONTENT_TEXT, false, NULL, NULL);
 }
 
 static void emit_text_block(PJ *pj, const char *text) {
@@ -61,32 +50,6 @@ char *jsonrpc_tool_response_paginated(const char *text, const char *structured_j
 	if (mode == R2MCP_CONTENT_STRUCTURED || mode == R2MCP_CONTENT_BOTH) {
 		emit_structured (pj, structured_json, text);
 	}
-	if (has_more || next_cursor) {
-		pj_k (pj, "pagination");
-		pj_o (pj);
-		if (has_more) {
-			pj_kb (pj, "hasMore", true);
-		}
-		if (next_cursor) {
-			pj_ks (pj, "nextCursor", next_cursor);
-		}
-		pj_end (pj);
-	}
-	pj_end (pj);
-	return pj_drain (pj);
-}
-
-char *jsonrpc_tooltext_response_paginated(const char *text, bool has_more, const char *next_cursor) {
-	R_RETURN_VAL_IF_FAIL (text, NULL);
-	PJ *pj = pj_new ();
-	pj_o (pj);
-	pj_k (pj, "content");
-	pj_a (pj);
-	pj_o (pj);
-	pj_ks (pj, "type", "text");
-	pj_ks (pj, "text", text);
-	pj_end (pj);
-	pj_end (pj);
 	if (has_more || next_cursor) {
 		pj_k (pj, "pagination");
 		pj_o (pj);
