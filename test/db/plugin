@@ -148,3 +148,18 @@ io.maps
 EOF
 EXPECT_ERR=
 RUN
+
+NAME=Plugin DSL preserves quotes and backslashes in output
+FILE=hex://61202271756f74656422205c207461696c00
+CMDS=<<EOF_CMD
+L ../src/libcore_r2mcp.`!r2 -H R2_LIBEXT`
+e r2mcp.prompts=false
+r2mcp yolo on
+r2mcp run_command command="psz"
+EOF_CMD
+EXPECT=<<EOF_EXP
+a "quoted" \\ tail
+
+EOF_EXP
+EXPECT_ERR=
+RUN
