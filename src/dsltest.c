@@ -123,22 +123,21 @@ static int run_statement(ServerState *ss, char *stmt, RCore *core) {
 	}
 	if (res) {
 		if (core) {
-			// Extract text from JSON response
-			const char *text_start = strstr (res, "\"text\":\"");
-			if (text_start) {
-				text_start += 8; // skip "text":"
-				const char *text_end = strstr (text_start, "\"");
-				if (text_end) {
-					char *text = r_str_ndup (text_start, text_end - text_start);
-					r_str_replace_in (text, -1, "\\n", "\n", true);
+			RJson *reply = r_json_parse (res);
+			const RJson *content = reply && reply->type == R_JSON_OBJECT? r_json_get (reply, "content"): NULL;
+			bool printed = false;
+			const RJson *block = content && content->type == R_JSON_ARRAY? content->children.first: NULL;
+			for (; block; block = block->next) {
+				const char *text = block->type == R_JSON_OBJECT? r_json_get_str (block, "text"): NULL;
+				if (text) {
 					r_cons_printf (core->cons, "%s\n", text);
-					free (text);
-				} else {
-					r_cons_printf (core->cons, "(malformed text in response)\n");
+					printed = true;
 				}
-			} else {
+			}
+			if (!printed) {
 				r_cons_printf (core->cons, "(no text in response)\n");
 			}
+			r_json_free (reply);
 		} else {
 			fprintf (stderr, "[DSL] %s -> %s\n", tool, res);
 		}
