@@ -338,14 +338,7 @@ static void tool_modes_string(int modes, char *buf, size_t len) {
 }
 
 char *tools_build_catalog_json(const ServerState *ss, const char *cursor, int page_size) {
-	int start_index = 0;
-	if (cursor) {
-		start_index = atoi (cursor);
-		if (start_index < 0) {
-			start_index = 0;
-		}
-	}
-
+	int start_index = pagination_start_from_cursor (cursor);
 	int end_index = start_index + page_size;
 	int idx = 0;
 	ToolMode mode = current_mode (ss);
@@ -1067,6 +1060,12 @@ static char *tool_search(ServerState *ss, RJson *tool_args) {
 	if (R_STR_ISEMPTY (type)) {
 		type = "string";
 	}
+	// r_core_cmd_str runs any command line holding a > without capturing its
+	// output, so the search would come back empty. In HTTP mode the command
+	// is forwarded as is and the remote r2 decides.
+	if (!ss->http_mode && strcmp (type, "value") && strchr (query, '>')) {
+		return jsonrpc_error_response (-32602, "Invalid parameter 'query': '>' is not allowed, write it as \\x3e in a string search", NULL, NULL);
+	}
 	if (!strcmp (type, "hex")) {
 		return tool_cmd_response (r2mcp_cmdf (ss, "'%s/x %s", fx (ss), query));
 	}
@@ -1088,6 +1087,128 @@ static char *tool_search(ServerState *ss, RJson *tool_args) {
 	}
 	// default: string search
 	return tool_cmd_response (r2mcp_cmdf (ss, "'%s/ %s", fx (ss), query));
+}
+
+// Gadgets are listed as "pop rdi; ret;" but r2 filters them with "pop rdi;ret".
+// /g replaces ,, with ; before splitting the instructions. Validate and pass
+// the same normalized string, or a regex like [,,] would bypass validation.
+// Returns NULL when regex is set and one of the instructions does not compile.
+static char *gadget_filter (const char *query, bool regex) {
+	RStrBuf *sb = r_strbuf_new ("");
+	char *normalized = r_str_new (query);
+	normalized = r_str_replace (normalized, ",,", ";", true);
+	RList *parts = r_str_split_duplist (normalized, ";", true);
+	RListIter *it;
+	const char *part;
+	bool valid = true;
+	r_list_foreach (parts, it, part) {
+		if (R_STR_ISEMPTY (part)) {
+			continue;
+		}
+		if (regex) {
+			// r2 compiles each instruction with these flags, once per candidate
+			RRegex *rx = r_regex_new (part, "e");
+			if (!rx) {
+				valid = false;
+				break;
+			}
+			r_regex_free (rx);
+		}
+		r_strbuf_appendf (sb, "%s%s", r_strbuf_is_empty (sb)? " ": ";", part);
+	}
+	r_list_free (parts);
+	free (normalized);
+	if (!valid) {
+		r_strbuf_free (sb);
+		return NULL;
+	}
+	return r_strbuf_drain (sb);
+}
+
+static const char *gadget_kind_from_string (const char *type) {
+	static const struct { const char *name; const char *flag; } kinds[] = {
+		{ "any", "" }, { "ret", "R" }, { "call", "C" }, { "jmp", "J" },
+	};
+	size_t i;
+	if (R_STR_ISEMPTY (type)) {
+		return "";
+	}
+	for (i = 0; i < R_ARRAY_SIZE (kinds); i++) {
+		if (!strcmp (type, kinds[i].name)) {
+			return kinds[i].flag;
+		}
+	}
+	return NULL;
+}
+
+static char *tool_search_gadgets(ServerState *ss, RJson *tool_args) {
+	const char *query = r_json_get_str (tool_args, "query");
+	const char *kind = gadget_kind_from_string (r_json_get_str (tool_args, "type"));
+	if (!kind) {
+		return jsonrpc_error_response (-32602, "Invalid parameter 'type': expected any, ret, call, or jmp", NULL, NULL);
+	}
+	if (!query) {
+		query = "";
+	}
+	// The query ends the command line, see the comment on the command below
+	if (!r_str_is_printable (query) || strchr (query, '>')) {
+		return jsonrpc_error_response (-32602, "Invalid parameter 'query': control characters and '>' are not allowed", NULL, NULL);
+	}
+	if (ss->http_mode) {
+		return jsonrpc_error_response (-32603, "search_gadgets is not supported in HTTP mode", NULL, NULL);
+	}
+	const bool regex = rjson_get_bool_flag (tool_args, "regex");
+	char *filter = gadget_filter (query, regex);
+	if (!filter) {
+		return jsonrpc_error_response (-32602, "Invalid parameter 'query': not a valid regular expression", NULL, NULL);
+	}
+	const char *cursor;
+	int page_size;
+	pagination_params (ss, tool_args, &cursor, &page_size);
+	const bool json = ss->content_mode != R2MCP_CONTENT_TEXT;
+	RCore *core = ss->rstate->core;
+	// Bare /g replays the user's gadget cache; explicit type searches do not.
+	if (!*kind && sdb_ns (core->sdb, "gadget_sdb", false)) {
+		free (filter);
+		return jsonrpc_error_response (-32603, "search_gadgets cannot search with an existing gadget_sdb cache; use a new session or specify type=ret, call, or jmp", NULL, NULL);
+	}
+	// Search executable maps; /g decodes the map again on every page.
+	RConfigHold *hold = r_config_hold_new (core->config);
+	r_config_hold (hold, "search.in", "search.maxhits", "scr.limit", "gadget.sdb", NULL);
+	r_config_set (core->config, "search.in", "io.maps.x");
+	r_config_set_i (core->config, "search.maxhits", (ut64)pagination_start_from_cursor (cursor) + page_size + 1);
+	r_config_set_i (core->config, "scr.limit", 0);
+	r_config_set_b (core->config, "gadget.sdb", false);
+	// ' runs the line verbatim; newlines and '>' are rejected above.
+	char *res = r2mcp_cmdf (ss, "'/g%s%s%s%s", kind, regex? "/": "", json? "j": "q", filter);
+	r_config_hold_restore (hold);
+	r_config_hold_free (hold);
+	free (filter);
+	r_str_trim (res);
+	if (!json) {
+		if (R_STR_ISEMPTY (res)) {
+			free (res);
+			return jsonrpc_tooltext_response ("No gadgets found.");
+		}
+		return tool_cmd_response_paginated (ss, res, tool_args);
+	}
+	// r2mcp_cmd appends the log messages of the command, keep only the JSON
+	char *log = strstr (res, "<log>\n");
+	if (log) {
+		*log = 0;
+		r_str_trim (res);
+	}
+	if (*res != '[') {
+		// not the array /gj prints, most likely an error message
+		char *message = r_str_newf ("search_gadgets failed: %s", R_STR_ISEMPTY (res)? "no output": res);
+		char *response = jsonrpc_error_response (-32603, message, NULL, NULL);
+		free (message);
+		free (res);
+		return response;
+	}
+	char *gadgets = r_str_newf ("{\"gadgets\":%s}", res);
+	free (res);
+	return tool_cmd_response_paginated (ss, gadgets, tool_args);
 }
 
 static char *tool_lookup_address(ServerState *ss, RJson *tool_args) {
@@ -1722,6 +1843,7 @@ ToolSpec tool_specs[] = {
 	{ "alloc_memory", "Allocate memory in the target process heap. Provide either size (bytes) or string to allocate", "{\"type\":\"object\",\"properties\":{\"size\":{\"type\":\"integer\",\"description\":\"Number of bytes to allocate (numeric expressions are accepted as strings)\"},\"string\":{\"type\":\"string\",\"description\":\"String to allocate in target heap (returns its address)\"}}}", TOOL_MODE_FRIDA, tool_alloc_memory },
 	{ "change_memory_protection", "Change memory protection (rwx) at the given address and size", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address expression (e.g. sym.main + 4 or 0x401000)\"},\"size\":{\"type\":\"integer\",\"description\":\"Size in bytes of the region (numeric expressions are accepted as strings)\"},\"protection\":{\"type\":\"string\",\"description\":\"New protection string (e.g. rwx, r-x, rw-)\"}},\"required\":[\"address\",\"size\",\"protection\"]}", TOOL_MODE_FRIDA, tool_change_memory_protection },
 	{ "search", "Search for strings, hex patterns, wide strings, or numeric values", "{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\",\"description\":\"The search query (string, hex bytes, or numeric expression for value search)\"},\"type\":{\"type\":\"string\",\"description\":\"Search type: string (default), hex, wide, or value\"},\"value_size\":{\"type\":\"integer\",\"description\":\"For value search: byte width 1, 2, 4 (default), or 8\"}},\"required\":[\"query\"]}", TOOL_MODE_NORMAL | TOOL_MODE_FRIDA, tool_search },
+	{ "search_gadgets", "Search the executable maps for ROP, JOP and COP gadgets (radare2 /g, formerly /R)", "{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\",\"description\":\"Optional filter on the instructions of the gadget; several instructions are separated with ; and matched in that order (e.g. pop rdi;ret)\"},\"type\":{\"type\":\"string\",\"description\":\"Last instruction of the gadget: any (default), ret, call, or jmp\"},\"regex\":{\"type\":\"boolean\",\"description\":\"If true, each instruction of the query is a regular expression\"}," TOOL_SCHEMA_PAGE_PROPS "}}", TOOL_MODE_NORMAL | TOOL_MODE_RO, tool_search_gadgets },
 	{ "lookup_address", "Describe what is at a given address (flag name, symbol, module)", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address expression (e.g. sym.main + 4 or 0x401000)\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_lookup_address },
 	{ "lookup_export", "Resolve an export name to its implementation address", "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"Export name to look up\"}},\"required\":[\"name\"]}", TOOL_MODE_NORMAL | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_lookup_export },
 	{ "lookup_symbol", "Resolve an address to its symbol name", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address expression (e.g. sym.main + 4 or 0x401000)\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_lookup_symbol },

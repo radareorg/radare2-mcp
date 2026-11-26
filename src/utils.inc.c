@@ -30,6 +30,22 @@ static const char *r_json_get_str(const RJson *json, const char *key) {
 
 #endif
 
+// Cursors come from the client: keep them far enough from INT_MAX so adding a
+// page size cannot overflow
+#define R2MCP_MAX_CURSOR (INT_MAX - R2MCP_MAX_PAGE_SIZE - 1)
+
+static inline int pagination_start_from_cursor(const char *cursor) {
+	ut64 start = 0;
+	const char *p;
+	for (p = cursor; p && isdigit ((ut8)*p); p++) {
+		start = (start * 10) + (*p - '0');
+		if (start > R2MCP_MAX_CURSOR) {
+			return R2MCP_MAX_CURSOR;
+		}
+	}
+	return (int)start;
+}
+
 // Helper to paginate text by lines
 static inline char *paginate_text_by_lines(char *text, const char *cursor, int page_size, bool *has_more, char **next_cursor) {
 	if (!text) {
@@ -46,16 +62,10 @@ static inline char *paginate_text_by_lines(char *text, const char *cursor, int p
 		return NULL;
 	}
 	int total_lines = r_list_length (lines);
-	int start_line = 0;
-	if (cursor) {
-		start_line = atoi (cursor);
-		if (start_line < 0) {
-			start_line = 0;
-		}
-	}
-	int end_line = start_line + page_size;
-	if (end_line > total_lines) {
-		end_line = total_lines;
+	int start_line = pagination_start_from_cursor (cursor);
+	int end_line = total_lines;
+	if (page_size < total_lines - start_line) {
+		end_line = start_line + page_size;
 	}
 	RStrBuf *sb = r_strbuf_new ("");
 	int idx = 0;
@@ -83,17 +93,6 @@ static inline char *paginate_text_by_lines(char *text, const char *cursor, int p
 		}
 	}
 	return result;
-}
-
-static inline int pagination_start_from_cursor(const char *cursor) {
-	int start = 0;
-	if (cursor) {
-		start = atoi (cursor);
-		if (start < 0) {
-			start = 0;
-		}
-	}
-	return start;
 }
 
 static inline int rjson_child_count(const RJson *json) {

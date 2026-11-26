@@ -646,6 +646,131 @@ run_lookup_export_regression() {
 	}
 }
 
+run_search_gadgets_regression() {
+	local req="$TMPDIR/search-gadgets.req"
+	local resp="$TMPDIR/search-gadgets.resp"
+	# pop rdi; ret; pop rsi; ret; and 32 nops, r2 skips gadgets at the end of a map
+	local file="hex://5fc35ec39090909090909090909090909090909090909090909090909090909090909090"
+	: > "$req"
+	append_request "$req" 1 initialize '{"capabilities":{},"clientInfo":{"name":"testsuite","version":"1"}}'
+	append_notification "$req" notifications/initialized '{}'
+	append_tool_call "$req" 2 open_file "$(jq -cn --arg file "$file" '{file_path:$file,arch:"x86",bits:"64"}')"
+	append_tool_call "$req" 3 search_gadgets '{}'
+	append_tool_call "$req" 4 search_gadgets '{"page_size":1}'
+	append_tool_call "$req" 5 search_gadgets '{"page_size":1,"cursor":"1"}'
+	append_tool_call "$req" 6 search_gadgets '{"query":"pop rsi; ret;","type":"ret"}'
+	append_tool_call "$req" 7 search_gadgets '{"query":"^pop r[sd]i$;^ret$","regex":true}'
+	append_tool_call "$req" 8 search_gadgets '{"query":"pop r[sd]i"}'
+	append_tool_call "$req" 9 search_gadgets '{"type":"syscall"}'
+	append_tool_call "$req" 10 search_gadgets "$(jq -cn --arg query "ret;f $INJECT_MARKER=1337" '{query:$query}')"
+	append_tool_call "$req" 11 search_gadgets "$(jq -cn --arg query "ret
+f $INJECT_MARKER=1337" '{query:$query}')"
+	append_tool_call "$req" 12 calculate "$(jq -cn --arg expression "$INJECT_MARKER" '{expression:$expression}')"
+	append_tool_call "$req" 13 search_gadgets '{"query":"[","regex":true}'
+	append_tool_call "$req" 14 search_gadgets '{"query":"^pop;[","regex":true}'
+	append_tool_call "$req" 15 search_gadgets '{"query":"["}'
+	append_tool_call "$req" 16 search_gadgets '{"cursor":"2147483647"}'
+	append_tool_call "$req" 17 search_gadgets '{"cursor":"99999999999999999999","page_size":1}'
+	append_tool_call "$req" 18 search_gadgets '{"cursor":"-1","page_size":1}'
+	append_tool_call "$req" 19 search_gadgets '{"query":"[,,]","regex":true}'
+	run_session "$req" "$resp" -C both
+	response_by_id "$resp" 3 | jq -e '.result | (.structuredContent.gadgets | map(.opcodes | map(.opcode)) == [["pop rdi", "ret"], ["pop rsi", "ret"]]) and (.pagination | not)' >/dev/null || fail 'search_gadgets: expected the two handcrafted gadgets'
+	response_by_id "$resp" 4 | jq -e '.result | (.structuredContent.gadgets | length == 1) and .pagination.nextCursor == "1"' >/dev/null || fail 'search_gadgets: first page must hold one gadget and a cursor'
+	response_by_id "$resp" 5 | jq -e '.result | (.structuredContent.gadgets | map(.opcodes[0].opcode) == ["pop rsi"]) and (.pagination | not)' >/dev/null || fail 'search_gadgets: second page must hold the last gadget'
+	response_by_id "$resp" 6 | jq -e '.result.structuredContent.gadgets | length == 1 and (.[0].opcodes | map(.opcode) | index("pop rsi"))' >/dev/null || fail 'search_gadgets: a query copied from the listing must match'
+	response_by_id "$resp" 7 | jq -e '.result.structuredContent.gadgets | length > 0' >/dev/null || fail 'search_gadgets: regex query must match'
+	response_by_id "$resp" 8 | jq -e '.result.structuredContent.gadgets == []' >/dev/null || fail 'search_gadgets: plain query must not be a regex'
+	assert_error_contains_param "$(response_by_id "$resp" 9)" "type" "search_gadgets:invalid-type"
+	response_by_id "$resp" 10 | jq -e '.result.structuredContent.gadgets == []' >/dev/null || fail 'search_gadgets: semicolon in query must be literal'
+	assert_error_contains_param "$(response_by_id "$resp" 11)" "query" "search_gadgets:newline-in-query"
+	response_by_id "$resp" 12 | jq -e '.result.content[0].text == "0x0"' >/dev/null || fail 'search_gadgets: input created injection marker'
+	assert_error_contains_param "$(response_by_id "$resp" 13)" "query" "search_gadgets:invalid-regex"
+	assert_error_contains_param "$(response_by_id "$resp" 14)" "query" "search_gadgets:invalid-regex-instruction"
+	response_by_id "$resp" 15 | jq -e '.result.structuredContent.gadgets == []' >/dev/null || fail 'search_gadgets: plain query must not be compiled as a regex'
+	local id
+	for id in 16 17; do
+		response_by_id "$resp" "$id" | jq -e '.result | .structuredContent.gadgets == [] and (.pagination | not)' >/dev/null || fail "search_gadgets: a cursor past the end must return an empty last page (#$id)"
+	done
+	response_by_id "$resp" 18 | jq -e '.result | (.structuredContent.gadgets | length == 1) and .pagination.nextCursor == "1"' >/dev/null || fail 'search_gadgets: a negative cursor must start from the first gadget'
+	assert_error_contains_param "$(response_by_id "$resp" 19)" "query" "search_gadgets:invalid-regex-with-comma-separator"
+}
+
+run_search_gadgets_cache_regression() {
+	local req="$TMPDIR/search-gadgets-cache.req"
+	local resp="$TMPDIR/search-gadgets-cache.resp"
+	local file="hex://5fc35ec39090909090909090909090909090909090909090909090909090909090909090"
+	: > "$req"
+	append_request "$req" 1 initialize '{"capabilities":{},"clientInfo":{"name":"testsuite","version":"1"}}'
+	append_notification "$req" notifications/initialized '{}'
+	append_tool_call "$req" 2 open_file "$(jq -cn --arg file "$file" '{file_path:$file,arch:"x86",bits:"64"}')"
+	append_tool_call "$req" 3 run_command '{"command":"e gadget.sdb=true"}'
+	append_tool_call "$req" 4 search_gadgets '{"page_size":1}'
+	append_tool_call "$req" 5 search_gadgets '{"page_size":1,"cursor":"1"}'
+	append_tool_call "$req" 6 search_gadgets '{"query":"xor","page_size":1}'
+	append_tool_call "$req" 7 run_command '{"command":"e gadget.sdb"}'
+	# A raw /g run creates the user's cache; the MCP tool must neither replay
+	# its stale results nor remove the namespace when declining an any search.
+	append_tool_call "$req" 8 run_command '{"command":"/gq"}'
+	append_tool_call "$req" 9 search_gadgets '{"page_size":1,"cursor":"1"}'
+	append_tool_call "$req" 10 search_gadgets '{"query":"xor","page_size":1}'
+	append_tool_call "$req" 11 search_gadgets '{"type":"ret","page_size":1}'
+	append_tool_call "$req" 12 run_command '{"command":"e gadget.sdb=false"}'
+	append_tool_call "$req" 13 search_gadgets '{"query":"xor"}'
+	append_tool_call "$req" 14 run_command '{"command":"e gadget.sdb"}'
+	append_tool_call "$req" 15 run_command '{"command":"/gq"}'
+	run_session "$req" "$resp" -r -C both
+	response_by_id "$resp" 4 | jq -e '.result | (.structuredContent.gadgets | map(.opcodes[0].opcode) == ["pop rdi"]) and .pagination.nextCursor == "1"' >/dev/null || fail 'search_gadgets: cache setting must not affect the first page'
+	response_by_id "$resp" 5 | jq -e '.result | (.structuredContent.gadgets | map(.opcodes[0].opcode) == ["pop rsi"]) and (.pagination | not)' >/dev/null || fail 'search_gadgets: cache setting must not affect the second page'
+	response_by_id "$resp" 6 | jq -e '.result.structuredContent.gadgets == []' >/dev/null || fail 'search_gadgets: a changed query must not return old gadgets'
+	response_by_id "$resp" 7 | jq -e '(.result.content[0].text | gsub("\\s"; "")) == "true"' >/dev/null || fail 'search_gadgets: gadget.sdb must be restored after searching'
+	local id
+	for id in 9 10 13; do
+		response_by_id "$resp" "$id" | jq -e '.error.code == -32603 and (.error.message | contains("gadget_sdb"))' >/dev/null || fail "search_gadgets: reject the existing cached any path (#$id)"
+	done
+	response_by_id "$resp" 11 | jq -e '.result.structuredContent.gadgets | length == 1' >/dev/null || fail 'search_gadgets: explicit ret type bypasses the cached any path'
+	response_by_id "$resp" 14 | jq -e '(.result.content[0].text | gsub("\\s"; "")) == "false"' >/dev/null || fail 'search_gadgets: gadget.sdb must stay disabled when set by the user'
+	response_by_id "$resp" 15 | jq -e '.result.content[0].text | contains("pop rdi")' >/dev/null || fail 'search_gadgets: the user cache must not be cleared'
+	# The cached path must also fail closed in text mode, not return old gadgets
+	# for a query that has no match.
+	: > "$req"
+	append_request "$req" 1 initialize '{"capabilities":{},"clientInfo":{"name":"testsuite","version":"1"}}'
+	append_tool_call "$req" 2 open_file "$(jq -cn --arg file "$file" '{file_path:$file,arch:"x86",bits:"64"}')"
+	append_tool_call "$req" 3 run_command '{"command":"e gadget.sdb=true"}'
+	append_tool_call "$req" 4 run_command '{"command":"/gq"}'
+	append_tool_call "$req" 5 search_gadgets '{"query":"xor"}'
+	run_session "$req" "$resp" -r
+	response_by_id "$resp" 5 | jq -e '.error.code == -32603 and (.error.message | contains("gadget_sdb"))' >/dev/null || fail 'search_gadgets: text mode must not return cached gadgets for a changed query'
+}
+
+# r_core_cmd_str runs a command line holding a > without capturing its output,
+# which would print it between the JSON-RPC messages
+run_search_redirect_regression() {
+	local req="$TMPDIR/search-redirect.req"
+	local resp="$TMPDIR/search-redirect.resp"
+	local out="$TMPDIR/search-redirect.out"
+	local file="hex://5fc35ec39090909090909090909090909090909090909090909090909090909090909090"
+	: > "$req"
+	append_request "$req" 1 initialize '{"capabilities":{},"clientInfo":{"name":"testsuite","version":"1"}}'
+	append_notification "$req" notifications/initialized '{}'
+	append_tool_call "$req" 2 open_file "$(jq -cn --arg file "$file" '{file_path:$file,arch:"x86",bits:"64"}')"
+	append_tool_call "$req" 3 search_gadgets "$(jq -cn --arg query "x > $out" '{query:$query}')"
+	append_tool_call "$req" 4 search_gadgets "$(jq -cn --arg query "x > $out" '{query:$query,regex:true}')"
+	append_tool_call "$req" 5 search "$(jq -cn --arg query "_ > $out" '{query:$query}')"
+	append_tool_call "$req" 6 search "$(jq -cn --arg query "_ > $out" '{query:$query,type:"wide"}')"
+	append_tool_call "$req" 7 search "$(jq -cn --arg query "5f > $out" '{query:$query,type:"hex"}')"
+	append_tool_call "$req" 8 search '{"query":"\\x5f\\xc3"}'
+	run_session "$req" "$resp" -C json
+	local id
+	for id in 3 4 5 6 7; do
+		assert_error_contains_param "$(response_by_id "$resp" "$id")" "query" "search:redirect-in-query:#$id"
+	done
+	response_by_id "$resp" 8 | jq -e '.result.content[0].text | test("hit[0-9]+_[0-9]+")' >/dev/null || fail 'search: an escaped query must still match'
+	[ ! -e "$out" ] || fail 'search: > in a query wrote a file'
+	if env ASAN_OPTIONS=detect_leaks=0 LSAN_OPTIONS=detect_leaks=0 "$BIN" -C json < "$req" | grep -v '^{' | grep -q .; then
+		fail 'search: > in a query printed outside the JSON-RPC messages'
+	fi
+}
+
 run_list_filter_regressions() {
 	local req="$TMPDIR/list-filter.req"
 	local resp="$TMPDIR/list-filter.resp"
@@ -1212,6 +1337,9 @@ run_open_file_baddr_regression
 run_numeric_string_regression
 run_tool_argument_regressions
 run_lookup_export_regression
+run_search_gadgets_regression
+run_search_gadgets_cache_regression
+run_search_redirect_regression
 run_list_filter_regressions
 run_close_file_regression
 run_open_session_regression

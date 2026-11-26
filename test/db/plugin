@@ -123,3 +123,28 @@ world
 EOF
 EXPECT_ERR=
 RUN
+
+NAME=Plugin search_gadgets works in read-only mode
+FILE=hex://5fc35ec39090909090909090909090909090909090909090909090909090909090909090
+ARGS=-a x86 -b 64
+CMDS=<<EOF
+L ../src/libcore_r2mcp.`!r2 -H R2_LIBEXT`
+e r2mcp.prompts=false
+e r2mcp.readonly=true
+e search.maxhits=7
+r2mcp search_gadgets
+r2mcp search_gadgets query="pop rdi" page_size="1"
+r2mcp search_gadgets query="xor"
+e search.maxhits
+e search.in
+EOF
+EXPECT=<<EOF
+0x00000000: pop rdi; ret;
+0x00000002: pop rsi; ret;
+0x00000000: pop rdi; ret;
+No gadgets found.
+7
+io.maps
+EOF
+EXPECT_ERR=
+RUN
