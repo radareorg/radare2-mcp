@@ -17,14 +17,20 @@ char *jsonrpc_tooltext_response(const char *text) {
 	return pj_drain (pj);
 }
 
-static void emit_content(PJ *pj, const char *s) {
-	R_RETURN_IF_FAIL (s);
-	pj_k (pj, "content");
-	pj_a (pj);
+static void emit_text_block(PJ *pj, const char *text) {
 	pj_o (pj);
 	pj_ks (pj, "type", "text");
-	pj_ks (pj, "text", s);
+	pj_ks (pj, "text", text);
 	pj_end (pj);
+}
+
+static void emit_content(PJ *pj, const char *text, const char *diagnostics) {
+	pj_k (pj, "content");
+	pj_a (pj);
+	emit_text_block (pj, text);
+	if (diagnostics) {
+		emit_text_block (pj, diagnostics);
+	}
 	pj_end (pj);
 }
 
@@ -40,53 +46,20 @@ static void emit_structured(PJ *pj, const char *structured_json, const char *tex
 }
 
 char *jsonrpc_tool_response(const char *text, const char *structured_json, R2McpContentMode mode) {
-	R_RETURN_VAL_IF_FAIL (text, NULL);
-	PJ *pj = pj_new ();
-	pj_o (pj);
-	switch (mode) {
-	case R2MCP_CONTENT_TEXT:
-		emit_content (pj, text);
-		break;
-	case R2MCP_CONTENT_JSON:
-		emit_content (pj, structured_json? structured_json: text);
-		break;
-	case R2MCP_CONTENT_STRUCTURED:
-		emit_content (pj, structured_json? structured_json: text);
-		emit_structured (pj, structured_json, text);
-		break;
-	case R2MCP_CONTENT_BOTH:
-		emit_content (pj, text);
-		emit_structured (pj, structured_json, text);
-		break;
-	default:
-		emit_content (pj, text);
-		break;
-	}
-	pj_end (pj);
-	return pj_drain (pj);
+	return jsonrpc_tool_response_paginated (text, structured_json, mode, false, NULL, NULL);
 }
-char *jsonrpc_tool_response_paginated(const char *text, const char *structured_json, R2McpContentMode mode, bool has_more, const char *next_cursor) {
+
+char *jsonrpc_tool_response_paginated(const char *text, const char *structured_json, R2McpContentMode mode, bool has_more, const char *next_cursor, const char *logs) {
 	R_RETURN_VAL_IF_FAIL (text, NULL);
 	PJ *pj = pj_new ();
 	pj_o (pj);
-	switch (mode) {
-	case R2MCP_CONTENT_TEXT:
-		emit_content (pj, text);
-		break;
-	case R2MCP_CONTENT_JSON:
-		emit_content (pj, structured_json? structured_json: text);
-		break;
-	case R2MCP_CONTENT_STRUCTURED:
-		emit_content (pj, structured_json? structured_json: text);
+	const bool split_logs = structured_json && mode != R2MCP_CONTENT_TEXT;
+	const char *primary = (mode == R2MCP_CONTENT_JSON || mode == R2MCP_CONTENT_STRUCTURED) && structured_json? structured_json: text;
+	char *rendered = logs && !split_logs? r2mcp_cmd_text (strdup (primary), strdup (logs)): NULL;
+	emit_content (pj, rendered? rendered: primary, split_logs? logs: NULL);
+	free (rendered);
+	if (mode == R2MCP_CONTENT_STRUCTURED || mode == R2MCP_CONTENT_BOTH) {
 		emit_structured (pj, structured_json, text);
-		break;
-	case R2MCP_CONTENT_BOTH:
-		emit_content (pj, text);
-		emit_structured (pj, structured_json, text);
-		break;
-	default:
-		emit_content (pj, text);
-		break;
 	}
 	if (has_more || next_cursor) {
 		pj_k (pj, "pagination");

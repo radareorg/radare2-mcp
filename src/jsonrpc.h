@@ -7,7 +7,7 @@
 char *jsonrpc_tooltext_response(const char *text);
 char *jsonrpc_tooltext_response_paginated(const char *text, bool has_more, const char *next_cursor);
 char *jsonrpc_tool_response(const char *text, const char *structured_json, R2McpContentMode mode);
-char *jsonrpc_tool_response_paginated(const char *text, const char *structured_json, R2McpContentMode mode, bool has_more, const char *next_cursor);
+char *jsonrpc_tool_response_paginated(const char *text, const char *structured_json, R2McpContentMode mode, bool has_more, const char *next_cursor, const char *logs);
 char *jsonrpc_error_response(int code, const char *message, const char *id, const char *uri);
 char *jsonrpc_success_response(ServerState *ss, const char *result, const char *id);
 char *jsonrpc_error_response_typed(int code, const char *message, const char *id, bool id_is_number, const char *uri);

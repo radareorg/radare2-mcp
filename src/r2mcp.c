@@ -252,7 +252,10 @@ void r2mcp_state_fini(ServerState *ss) {
 	ss->client_capability_keys = NULL;
 }
 
-char *r2mcp_cmd(ServerState *ss, const char *cmd) {
+char *r2mcp_cmd_capture(ServerState *ss, const char *cmd, char **logs) {
+	if (logs) {
+		*logs = NULL;
+	}
 	if (ss && ss->http_mode) {
 		char *res = r2cmd_over_http (ss, cmd);
 		if (!res) {
@@ -286,17 +289,33 @@ char *r2mcp_cmd(ServerState *ss, const char *cmd) {
 	if (!res) {
 		res = strdup ("Error: command returned NULL");
 	}
-	// r2state_settings (core);
-	if (err) {
-		char *newres = r_str_newf ("%s<log>\n%s\n</log>\n", res, err);
+	if (logs) {
+		*logs = err;
+	} else {
 		free (err);
-		free (res);
-		res = newres;
 	}
 	return res;
 }
 
-char *r2mcp_cmd_file(ServerState *ss, const char *file) {
+char *r2mcp_cmd_text(char *res, char *logs) {
+	if (!logs) {
+		return res;
+	}
+	size_t len = res? strlen (res): 0;
+	char *text = r_str_newf ("%s%s<log>\n%s\n</log>\n", res? res: "", len && res[len - 1] != '\n'? "\n": "", logs);
+	free (res);
+	free (logs);
+	return text;
+}
+
+char *r2mcp_cmd(ServerState *ss, const char *cmd) {
+	char *logs;
+	char *res = r2mcp_cmd_capture (ss, cmd, &logs);
+	return r2mcp_cmd_text (res, logs);
+}
+
+char *r2mcp_cmd_file(ServerState *ss, const char *file, char **logs) {
+	*logs = NULL;
 	if (!ss || !ss->rstate) {
 		return strdup ("Cannot run script files without server state");
 	}
@@ -310,8 +329,8 @@ char *r2mcp_cmd_file(ServerState *ss, const char *file) {
 	if (!core || !ss->rstate->file_opened) {
 		return strdup ("Cannot run script files without calling the `open_file` tool first");
 	}
-	r2mcp_log_reset (ss);
 	R_CRITICAL_ENTER (core);
+	r2mcp_log_reset (ss);
 	bool ok = false;
 #if defined(R2_ABIVERSION) && R2_ABIVERSION >= 103
 	char *res = r_core_cmd_file_str (core, file, &ok);
@@ -319,20 +338,14 @@ char *r2mcp_cmd_file(ServerState *ss, const char *file) {
 	ok = r_core_cmd_file (core, file);
 	char *res = strdup (ok? "script ok": "script fail");
 #endif
+	*logs = r2mcp_log_drain (ss);
 	R_CRITICAL_LEAVE (core);
-	char *err = r2mcp_log_drain (ss);
 	if (!res) {
 		res = strdup (ok? "script ok": "script fail");
 	}
 	if (!ok && R_STR_ISEMPTY (res)) {
 		free (res);
 		res = strdup ("script fail");
-	}
-	if (err) {
-		char *newres = r_str_newf ("%s<log>\n%s\n</log>\n", res, err);
-		free (err);
-		free (res);
-		res = newres;
 	}
 	return res;
 }
